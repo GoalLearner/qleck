@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# unrelated leftovers from the Awakened project (not part of this app)
+.design-tmp/
+
 # Expo
 .expo/
 dist/

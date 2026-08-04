@@ -1,0 +1,65 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-serve",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\richm\\Documents\\repos\\awakened-app\\serve.ps1"],
+      "port": 8080
+    },
+    {
+      "name": "backend-worker",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:\\Users\\richm\\Documents\\repos\\awakened-app\\backend", "run", "dev"],
+      "port": 8787
+    },
+    {
+      "name": "sim-seed-worker",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--prefix", "C:\\Users\\richm\\Documents\\repos\\awakened-app\\backend", "wrangler", "dev", "C:\\Users\\richm\\Documents\\repos\\awakened-app\\backend\\scripts\\seed-sim-users.ts", "--remote", "--port", "8788"],
+      "port": 8788
+    },
+    {
+      "name": "sectory-site",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8000", "--directory", "C:\\Users\\richm\\OneDrive\\Desktop\\sectory\\site"],
+      "port": 8000
+    },
+    {
+      "name": "videoforge",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:\\Users\\richm\\OneDrive\\Desktop\\videoforge", "start"],
+      "port": 3777
+    },
+    {
+      "name": "videoforge-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:\\Users\\richm\\OneDrive\\Desktop\\videoforge\\server.js", "3811"],
+      "port": 3811
+    },
+    {
+      "name": "tldw-web",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location 'C:\\Users\\richm\\OneDrive\\Desktop\\tldw'; wrangler dev --port 8799 --local"],
+      "port": 8799
+    },
+    {
+      "name": "medellin-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8123", "--directory", "C:\\Users\\richm\\AppData\\Local\\Temp\\claude\\C--Users-richm-OneDrive-Desktop-habit-tracker\\2f60673c-a1f6-4dca-812c-5a2955b7ce1f\\scratchpad\\medellin-preview"],
+      "port": 8123
+    },
+    {
+      "name": "forge-ui-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:\\Users\\richm\\AppData\\Local\\Temp\\claude\\C--Users-richm-OneDrive-Desktop-habit-tracker\\76663c25-b0f2-4145-bcda-7784376be1fa\\scratchpad\\preview\\serve.mjs"],
+      "port": 8099
+    },
+    {
+      "name": "uncook-web",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location 'C:\\Users\\richm\\OneDrive\\Desktop\\uncook'; npx expo start --web --port 8095"],
+      "port": 8095
+    }
+  ]
+}

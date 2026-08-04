@@ -1,90 +1,94 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { useFonts } from 'expo-font';
+import {
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
+import { YoungSerif_400Regular } from '@expo-google-fonts/young-serif';
 
-import AnalyticsScreen from './src/screens/AnalyticsScreen';
-import StoriesScreen from './src/screens/StoriesScreen';
-import FriendsStoriesScreen from './src/screens/FriendsStoriesScreen';
-import RepostScreen from './src/screens/RepostScreen';
-import SettingsScreen from './src/screens/SettingsScreen';
-import PaywallScreen from './src/screens/PaywallScreen';
+import RallyTabBar from './src/components/RallyTabBar';
+import ChallengeDetailScreen from './src/screens/ChallengeDetailScreen';
+import ChallengesScreen from './src/screens/ChallengesScreen';
+import CreateScreen from './src/screens/CreateScreen';
+import EventDetailScreen from './src/screens/EventDetailScreen';
+import HomeScreen from './src/screens/HomeScreen';
+import LoginScreen from './src/screens/LoginScreen';
+import PlansScreen from './src/screens/PlansScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+import { RallyProvider } from './src/state/RallyContext';
 import { colors } from './src/theme';
 
 const Tab = createBottomTabNavigator();
 const RootStack = createNativeStackNavigator();
 
-type IconName = keyof typeof Ionicons.glyphMap;
-const ICONS: Record<string, IconName> = {
-  Analytics: 'stats-chart',
-  'My Stories': 'person-circle-outline',
-  'Friends Stories': 'people-circle-outline',
-  Repost: 'repeat',
-  Settings: 'menu',
+const navTheme = {
+  ...DefaultTheme,
+  colors: { ...DefaultTheme.colors, background: colors.bg },
 };
 
-// Settings needs to open the Paywall, which lives in the root stack.
-function SettingsTab() {
-  const navigation = useNavigation<any>();
-  return <SettingsScreen onOpenPaywall={() => navigation.navigate('Paywall')} />;
-}
-
-function Tabs() {
+function Tabs({ onLogout }: { onLogout: () => void }) {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          position: 'absolute',
-          left: 16,
-          right: 16,
-          bottom: 24,
-          height: 64,
-          borderRadius: 32,
-          backgroundColor: colors.pill,
-          borderTopWidth: 0,
-          paddingTop: 8,
-          paddingBottom: 8,
-        },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
-        tabBarIcon: ({ color, size }) => (
-          <Ionicons name={ICONS[route.name] ?? 'ellipse'} size={size - 2} color={color} />
-        ),
-      })}
+      tabBar={props => <RallyTabBar {...props} />}
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.bg } }}
     >
-      <Tab.Screen name="Analytics" component={AnalyticsScreen} />
-      <Tab.Screen name="My Stories" component={StoriesScreen} />
-      <Tab.Screen name="Friends Stories" component={FriendsStoriesScreen} />
-      <Tab.Screen name="Repost" component={RepostScreen} />
-      <Tab.Screen name="Settings" component={SettingsTab} />
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Plans" component={PlansScreen} />
+      <Tab.Screen name="Streaks" component={ChallengesScreen} />
+      <Tab.Screen name="You">
+        {() => <ProfileScreen onLogout={onLogout} />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }
 
-function PaywallModal() {
-  const navigation = useNavigation<any>();
-  return <PaywallScreen onClose={() => navigation.goBack()} />;
-}
-
 export default function App() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
+    YoungSerif_400Regular,
+  });
+
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, backgroundColor: colors.loginNavy }} />;
+  }
+
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <StatusBar style="light" />
-        <RootStack.Navigator screenOptions={{ headerShown: false }}>
-          <RootStack.Screen name="Tabs" component={Tabs} />
-          <RootStack.Screen
-            name="Paywall"
-            component={PaywallModal}
-            options={{ presentation: 'modal' }}
-          />
-        </RootStack.Navigator>
-      </NavigationContainer>
+      <RallyProvider>
+        <NavigationContainer theme={navTheme}>
+          <StatusBar style={loggedIn ? 'dark' : 'light'} />
+          <RootStack.Navigator screenOptions={{ headerShown: false }}>
+            {!loggedIn ? (
+              <RootStack.Screen name="Login">
+                {() => <LoginScreen onLogin={() => setLoggedIn(true)} />}
+              </RootStack.Screen>
+            ) : (
+              <>
+                <RootStack.Screen name="Tabs">
+                  {() => <Tabs onLogout={() => setLoggedIn(false)} />}
+                </RootStack.Screen>
+                <RootStack.Screen name="Event" component={EventDetailScreen} />
+                <RootStack.Screen name="Challenge" component={ChallengeDetailScreen} />
+                <RootStack.Screen name="Create" component={CreateScreen} options={{ presentation: 'modal' }} />
+              </>
+            )}
+          </RootStack.Navigator>
+        </NavigationContainer>
+      </RallyProvider>
     </SafeAreaProvider>
   );
 }

@@ -1,47 +1,74 @@
-// Central design tokens. Tweak these to restyle the whole app.
-
+// Rally design tokens — ported 1:1 from the Rally App design canvas.
 export const colors = {
-  // Background gradient (top -> bottom)
-  bgTop: '#35316B',
-  bgBottom: '#2A2750',
-
-  // Surfaces
-  card: '#3B3870',
-  cardBorder: '#4A4783',
-  pill: '#221F44', // dark rounded tab bar
-
-  // Accent
-  accent: '#5FE3D4', // teal
-  accentDim: 'rgba(95, 227, 212, 0.15)',
-
-  // Text
-  text: '#FFFFFF',
-  textMuted: '#A6A3C8',
-  textFaint: '#6E6B9A',
-
-  // Indicators
-  up: '#4FE39E', // green ▲
-  down: '#F47C7C', // red ▼
+  bg: '#f5f2ea',
+  card: '#fffefb',
+  ink: '#262b33',
+  navy: '#212836',
+  loginNavy: '#1d2330',
+  cream: '#f5f2ea',
+  creamText: '#f2efe7',
+  muted: '#8a8f9b',
+  sectionLabel: '#a09c8e',
+  accent: '#5a6b85',
+  accentLink: '#46536a',
+  border: 'rgba(38,43,51,0.07)',
+  borderStrong: 'rgba(38,43,51,0.08)',
+  hairline: 'rgba(38,43,51,0.06)',
+  inputBorder: 'rgba(38,43,51,0.1)',
+  ringTrack: '#edebdf',
+  dashed: '#cfccbe',
+  tabIdle: '#a0a4ad',
+  faintText: '#5f6470',
+  danger: '#a05a5a',
+  chipIdleBg: '#edebe0',
+  disabledSend: '#c9c6ba',
+  chevron: '#c1beb2',
+  // "Needs a yes" invite card
+  inviteBg: '#f6efdc',
+  inviteBorder: '#eadfc0',
+  inviteAccent: '#8a5f38',
+  inviteBtnBorder: '#d9cda8',
+  inviteBtnText: '#7a6c35',
+  // Open invite card
+  openBg: '#e6eaf2',
+  openBorder: '#d5dbe8',
+  // Success / "you're in"
+  successBg: '#dcecdf',
+  successFg: '#47694f',
+  successDot: '#cfe3d4',
+  // Leaderboard "you" row
+  youRowBg: '#eef0f7',
+  dotIdle: '#eceadf',
+  dotIdleFg: '#b5b1a4',
+  // "Can't go" pill
+  outBg: '#f0eee6',
+  outFg: '#9a978c',
 };
 
-export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
+// Category palettes (event color coding)
+export const CATS = {
+  mint: { bg: '#dcecdf', fg: '#47694f' },
+  lav: { bg: '#e4e6f4', fg: '#4d5680' },
+  peach: { bg: '#f6e5d4', fg: '#8a5f38' },
+  butter: { bg: '#f2ecd2', fg: '#7a6c35' },
+  rose: { bg: '#f4e0e0', fg: '#8a4f4f' },
+} as const;
+
+export type CatKey = keyof typeof CATS;
+
+export const fonts = {
+  serif: 'YoungSerif_400Regular',
+  regular: 'PlusJakartaSans_400Regular',
+  medium: 'PlusJakartaSans_500Medium',
+  semibold: 'PlusJakartaSans_600SemiBold',
+  bold: 'PlusJakartaSans_700Bold',
+  extrabold: 'PlusJakartaSans_800ExtraBold',
 };
 
-export const radius = {
-  card: 16,
-  pill: 28,
-};
-
-export const font = {
-  hero: 34,
-  title: 22,
-  metric: 30,
-  body: 15,
-  label: 13,
-  small: 11,
+export const radii = {
+  card: 26,
+  row: 24,
+  pill: 999,
+  input: 18,
+  dateTile: 16,
 };

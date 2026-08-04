@@ -1,44 +1,50 @@
-# Insight — Instagram analytics app (personal recreation)
+# Rally — social plans & streaks app
 
-A from-scratch recreation of an Instagram follower-analytics app (à la "Followers
-Tracker / Reports+") for the owner's personal use. Built with **React Native + Expo
-(SDK 56), TypeScript**.
+"Plans that actually happen." Rally lets you rally your people around one-off
+plans (hangouts with RSVPs) and daily challenges (streaks with leaderboards).
+Every yes lands on everyone's calendar. Built with **React Native + Expo
+(SDK 56), TypeScript**. Implemented from the Claude Design project
+`Rally App.dc.html` (design project ccc3325c-9294-492a-bb94-8aa35ee9d8be) —
+that canvas is the source of truth for visuals and copy.
+
+> History: this repo previously held the "Insight" IG-analytics shell; it was
+> checkpoint-committed and replaced by Rally (see git log).
 
 ## Ground rules
 - Expo HAS CHANGED. Read the exact versioned docs at
   https://docs.expo.dev/versions/v56.0.0/ before writing any code.
-- **Only legitimate data.** We use Instagram's official Graph API (Business/Creator
-  account) — never private/scraped endpoints or password login (ToS violation +
-  ban risk). Metrics Instagram does not expose (ghost followers, "blocked you",
-  admirers, profile stalkers) are intentionally omitted, per the owner's choice to
-  *hide* them rather than fake them.
 - Dev happens on **Windows**; final signed iOS builds are done from the owner's
-  **MacBook** (or via Expo EAS). Keep everything buildable cross-platform.
+  **MacBook** (or via Expo EAS). Keep everything buildable cross-platform
+  (iOS + Android + web preview).
+- The design's phone-frame chrome (`ios-frame.jsx`) is mockup scaffolding —
+  never port it; real devices supply their own status bar / safe areas.
 
 ## Navigation — React Navigation (NOT Expo Router)
-This project uses **React Navigation**, configured entirely in code. Do **not**
-mix in Expo Router.
+Configured entirely in code. Do **not** mix in Expo Router.
 - Entry: `index.ts` → `registerRootComponent(App)` (NOT `expo-router/entry`).
 - There is intentionally **no `app/` directory** (that would signal Expo Router).
-- Hierarchy: a `createNativeStackNavigator` root (`Tabs` screen + `Paywall` modal)
-  wraps a `createBottomTabNavigator` (5 tabs). All defined in `App.tsx`.
-- New screens are added as `Tab.Screen`/`RootStack.Screen` in `App.tsx`, not as files
-  in an `app/` router tree.
+- Hierarchy in `App.tsx`: root native stack — `Login` (when logged out) or
+  `Tabs` + `Event` + `Challenge` + `Create` (modal). `Tabs` is a bottom-tab
+  navigator (Home / Plans / Streaks / You) with a custom floating pill tab bar
+  (`src/components/RallyTabBar.tsx`) whose center "+" opens `Create`.
 
 ## Structure
-- `App.tsx` — root stack (Tabs + Paywall modal) and the bottom tab navigator.
-- `src/theme.ts` — colors / spacing / fonts (single source of styling truth).
-- `src/data/` — `types.ts` shapes + `mockData.ts` (Phase-1 placeholder data).
-- `src/components/` — ScreenBackground, AppHeader, ProfileSummary, MetricCard, Placeholder.
-- `src/screens/` — Analytics (main dashboard), Stories, FriendsStories, Repost,
-  Settings, Paywall.
+- `App.tsx` — fonts (Young Serif + Plus Jakarta Sans), providers, navigators.
+- `src/theme.ts` — colors / category palettes / fonts / radii (single source of
+  styling truth, ported 1:1 from the design canvas).
+- `src/data/` — `types.ts` shapes + `mockData.ts` (friends, events, challenges).
+- `src/state/RallyContext.tsx` — app state: RSVP, invites, check-ins, create
+  flow (port of the design's DCLogic).
+- `src/components/` — Avatar, ProgressRing, EventRow, WeekDots, RallyTabBar,
+  SectionLabel, FadeInUp.
+- `src/screens/` — Login, Home, Plans, Challenges (Streaks), Profile (You),
+  EventDetail, ChallengeDetail, Create (3-step flow).
 
 ## Phases
-1. ✅ UI shell + dashboard with mock data (done).
-2. Instagram Graph API: OAuth login + real metrics (followers, profile views, reach,
-   impressions, per-post insights, demographics). Needs a Meta developer app.
-3. Polish: trend charts, pull-to-refresh, multi-account switching.
+1. ✅ Full UI from the design canvas with mock data + local state (done).
+2. Real accounts + backend (auth, friends, invites, push nudges).
+3. Real calendar sync (expo-calendar), photos on events, notifications.
 
 ## Preview
-`insight-web` config in `.claude/launch.json` runs `expo start --web` on port 8090
-for browser preview. On device, use Expo Go.
+`rally-web` config in `.claude/launch.json` runs `expo start --web` on port
+8090 for browser preview. On device, use Expo Go.

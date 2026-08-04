@@ -56,6 +56,12 @@
       "port": 8099
     },
     {
+      "name": "rally-web",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location 'C:\\Users\\richm\\OneDrive\\Desktop\\habit-tracker'; npx expo start --web --port 8090"],
+      "port": 8090
+    },
+    {
       "name": "uncook-web",
       "runtimeExecutable": "powershell",
       "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location 'C:\\Users\\richm\\OneDrive\\Desktop\\uncook'; npx expo start --web --port 8095"],

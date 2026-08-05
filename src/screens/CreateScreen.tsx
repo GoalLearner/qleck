@@ -5,12 +5,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
 import FadeInUp from '../components/FadeInUp';
 import SectionLabel from '../components/SectionLabel';
-import { DAY_OPTIONS, FRIENDS, PICKABLE_FRIENDS, TIME_OPTIONS } from '../data/mockData';
+import { DAY_OPTIONS, FRIENDS, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS } from '../data/mockData';
 import { Draft, FriendKey } from '../data/types';
 import { useRally } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
-const INITIAL_DRAFT: Draft = { kind: 'plan', title: '', dayIdx: 2, timeIdx: 2, place: '', aud: 'picks' };
+const INITIAL_DRAFT: Draft = {
+  kind: 'plan', title: '', dayIdx: 2, timeIdx: 2, place: '', aud: 'picks',
+  challengeKind: 'streak', targetIdx: 1, pollOptions: ['', '', ''],
+};
 
 // Mirrors the design's `hdPop` entrance (scale 0.5 → overshoot → 1).
 function PopIn({ children }: { children: React.ReactNode }) {
@@ -57,9 +60,12 @@ export default function CreateScreen() {
 
   const picked = PICKABLE_FRIENDS.filter(k => picks[k]);
   const n = picked.length;
-  const canSend = n > 0 || draft.aud === 'open';
+  const isPoll = draft.kind === 'poll';
+  const canSend = n > 0 || draft.aud === 'open' || isPoll;
 
   const set = (patch: Partial<Draft>) => setDraft(d => ({ ...d, ...patch }));
+  const setPollOption = (i: number, v: string) =>
+    setDraft(d => ({ ...d, pollOptions: d.pollOptions.map((o, idx) => (idx === i ? v : o)) }));
 
   const send = () => {
     if (!canSend) return;
@@ -68,24 +74,27 @@ export default function CreateScreen() {
   };
 
   const sentAvs: FriendKey[] = n ? picked : ['m', 's', 'n'];
-  const sendLabel = draft.aud === 'open'
-    ? (n ? `Post it + ${n} direct invite${n > 1 ? 's' : ''}` : 'Post open invite')
-    : (n ? `Send ${n} invite${n > 1 ? 's' : ''}` : 'Pick at least one');
+  const sendLabel = isPoll
+    ? 'Post the poll'
+    : draft.aud === 'open'
+      ? (n ? `Post it + ${n} direct invite${n > 1 ? 's' : ''}` : 'Post open invite')
+      : (n ? `Send ${n} invite${n > 1 ? 's' : ''}` : 'Pick at least one');
 
   const kindCard = (kind: Draft['kind'], title: string, sub: string, icon: React.ReactNode) => {
     const on = draft.kind === kind;
     return (
       <Pressable
+        key={kind}
         onPress={() => set({ kind })}
         style={{
-          flex: 1, borderRadius: radii.row, padding: 16,
+          flex: 1, borderRadius: radii.row, padding: 13,
           backgroundColor: on ? colors.card : colors.chipIdleBg,
           borderWidth: 2, borderColor: on ? colors.accent : 'transparent',
         }}
       >
         {icon}
-        <Text style={{ fontSize: 14.5, fontFamily: fonts.extrabold, marginTop: 10, color: colors.ink }}>{title}</Text>
-        <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 2 }}>{sub}</Text>
+        <Text style={{ fontSize: 13.5, fontFamily: fonts.extrabold, marginTop: 10, color: colors.ink }}>{title}</Text>
+        <Text style={{ fontSize: 10.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 2 }}>{sub}</Text>
       </Pressable>
     );
   };
@@ -100,7 +109,7 @@ export default function CreateScreen() {
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 6 }}>
           <Text style={{ fontFamily: fonts.serif, fontSize: 24, paddingLeft: 6, color: colors.ink }}>
-            {step === 1 ? 'New rally' : step === 2 ? "Who's in?" : 'Sent!'}
+            {step === 1 ? 'New plan' : step === 2 ? (isPoll ? 'Who can vote?' : "Who's in?") : 'Sent!'}
           </Text>
           <Pressable
             onPress={() => navigation.goBack()}
@@ -122,52 +131,101 @@ export default function CreateScreen() {
 
         {step === 1 && (
           <>
-            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 14 }}>
+            <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingTop: 14 }}>
               {kindCard('plan', 'A plan', 'One-off hangout', (
                 <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: '#e4e6f4', alignItems: 'center', justifyContent: 'center' }}>
                   <View style={{ width: 14, height: 14, borderRadius: 4, borderWidth: 2.5, borderColor: '#4d5680' }} />
                 </View>
               ))}
-              {kindCard('challenge', 'A challenge', 'Daily streak thing', (
+              {kindCard('challenge', 'A challenge', 'Goal with friends', (
                 <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: '#dcecdf', alignItems: 'center', justifyContent: 'center' }}>
                   <View style={{ width: 13, height: 13, borderWidth: 2.5, borderColor: '#47694f', transform: [{ rotate: '45deg' }] }} />
                 </View>
               ))}
+              {kindCard('poll', 'A poll', 'Let the group pick', (
+                <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: '#f6e5d4', alignItems: 'flex-end', justifyContent: 'center', flexDirection: 'row', gap: 3, paddingBottom: 7 }}>
+                  <View style={{ width: 4, height: 8, borderRadius: 2, backgroundColor: '#8a5f38' }} />
+                  <View style={{ width: 4, height: 14, borderRadius: 2, backgroundColor: '#8a5f38' }} />
+                  <View style={{ width: 4, height: 11, borderRadius: 2, backgroundColor: '#8a5f38' }} />
+                </View>
+              ))}
             </View>
 
-            <SectionLabel style={{ paddingTop: 20, paddingHorizontal: 22, paddingBottom: 8 }}>WHAT IS IT?</SectionLabel>
+            <SectionLabel style={{ paddingTop: 20, paddingHorizontal: 22, paddingBottom: 8 }}>
+              {isPoll ? 'THE QUESTION' : 'WHAT IS IT?'}
+            </SectionLabel>
             <View style={{ paddingHorizontal: 14 }}>
               <TextInput
                 value={draft.title}
                 onChangeText={title => set({ title })}
-                placeholder="Saturday picnic, 5k relay, taco tour…"
+                placeholder={isPoll ? 'Where to next? Tacos or sushi?' : 'Saturday picnic, 5k relay, taco tour…'}
                 placeholderTextColor={colors.tabIdle}
                 style={inputStyle}
               />
             </View>
 
-            <SectionLabel style={{ paddingTop: 18, paddingHorizontal: 22, paddingBottom: 8 }}>WHEN?</SectionLabel>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 14 }}>
-              {DAY_OPTIONS.map((l, i) => (
-                <Chip key={l} label={l} on={draft.dayIdx === i} onPress={() => set({ dayIdx: i })} />
-              ))}
-            </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 14, paddingTop: 8 }}>
-              {TIME_OPTIONS.map((l, i) => (
-                <Chip key={l} label={l} on={draft.timeIdx === i} onPress={() => set({ timeIdx: i })} />
-              ))}
-            </View>
+            {draft.kind === 'challenge' && (
+              <>
+                <SectionLabel style={{ paddingTop: 18, paddingHorizontal: 22, paddingBottom: 8 }}>WHAT COUNTS?</SectionLabel>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 14 }}>
+                  <Chip label="Daily streak" on={draft.challengeKind === 'streak'} onPress={() => set({ challengeKind: 'streak' })} />
+                  <Chip label="Team total" on={draft.challengeKind === 'team'} onPress={() => set({ challengeKind: 'team' })} />
+                </View>
+                {draft.challengeKind === 'team' && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 14, paddingTop: 8 }}>
+                    {TARGET_OPTIONS.map((t, i) => (
+                      <Chip key={t} label={`${t} km`} on={draft.targetIdx === i} onPress={() => set({ targetIdx: i })} />
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
 
-            <SectionLabel style={{ paddingTop: 18, paddingHorizontal: 22, paddingBottom: 8 }}>WHERE?</SectionLabel>
-            <View style={{ paddingHorizontal: 14 }}>
-              <TextInput
-                value={draft.place}
-                onChangeText={place => set({ place })}
-                placeholder="The park, Sam's place, anywhere…"
-                placeholderTextColor={colors.tabIdle}
-                style={inputStyle}
-              />
-            </View>
+            {isPoll ? (
+              <>
+                <SectionLabel style={{ paddingTop: 18, paddingHorizontal: 22, paddingBottom: 8 }}>THE OPTIONS</SectionLabel>
+                <View style={{ paddingHorizontal: 14, gap: 8 }}>
+                  {draft.pollOptions.map((o, i) => (
+                    <TextInput
+                      key={i}
+                      value={o}
+                      onChangeText={v => setPollOption(i, v)}
+                      placeholder={['First option', 'Second option', 'Third option (optional)'][i]}
+                      placeholderTextColor={colors.tabIdle}
+                      style={inputStyle}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : (
+              <>
+                <SectionLabel style={{ paddingTop: 18, paddingHorizontal: 22, paddingBottom: 8 }}>WHEN?</SectionLabel>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 14 }}>
+                  {DAY_OPTIONS.map((l, i) => (
+                    <Chip key={l} label={l} on={draft.dayIdx === i} onPress={() => set({ dayIdx: i })} />
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 14, paddingTop: 8 }}>
+                  {TIME_OPTIONS.map((l, i) => (
+                    <Chip key={l} label={l} on={draft.timeIdx === i} onPress={() => set({ timeIdx: i })} />
+                  ))}
+                </View>
+                {draft.kind === 'plan' && (
+                  <>
+                    <SectionLabel style={{ paddingTop: 18, paddingHorizontal: 22, paddingBottom: 8 }}>WHERE?</SectionLabel>
+                    <View style={{ paddingHorizontal: 14 }}>
+                      <TextInput
+                        value={draft.place}
+                        onChangeText={place => set({ place })}
+                        placeholder="The park, Sam's place, anywhere…"
+                        placeholderTextColor={colors.tabIdle}
+                        style={inputStyle}
+                      />
+                    </View>
+                  </>
+                )}
+              </>
+            )}
 
             <View style={{ paddingHorizontal: 14, paddingTop: 22 }}>
               <Pressable
@@ -195,16 +253,18 @@ export default function CreateScreen() {
                     }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: fonts.extrabold, color: on ? colors.cream : colors.faintText }}>
-                      {aud === 'picks' ? 'My picks' : 'Anyone on Rally'}
+                      {aud === 'picks' ? 'My picks' : 'Anyone on Qleck'}
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
             <Text style={{ paddingHorizontal: 22, paddingVertical: 12, fontSize: 13, fontFamily: fonts.semibold, color: colors.muted }}>
-              {draft.aud === 'open'
-                ? 'Anyone on Rally can see and join this. Tap friends to also invite them directly.'
-                : 'Tap everyone you want in on this.'}
+              {isPoll
+                ? (draft.aud === 'open' ? 'Anyone on Qleck can vote. Tap friends to nudge them directly.' : 'Tap everyone whose vote you want.')
+                : draft.aud === 'open'
+                  ? 'Anyone on Qleck can see and join this. Tap friends to also invite them directly.'
+                  : 'Tap everyone you want in on this.'}
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 14 }}>
               {PICKABLE_FRIENDS.map(k => {
@@ -257,11 +317,15 @@ export default function CreateScreen() {
                 ))}
               </View>
             </PopIn>
-            <Text style={{ fontFamily: fonts.serif, fontSize: 26, marginTop: 20, color: colors.ink }}>Invites are out.</Text>
+            <Text style={{ fontFamily: fonts.serif, fontSize: 26, marginTop: 20, color: colors.ink }}>
+              {isPoll ? 'Poll is live.' : 'Invites are out.'}
+            </Text>
             <Text style={{ fontSize: 13.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 8, lineHeight: 20, textAlign: 'center' }}>
-              {draft.aud === 'open'
-                ? "It's live for everyone on Rally. Every yes lands straight on their calendar."
-                : "We'll nudge you as the yeses roll in. Every yes lands on their calendar."}
+              {isPoll
+                ? 'Votes roll in on your home screen — majority rules, no take-backs. (Okay, some take-backs.)'
+                : draft.aud === 'open'
+                  ? "It's live for everyone on Qleck. Every yes lands straight on their calendar."
+                  : "We'll nudge you as the yeses roll in. Every yes lands on their calendar."}
             </Text>
             <View
               style={{
@@ -270,11 +334,13 @@ export default function CreateScreen() {
               }}
             >
               <Text style={{ fontSize: 13, fontFamily: fonts.extrabold, color: colors.accentLink }}>
-                {(draft.title.trim() || 'Your rally')} · {DAY_OPTIONS[draft.dayIdx]} · {TIME_OPTIONS[draft.timeIdx]}
+                {isPoll
+                  ? `${draft.title.trim() || 'Your poll'} · ${draft.pollOptions.filter(o => o.trim()).length} options`
+                  : `${draft.title.trim() || 'Your plan'} · ${DAY_OPTIONS[draft.dayIdx]} · ${TIME_OPTIONS[draft.timeIdx]}`}
               </Text>
             </View>
             <Pressable
-              onPress={() => navigation.goBack()}
+              onPress={() => navigation.navigate('Tabs', { screen: 'Home' })}
               style={{ marginTop: 26, alignSelf: 'stretch', height: 52, borderRadius: radii.pill, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center' }}
             >
               <Text style={{ color: colors.cream, fontSize: 14.5, fontFamily: fonts.extrabold }}>Back to home</Text>

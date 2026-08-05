@@ -1,6 +1,9 @@
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Avatar from '../components/Avatar';
+import { FRIENDS, PICKABLE_FRIENDS } from '../data/mockData';
 import FadeInUp from '../components/FadeInUp';
 import SectionLabel from '../components/SectionLabel';
 import { useRally } from '../state/RallyContext';
@@ -34,9 +37,11 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { userName, challenges } = useRally();
+  const { userName, challenges, following } = useRally();
   const bestStreak = Math.max(...challenges.map(c => c.streak));
+  const followedCount = Object.values(following).filter(Boolean).length;
 
   return (
     <FadeInUp style={{ flex: 1 }}>
@@ -86,6 +91,29 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
             </View>
           ))}
         </View>
+
+        <SectionLabel>FRIENDS</SectionLabel>
+        <Card>
+          <Pressable
+            onPress={() => navigation.navigate('Friends')}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 15, paddingHorizontal: 16 }}
+          >
+            <View style={{ flexDirection: 'row' }}>
+              {PICKABLE_FRIENDS.slice(0, 4).map(k => (
+                <Avatar key={k} friend={FRIENDS[k]} size={30} fontSize={11} ringColor={colors.card} style={{ marginRight: -8 }} />
+              ))}
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={{ fontSize: 14.5, fontFamily: fonts.extrabold, color: colors.ink }}>
+                Following {followedCount} people
+              </Text>
+              <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 2 }}>
+                Find friends, see their plans and streaks
+              </Text>
+            </View>
+            <Text style={{ fontSize: 16, color: colors.chevron }}>›</Text>
+          </Pressable>
+        </Card>
 
         <SectionLabel>YOUR CREWS</SectionLabel>
         <Card>

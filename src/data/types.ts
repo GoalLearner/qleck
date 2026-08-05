@@ -1,7 +1,8 @@
 import { CatKey } from '../theme';
 
-// One of the mock friends (keyed by a short letter id, e.g. 'm' for Maya).
-export type FriendKey = 'm' | 'j' | 'p' | 's' | 'l' | 'n' | 'd';
+// One of the mock people (keyed by a short letter id, e.g. 'm' for Maya).
+// 'd' = you; 'o'/'t'/'r' are suggested users you don't follow yet.
+export type FriendKey = 'm' | 'j' | 'p' | 's' | 'l' | 'n' | 'd' | 'o' | 't' | 'r';
 
 export interface Friend {
   i: string; // avatar initial
@@ -29,17 +30,47 @@ export interface RallyEvent {
   hosting: boolean;
 }
 
+export type ChallengeKind = 'streak' | 'team';
+
 export interface Challenge {
   id: string;
+  kind: ChallengeKind;
   title: string;
   sub: string;
+  // streak kind
   streak: number;
   done: boolean; // checked in today
   week: number[]; // Mon..Sun, 1 = checked in
   board: [FriendKey, number][]; // leaderboard: (friend, check-ins this month)
+  // team kind
+  unit?: string; // e.g. 'km'
+  target?: number; // shared total to hit
+  contributions?: [FriendKey, number][];
 }
 
-export type CreateKind = 'plan' | 'challenge';
+export interface PollOption {
+  label: string;
+  votes: FriendKey[];
+}
+
+export interface Poll {
+  id: string;
+  question: string;
+  by: FriendKey;
+  group: string; // e.g. 'Runday crew'
+  options: PollOption[];
+  myVote: number | null;
+}
+
+export interface Achievement {
+  id: string;
+  who: FriendKey;
+  text: string; // e.g. 'hit a 14-day streak on 10k steps'
+  cheers: FriendKey[]; // friends who already cheered
+  cheeredByMe: boolean;
+}
+
+export type CreateKind = 'plan' | 'challenge' | 'poll';
 export type Audience = 'picks' | 'open';
 
 export interface Draft {
@@ -49,4 +80,9 @@ export interface Draft {
   timeIdx: number;
   place: string;
   aud: Audience;
+  // challenge extras
+  challengeKind: ChallengeKind;
+  targetIdx: number; // index into TARGET_OPTIONS
+  // poll extras
+  pollOptions: string[];
 }

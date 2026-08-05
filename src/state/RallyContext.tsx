@@ -1,14 +1,19 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import {
-  DAYMAP, DAY_OPTIONS, DUMPLING, INITIAL_CHALLENGES, INITIAL_EVENTS, JOG, TIME_OPTIONS,
+  DAYMAP, DAY_OPTIONS, DUMPLING, INITIAL_ACHIEVEMENTS, INITIAL_CHALLENGES, INITIAL_EVENTS,
+  INITIAL_POLLS, JOG, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS,
 } from '../data/mockData';
-import { Challenge, Draft, FriendKey, RallyEvent, RsvpStatus } from '../data/types';
+import { Achievement, Challenge, Draft, FriendKey, Poll, RallyEvent, RsvpStatus } from '../data/types';
 
-// Ported from the design canvas' DCLogic state machine.
+// The demo's in-memory state machine (originally ported from the design
+// canvas' DCLogic; extended with follow/polls/cheers/team challenges).
 interface RallyState {
   userName: string;
   events: RallyEvent[];
   challenges: Challenge[];
+  polls: Poll[];
+  achievements: Achievement[];
+  following: Record<string, boolean>;
   inviteState: 'yes' | 'no' | null; // Leo's dumpling-crawl invite
   jogState: 'joined' | null; // Priya's open jog invite
   lastSent: { avKeys: FriendKey[]; draft: Draft } | null;
@@ -17,6 +22,10 @@ interface RallyState {
   respondInvite: (accept: boolean) => void;
   joinJog: () => void;
   sendRally: (draft: Draft, picked: FriendKey[]) => void;
+  toggleFollow: (key: FriendKey) => void;
+  vote: (pollId: string, optionIdx: number) => void;
+  cheer: (achievementId: string) => void;
+  logTeamProgress: (challengeId: string, amount: number) => void;
 }
 
 const RallyContext = createContext<RallyState | null>(null);
@@ -24,6 +33,10 @@ const RallyContext = createContext<RallyState | null>(null);
 export function RallyProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = useState<RallyEvent[]>(INITIAL_EVENTS);
   const [challenges, setChallenges] = useState<Challenge[]>(INITIAL_CHALLENGES);
+  const [polls, setPolls] = useState<Poll[]>(INITIAL_POLLS);
+  const [achievements, setAchievements] = useState<Achievement[]>(INITIAL_ACHIEVEMENTS);
+  const [following, setFollowing] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(PICKABLE_FRIENDS.map(k => [k, true])));
   const [inviteState, setInviteState] = useState<'yes' | 'no' | null>(null);
   const [jogState, setJogState] = useState<'joined' | null>(null);
   const [lastSent, setLastSent] = useState<RallyState['lastSent']>(null);
@@ -51,24 +64,81 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     setEvents(evs => (evs.find(e => e.id === JOG.id) ? evs : [...evs, JOG]));
   }, []);
 
+  const toggleFollow = useCallback((key: FriendKey) => {
+    setFollowing(f => ({ ...f, [key]: !f[key] }));
+  }, []);
+
+  const vote = useCallback((pollId: string, optionIdx: number) => {
+    setPolls(ps => ps.map(p => {
+      if (p.id !== pollId) return p;
+      const options = p.options.map((o, i) => ({
+        ...o,
+        votes: i === optionIdx
+          ? (o.votes.includes('d') ? o.votes : [...o.votes, 'd' as FriendKey])
+          : o.votes.filter(k => k !== 'd'),
+      }));
+      return { ...p, options, myVote: optionIdx };
+    }));
+  }, []);
+
+  const cheer = useCallback((achievementId: string) => {
+    setAchievements(as => as.map(a =>
+      a.id === achievementId && !a.cheeredByMe
+        ? { ...a, cheeredByMe: true, cheers: [...a.cheers, 'd' as FriendKey] }
+        : a));
+  }, []);
+
+  const logTeamProgress = useCallback((challengeId: string, amount: number) => {
+    setChallenges(chs => chs.map(c => {
+      if (c.id !== challengeId || c.kind !== 'team' || !c.contributions) return c;
+      const has = c.contributions.some(([k]) => k === 'd');
+      const contributions: [FriendKey, number][] = has
+        ? c.contributions.map(([k, v]) => (k === 'd' ? [k, +(v + amount).toFixed(1)] : [k, v]))
+        : [...c.contributions, ['d', amount]];
+      return { ...c, contributions };
+    }));
+  }, []);
+
   const sendRally = useCallback((draft: Draft, picked: FriendKey[]) => {
+    if (draft.kind === 'poll') {
+      const filled = draft.pollOptions.map(o => o.trim()).filter(Boolean);
+      const q: Poll = {
+        id: 'nq' + Date.now(),
+        question: draft.title.trim() || 'Quick poll',
+        by: 'd', group: draft.aud === 'open' ? 'Everyone invited' : 'Your picks',
+        options: (filled.length >= 2 ? filled : ['Yes', 'No']).map(label => ({ label, votes: [] })),
+        myVote: null,
+      };
+      setPolls(ps => [q, ...ps]);
+      setLastSent({ avKeys: picked, draft });
+      return;
+    }
     const dayL = DAY_OPTIONS[draft.dayIdx];
     const timeL = TIME_OPTIONS[draft.timeIdx];
     const dm = DAYMAP[dayL];
-    const title = draft.title.trim() || 'New rally';
+    const title = draft.title.trim() || 'New plan';
     if (draft.kind === 'plan') {
       const ne: RallyEvent = {
         id: 'ne' + Date.now(), title, day: dm[0], num: dm[1], ord: dm[2],
         time: `${dayL} · ${timeL}`, place: draft.place.trim() || 'Place TBD', hk: 'd',
         note: draft.aud === 'open'
-          ? 'Open invite — anyone on Rally can join.'
+          ? 'Open invite — anyone on Qleck can join.'
           : 'You made this. Legend.',
         cat: 'rose', status: 'going', att: picked, hosting: true,
       };
       setEvents(evs => [...evs, ne]);
+    } else if (draft.challengeKind === 'team') {
+      const nc: Challenge = {
+        id: 'nc' + Date.now(), kind: 'team', title,
+        sub: `${picked.length + 1} friends · just started`,
+        streak: 0, done: false, week: [0, 0, 0, 0, 0, 0, 0], board: [],
+        unit: 'km', target: TARGET_OPTIONS[draft.targetIdx],
+        contributions: [['d', 0], ...picked.map(k => [k, 0] as [FriendKey, number])],
+      };
+      setChallenges(chs => [...chs, nc]);
     } else {
       const nc: Challenge = {
-        id: 'nc' + Date.now(), title,
+        id: 'nc' + Date.now(), kind: 'streak', title,
         sub: `${picked.length + 1} friends · just started`,
         streak: 0, done: false, week: [0, 0, 0, 0, 0, 0, 0],
         board: [['d', 0], ...picked.map(k => [k, 0] as [FriendKey, number])],
@@ -80,9 +150,10 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<RallyState>(() => ({
     userName: 'Dana',
-    events, challenges, inviteState, jogState, lastSent,
-    setRsvp, checkIn, respondInvite, joinJog, sendRally,
-  }), [events, challenges, inviteState, jogState, lastSent, setRsvp, checkIn, respondInvite, joinJog, sendRally]);
+    events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
+    setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
+  }), [events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
+    setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 
   return <RallyContext.Provider value={value}>{children}</RallyContext.Provider>;
 }
@@ -114,4 +185,8 @@ export function statusPill(e: RallyEvent): { t: string; bg: string; fg: string }
 
 export function weekProgress(ch: Challenge): number {
   return ch.week.reduce((a, b) => a + b, 0) / 7;
+}
+
+export function teamTotal(ch: Challenge): number {
+  return +(ch.contributions ?? []).reduce((a, [, v]) => a + v, 0).toFixed(1);
 }

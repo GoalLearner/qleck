@@ -2,19 +2,21 @@ import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AchievementCard from '../components/AchievementCard';
 import Avatar from '../components/Avatar';
 import EventRow from '../components/EventRow';
 import FadeInUp from '../components/FadeInUp';
+import PollCard from '../components/PollCard';
 import ProgressRing from '../components/ProgressRing';
 import SectionLabel from '../components/SectionLabel';
 import { FRIENDS } from '../data/mockData';
-import { nextUp, sortedEvents, useRally, weekProgress } from '../state/RallyContext';
+import { nextUp, sortedEvents, teamTotal, useRally, weekProgress } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { userName, events, challenges, inviteState, jogState, respondInvite, joinJog, checkIn } = useRally();
+  const { userName, events, challenges, polls, achievements, inviteState, jogState, respondInvite, joinJog, checkIn } = useRally();
 
   const evs = sortedEvents(events);
   const next = nextUp(events);
@@ -67,14 +69,17 @@ export default function HomeScreen() {
                 <Text style={{ color: colors.creamText, fontSize: 18 }}>›</Text>
               </View>
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
+            <Pressable
+              onPress={() => navigation.navigate('Friends')}
+              style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}
+            >
               {nextAvs.map(k => (
                 <Avatar key={k} friend={FRIENDS[k]} size={28} fontSize={10.5} ringColor={colors.navy} style={{ marginRight: -7 }} />
               ))}
               <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: 'rgba(245,242,234,0.55)', marginLeft: 14 }}>
                 {nextNames}{others > 0 ? ` + ${others} are in` : ' are in'}
               </Text>
-            </View>
+            </Pressable>
           </Pressable>
         )}
 
@@ -160,6 +165,18 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/* Group polls */}
+        {polls.length > 0 && (
+          <>
+            <SectionLabel>GROUP POLL</SectionLabel>
+            <View style={{ gap: 10 }}>
+              {polls.slice(0, 2).map(p => (
+                <PollCard key={p.id} poll={p} />
+              ))}
+            </View>
+          </>
+        )}
+
         {/* This week */}
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 24, paddingBottom: 12 }}>
           <Text style={{ fontFamily: fonts.serif, fontSize: 19, color: colors.ink }}>This week</Text>
@@ -182,6 +199,9 @@ export default function HomeScreen() {
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 14, paddingBottom: 6 }}>
           {challenges.map(ch => {
+            const isTeam = ch.kind === 'team';
+            const total = isTeam ? teamTotal(ch) : 0;
+            const reached = isTeam && ch.target != null && total >= ch.target;
             const doneCt = ch.week.reduce((a, b) => a + b, 0);
             return (
               <View
@@ -192,14 +212,32 @@ export default function HomeScreen() {
                   shadowColor: '#232a38', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
                 }}
               >
-                <ProgressRing size={56} radius={18} strokeWidth={7} progress={weekProgress(ch)}>
-                  <Text style={{ fontFamily: fonts.serif, fontSize: 17, color: colors.ink }}>{ch.streak}</Text>
+                <ProgressRing
+                  size={56} radius={18} strokeWidth={7}
+                  progress={isTeam ? total / (ch.target || 1) : weekProgress(ch)}
+                >
+                  <Text style={{ fontFamily: fonts.serif, fontSize: isTeam ? 14 : 17, color: colors.ink }}>
+                    {isTeam ? Math.round(total) : ch.streak}
+                  </Text>
                 </ProgressRing>
                 <Text style={{ fontSize: 13.5, fontFamily: fonts.extrabold, marginTop: 10, lineHeight: 17.5, color: colors.ink }}>{ch.title}</Text>
                 <Text style={{ fontSize: 11, fontFamily: fonts.semibold, color: colors.muted, marginTop: 2 }}>
-                  day streak · {doneCt}/7 this week
+                  {isTeam ? `${total} of ${ch.target} ${ch.unit} · together` : `day streak · ${doneCt}/7 this week`}
                 </Text>
-                {ch.done ? (
+                {isTeam ? (
+                  reached ? (
+                    <View style={{ height: 34, borderRadius: radii.pill, backgroundColor: colors.successBg, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}>
+                      <Text style={{ color: colors.successFg, fontSize: 12, fontFamily: fonts.extrabold }}>Goal reached 🎉</Text>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => navigation.navigate('Challenge', { id: ch.id })}
+                      style={{ height: 34, borderRadius: radii.pill, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}
+                    >
+                      <Text style={{ color: colors.cream, fontSize: 12, fontFamily: fonts.extrabold }}>Log progress</Text>
+                    </Pressable>
+                  )
+                ) : ch.done ? (
                   <View style={{ height: 34, borderRadius: radii.pill, backgroundColor: colors.successBg, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}>
                     <Text style={{ color: colors.successFg, fontSize: 12, fontFamily: fonts.extrabold }}>Done today</Text>
                   </View>
@@ -215,6 +253,18 @@ export default function HomeScreen() {
             );
           })}
         </ScrollView>
+
+        {/* Cheer achievements */}
+        {achievements.length > 0 && (
+          <>
+            <SectionLabel>CHEER THEM ON</SectionLabel>
+            <View style={{ gap: 10 }}>
+              {achievements.map(a => (
+                <AchievementCard key={a.id} achievement={a} />
+              ))}
+            </View>
+          </>
+        )}
       </ScrollView>
     </FadeInUp>
   );

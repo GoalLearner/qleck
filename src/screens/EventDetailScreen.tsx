@@ -77,9 +77,9 @@ export default function EventDetailScreen() {
   const onCal = event.status === 'going' || event.hosting;
 
   const attFull = [
-    { ...host, name: event.hk === 'd' ? 'You' : host.name, sub: 'Host' },
-    ...event.att.filter(k => k !== event.hk).map(k => ({ ...FRIENDS[k], sub: 'Going' })),
-    ...(event.status === 'going' && !event.hosting ? [{ ...FRIENDS.d, name: 'You', sub: 'Going' }] : []),
+    { key: event.hk, ...host, name: event.hk === 'd' ? 'You' : host.name, sub: 'Host' },
+    ...event.att.filter(k => k !== event.hk).map(k => ({ key: k, ...FRIENDS[k], sub: 'Going' })),
+    ...(event.status === 'going' && !event.hosting ? [{ key: 'd' as const, ...FRIENDS.d, name: 'You', sub: 'Going' }] : []),
   ];
 
   const seg = (label: string, value: RsvpStatus) => {
@@ -152,11 +152,16 @@ export default function EventDetailScreen() {
         </Text>
         <View style={{ flexDirection: 'row', gap: 14, paddingHorizontal: 20, flexWrap: 'wrap' }}>
           {attFull.map((a, i) => (
-            <View key={`${a.i}-${i}`} style={{ alignItems: 'center', width: 56 }}>
+            <Pressable
+              key={`${a.i}-${i}`}
+              disabled={a.name === 'You'}
+              onPress={() => navigation.navigate('Friend', { key: a.key })}
+              style={{ alignItems: 'center', width: 56 }}
+            >
               <Avatar friend={a} size={46} fontSize={15} />
               <Text style={{ fontSize: 11, fontFamily: fonts.bold, marginTop: 5, color: colors.ink }}>{a.name}</Text>
               <Text style={{ fontSize: 9.5, fontFamily: fonts.semibold, color: colors.tabIdle }}>{a.sub}</Text>
-            </View>
+            </Pressable>
           ))}
         </View>
 

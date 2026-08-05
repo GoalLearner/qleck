@@ -38,7 +38,7 @@ export default function PlansScreen() {
               borderColor: colors.dashed, alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <Text style={{ color: colors.muted, fontSize: 13.5, fontFamily: fonts.extrabold }}>+ New rally</Text>
+            <Text style={{ color: colors.muted, fontSize: 13.5, fontFamily: fonts.extrabold }}>+ New plan</Text>
           </Pressable>
         </View>
       </ScrollView>

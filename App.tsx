@@ -20,6 +20,8 @@ import ChallengeDetailScreen from './src/screens/ChallengeDetailScreen';
 import ChallengesScreen from './src/screens/ChallengesScreen';
 import CreateScreen from './src/screens/CreateScreen';
 import EventDetailScreen from './src/screens/EventDetailScreen';
+import FriendProfileScreen from './src/screens/FriendProfileScreen';
+import FriendsScreen from './src/screens/FriendsScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import PlansScreen from './src/screens/PlansScreen';
@@ -83,6 +85,8 @@ export default function App() {
                 </RootStack.Screen>
                 <RootStack.Screen name="Event" component={EventDetailScreen} />
                 <RootStack.Screen name="Challenge" component={ChallengeDetailScreen} />
+                <RootStack.Screen name="Friends" component={FriendsScreen} />
+                <RootStack.Screen name="Friend" component={FriendProfileScreen} />
                 <RootStack.Screen name="Create" component={CreateScreen} options={{ presentation: 'modal' }} />
               </>
             )}

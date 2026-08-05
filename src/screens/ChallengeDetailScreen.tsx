@@ -7,16 +7,21 @@ import FadeInUp from '../components/FadeInUp';
 import ProgressRing from '../components/ProgressRing';
 import WeekDots from '../components/WeekDots';
 import { FRIENDS } from '../data/mockData';
-import { useRally, weekProgress } from '../state/RallyContext';
+import { teamTotal, useRally, weekProgress } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
 export default function ChallengeDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { challenges, checkIn } = useRally();
+  const { challenges, checkIn, logTeamProgress } = useRally();
 
   const ch = challenges.find(c => c.id === route.params?.id) ?? challenges[0];
+  const isTeam = ch.kind === 'team';
+  const total = isTeam ? teamTotal(ch) : 0;
+  const reached = isTeam && ch.target != null && total >= ch.target;
+  const contributions = [...(ch.contributions ?? [])].sort((a, b) => b[1] - a[1]);
+  const maxContribution = Math.max(...contributions.map(([, v]) => v), 1);
 
   return (
     <FadeInUp style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -43,18 +48,54 @@ export default function ChallengeDetailScreen() {
         </View>
 
         <View style={{ alignItems: 'center', marginTop: 18 }}>
-          <ProgressRing size={150} radius={60} strokeWidth={12} progress={weekProgress(ch)}>
-            <Text style={{ fontFamily: fonts.serif, fontSize: 44, lineHeight: 48, color: colors.ink }}>{ch.streak}</Text>
-            <Text style={{ fontSize: 11, fontFamily: fonts.bold, color: colors.muted, marginTop: 2 }}>day streak</Text>
+          <ProgressRing
+            size={150} radius={60} strokeWidth={12}
+            progress={isTeam ? total / (ch.target || 1) : weekProgress(ch)}
+          >
+            {isTeam ? (
+              <>
+                <Text style={{ fontFamily: fonts.serif, fontSize: 34, lineHeight: 38, color: colors.ink }}>{total}</Text>
+                <Text style={{ fontSize: 11, fontFamily: fonts.bold, color: colors.muted, marginTop: 2 }}>
+                  of {ch.target} {ch.unit}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontFamily: fonts.serif, fontSize: 44, lineHeight: 48, color: colors.ink }}>{ch.streak}</Text>
+                <Text style={{ fontSize: 11, fontFamily: fonts.bold, color: colors.muted, marginTop: 2 }}>day streak</Text>
+              </>
+            )}
           </ProgressRing>
         </View>
 
-        <View style={{ alignItems: 'center', marginTop: 16 }}>
-          <WeekDots challenge={ch} size={32} gap={8} />
-        </View>
+        {!isTeam && (
+          <View style={{ alignItems: 'center', marginTop: 16 }}>
+            <WeekDots challenge={ch} size={32} gap={8} />
+          </View>
+        )}
 
         <View style={{ marginTop: 18, marginHorizontal: 14 }}>
-          {ch.done ? (
+          {isTeam ? (
+            reached ? (
+              <View style={{ height: 50, borderRadius: radii.pill, backgroundColor: colors.successBg, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: colors.successFg, fontSize: 14, fontFamily: fonts.extrabold }}>
+                  Goal reached — {ch.target} {ch.unit} together 🎉
+                </Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[1, 2.5, 5].map(amt => (
+                  <Pressable
+                    key={amt}
+                    onPress={() => logTeamProgress(ch.id, amt)}
+                    style={{ flex: 1, height: 50, borderRadius: radii.pill, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{ color: colors.cream, fontSize: 13.5, fontFamily: fonts.extrabold }}>+{amt} {ch.unit}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )
+          ) : ch.done ? (
             <View style={{ height: 50, borderRadius: radii.pill, backgroundColor: colors.successBg, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: colors.successFg, fontSize: 14, fontFamily: fonts.extrabold }}>
                 Done today — see you tomorrow
@@ -71,8 +112,12 @@ export default function ChallengeDetailScreen() {
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 22, paddingBottom: 10 }}>
-          <Text style={{ fontFamily: fonts.serif, fontSize: 17, color: colors.ink }}>Leaderboard</Text>
-          <Text style={{ fontSize: 10.5, fontFamily: fonts.bold, color: colors.sectionLabel }}>check-ins this month</Text>
+          <Text style={{ fontFamily: fonts.serif, fontSize: 17, color: colors.ink }}>
+            {isTeam ? 'Contributions' : 'Leaderboard'}
+          </Text>
+          <Text style={{ fontSize: 10.5, fontFamily: fonts.bold, color: colors.sectionLabel }}>
+            {isTeam ? `every ${ch.unit} counts` : 'check-ins this month'}
+          </Text>
         </View>
         <View
           style={{
@@ -81,7 +126,7 @@ export default function ChallengeDetailScreen() {
             shadowColor: '#232a38', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
           }}
         >
-          {ch.board.map(([k, pts], idx) => {
+          {(isTeam ? contributions : ch.board).map(([k, pts], idx) => {
             const f = FRIENDS[k];
             const isYou = k === 'd';
             return (
@@ -94,10 +139,24 @@ export default function ChallengeDetailScreen() {
               >
                 <Text style={{ fontFamily: fonts.serif, fontSize: 15, width: 20, color: colors.sectionLabel }}>{idx + 1}</Text>
                 <Avatar friend={f} size={34} fontSize={12} />
-                <Text style={{ flex: 1, fontSize: 14, fontFamily: fonts.extrabold, color: colors.ink }}>
-                  {isYou ? 'You' : f.name}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontFamily: fonts.extrabold, color: colors.ink }}>
+                    {isYou ? 'You' : f.name}
+                  </Text>
+                  {isTeam && (
+                    <View style={{ height: 5, borderRadius: 3, backgroundColor: colors.ringTrack, marginTop: 6, overflow: 'hidden' }}>
+                      <View
+                        style={{
+                          height: 5, borderRadius: 3, backgroundColor: colors.accent,
+                          width: `${Math.round((pts / maxContribution) * 100)}%`,
+                        }}
+                      />
+                    </View>
+                  )}
+                </View>
+                <Text style={{ fontFamily: fonts.serif, fontSize: 16, color: colors.ink }}>
+                  {isTeam ? `${pts} ${ch.unit}` : pts}
                 </Text>
-                <Text style={{ fontFamily: fonts.serif, fontSize: 16, color: colors.ink }}>{pts}</Text>
               </View>
             );
           })}
@@ -109,7 +168,9 @@ export default function ChallengeDetailScreen() {
             color: colors.sectionLabel, lineHeight: 19.5, textAlign: 'center',
           }}
         >
-          One check-in a day keeps the streak alive. Miss a day and it's back to zero. Honor system — we trust you. Mostly.
+          {isTeam
+            ? "One goal, everyone's effort counts. Log what you did — no step counter needed yet, we trust your math. Mostly."
+            : 'One check-in a day keeps the streak alive. Miss a day and it\'s back to zero. Honor system — we trust you. Mostly.'}
         </Text>
       </ScrollView>
     </FadeInUp>

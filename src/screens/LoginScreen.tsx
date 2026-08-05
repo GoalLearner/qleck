@@ -42,7 +42,7 @@ export default function LoginScreen({ onLogin }: { onLogin: () => void }) {
           <View style={{ position: 'absolute', left: 28, top: 6, width: 44, height: 44, borderRadius: 22, backgroundColor: '#dcecdf', borderWidth: 3, borderColor: colors.loginNavy }} />
           <View style={{ position: 'absolute', left: 56, top: 0, width: 44, height: 44, borderRadius: 22, backgroundColor: '#f6e5d4', borderWidth: 3, borderColor: colors.loginNavy }} />
         </View>
-        <Text style={{ fontFamily: fonts.serif, fontSize: 48, color: CREAM, letterSpacing: -1, lineHeight: 50 }}>rally</Text>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 48, color: CREAM, letterSpacing: -1, lineHeight: 50 }}>qleck</Text>
         <Text style={{ fontFamily: fonts.serif, fontSize: 17, color: 'rgba(245,242,234,0.72)', marginTop: 12 }}>
           Plans that actually happen.
         </Text>

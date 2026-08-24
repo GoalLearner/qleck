@@ -90,7 +90,10 @@ export default function RallyTabBar({ state, navigation }: BottomTabBarProps) {
         ...(Platform.OS === 'android' ? { elevation: 12 } : null),
       }}
     >
-      {state.routes.slice(0, 2).map((r, i) => tab(r, i))}
+      {/* balanced flex halves keep the "+" dead-center regardless of tab count */}
+      <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-evenly' }}>
+        {state.routes.slice(0, 2).map((r, i) => tab(r, i))}
+      </View>
       <Pressable
         onPress={() => navigation.getParent()?.navigate('NewGoal' as never)}
         style={{
@@ -102,7 +105,9 @@ export default function RallyTabBar({ state, navigation }: BottomTabBarProps) {
       >
         <Text style={{ color: colors.cream, fontSize: 22, fontFamily: fonts.semibold, marginTop: -2 }}>+</Text>
       </Pressable>
-      {state.routes.slice(2).map((r, i) => tab(r, i + 2))}
+      <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-evenly' }}>
+        {state.routes.slice(2).map((r, i) => tab(r, i + 2))}
+      </View>
     </View>
   );
 }

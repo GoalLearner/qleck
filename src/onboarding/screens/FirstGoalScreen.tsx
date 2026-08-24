@@ -174,7 +174,7 @@ function ProtocolBody({ protocol }: { protocol: Protocol }) {
 
 /* ── thinking ───────────────────────────────────────────────────────────── */
 
-function ThinkingView({ building }: { building: boolean }) {
+function ThinkingView({ building, onDismiss, dismissLabel }: { building: boolean; onDismiss: () => void; dismissLabel: string }) {
   const [idx, setIdx] = useState(building ? 2 : 0);
   useEffect(() => {
     if (building) return;
@@ -279,7 +279,10 @@ function UserBubble({ text }: { text: string }) {
   );
 }
 
-function ChatThread({ coach, answer, setAnswer }: { coach: CoachFlow; answer: string; setAnswer: (v: string) => void }) {
+function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
+  coach: CoachFlow; answer: string; setAnswer: (v: string) => void;
+  onDismiss: () => void; dismissLabel: string;
+}) {
   const scrollRef = useRef<ScrollView>(null);
   const thinking = coach.phase === 'thinking';
   const send = (text: string) => {
@@ -499,12 +502,12 @@ export default function FirstGoalScreen({
 
   /* thinking / building — full-screen orb only outside the conversation */
   if (coach.phase === 'building' || (coach.phase === 'thinking' && coach.qa.length === 0)) {
-    return <ThinkingView building={coach.phase === 'building'} />;
+    return <ThinkingView building={coach.phase === 'building'} onDismiss={onDismiss} dismissLabel={dismissLabel} />;
   }
 
   /* clarify conversation — chat thread (canvas section 2) */
   if ((coach.phase === 'question' || coach.phase === 'thinking') && coach.qa.length > 0) {
-    return <ChatThread coach={coach} answer={answer} setAnswer={setAnswer} />;
+    return <ChatThread coach={coach} answer={answer} setAnswer={setAnswer} onDismiss={onDismiss} dismissLabel={dismissLabel} />;
   }
 
   /* verdict — feasible */

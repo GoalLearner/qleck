@@ -6,6 +6,25 @@ import { Text, View } from 'react-native';
 import type { Protocol, ProtocolStep } from '../api/coachTypes';
 import { CATS, colors, fonts, radii } from '../theme';
 
+/**
+ * The goal as a label, not a sentence (owner call 2026-08-24: "just the goal
+ * name, not all the extra stuff"). Full statements stay on the Goals tab;
+ * lists get this: parentheticals, method clauses ("using…", "by…") and
+ * from/to detail dropped, "over the next N weeks" tightened to "in N weeks".
+ *   "Quit smoking (currently half a pack a day) using a structured taper"
+ *     → "Quit smoking"
+ *   "Lose 10 lbs (about 4.5 kg) over the next 12 weeks"
+ *     → "Lose 10 lbs in 12 weeks"
+ */
+export function shortGoalName(statement: string): string {
+  let s = statement.replace(/\s*\([^)]*\)/g, '');
+  s = s.split(/\s+(?:using|with|via|through|by)\s+/i)[0];
+  s = s.split(/\s+from\s+/i)[0];
+  s = s.replace(/\s+over the next\s+/i, ' in ');
+  s = s.replace(/,\s.*$/, '');
+  return s.trim() || statement;
+}
+
 export function kindLook(kind: ProtocolStep['kind']) {
   if (kind === 'duration') return { glyph: 'D', bg: colors.openBg, fg: colors.accentLink };
   if (kind === 'quantity') return { glyph: '#', bg: CATS.lav.bg, fg: CATS.lav.fg };

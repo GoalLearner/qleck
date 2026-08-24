@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import SectionLabel from '../components/SectionLabel';
 import YouAvatar from '../components/YouAvatar';
+import { shortGoalName } from '../components/protocolViews';
 import { useRally } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
@@ -66,7 +67,7 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
                 }}
               >
                 <Text style={{ fontSize: 14.5, fontFamily: fonts.extrabold, color: colors.ink }}>
-                  {goal.statement}
+                  {shortGoalName(goal.statement)}
                 </Text>
                 <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 3 }}>
                   {goal.durationWeeks} weeks · coached by Qoach

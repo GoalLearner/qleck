@@ -20,6 +20,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
+import { shortGoalName } from '../components/protocolViews';
 import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
 import type { ProtocolPhase } from '../api/coachTypes';
@@ -313,6 +314,8 @@ function nextMilestoneOf(g: GoalToday) {
 
 /* ── goal group header (shared by both layouts) ─────────────────────────── */
 
+// Just the goal name and the count — no phase, no method detail (owner call
+// 2026-08-24: less information, keep it simple; the Goals tab holds the rest).
 function GroupHeader({ g, open, onToggle }: { g: GoalToday; open: boolean; onToggle: () => void }) {
   return (
     <Pressable
@@ -321,9 +324,8 @@ function GroupHeader({ g, open, onToggle }: { g: GoalToday; open: boolean; onTog
     >
       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: g.dot }} />
       <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: INK }}>
-        {g.goal.statement.toUpperCase()}
+        {shortGoalName(g.goal.statement).toUpperCase()}
       </Text>
-      <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: FADED }}>· {g.phase.title}</Text>
       <View style={{ flex: 1 }} />
       <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: g.dot }}>{g.done}/{g.reps.length}</Text>
       <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: FADED, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>

@@ -1,19 +1,85 @@
-// Goals tab — the full protocol, phase by phase: the structured system the
-// user monitors themselves against. P1 renders it read-only; P4's execution
-// engine turns these into dated, checkable reps with adaptation.
-import React from 'react';
-import { ScrollView, Text, View } from 'react-native';
+// Goals tab — every active goal's full protocol, phase by phase: the
+// structured systems the user monitors themselves against. Goals run
+// concurrently (owner call 2026-08-24); dropping one is the only way it ends,
+// and it's an explicit, two-tap act — never a side effect of adding another.
+import React, { useEffect, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import SectionLabel from '../components/SectionLabel';
 import { CreamCard, GoalHero, MilestoneStrip, StepRow } from '../components/protocolViews';
-import { useRally } from '../state/RallyContext';
+import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
+
+function DropGoalButton({ onDrop }: { onDrop: () => void }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3500);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <Pressable
+      onPress={() => (armed ? onDrop() : setArmed(true))}
+      style={{
+        alignSelf: 'center', marginTop: 16, paddingVertical: 9, paddingHorizontal: 20,
+        borderRadius: 999, borderWidth: 1.5,
+        borderColor: armed ? colors.danger : 'rgba(160,90,90,0.35)',
+      }}
+    >
+      <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.danger }}>
+        {armed ? 'Tap again to drop this goal' : 'Drop this goal'}
+      </Text>
+    </Pressable>
+  );
+}
+
+function GoalSystem({ goal, onDrop }: { goal: ActiveGoal; onDrop: () => void }) {
+  const protocol = goal.protocol;
+  return (
+    <>
+      <GoalHero protocol={protocol} />
+
+      {protocol.phases.map(phase => {
+        const milestones = protocol.milestones
+          .filter(m => m.week >= phase.start_week && m.week <= phase.end_week)
+          .sort((a, b) => a.week - b.week);
+        return (
+          <React.Fragment key={phase.id}>
+            <SectionLabel style={{ marginTop: 22 }}>
+              {`WEEKS ${phase.start_week}–${phase.end_week} · ${phase.title.toUpperCase()}`}
+            </SectionLabel>
+            <Text style={{ paddingHorizontal: 22, marginTop: -4, marginBottom: 10, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18, color: colors.muted }}>
+              {phase.focus}
+            </Text>
+            <CreamCard>
+              {phase.steps.map((step, i) => (
+                <StepRow key={step.id} step={step} last={i === phase.steps.length - 1} />
+              ))}
+            </CreamCard>
+            {milestones.map(m => (
+              <MilestoneStrip key={m.id} week={m.week} title={m.title} />
+            ))}
+          </React.Fragment>
+        );
+      })}
+
+      <Text
+        style={{
+          marginTop: 20, marginHorizontal: 30, fontFamily: fonts.regular, fontStyle: 'italic',
+          fontSize: 13, lineHeight: 20, color: colors.faintText, textAlign: 'center',
+        }}
+      >
+        “{protocol.coach_notes}”
+      </Text>
+      <DropGoalButton onDrop={onDrop} />
+    </>
+  );
+}
 
 export default function GoalsScreen() {
   const insets = useSafeAreaInsets();
-  const { profile } = useRally();
-  const protocol = profile.protocol;
+  const { goals, dropGoal } = useRally();
 
   return (
     <FadeInUp style={{ flex: 1 }}>
@@ -23,10 +89,10 @@ export default function GoalsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={{ fontFamily: fonts.serif, fontSize: 26, letterSpacing: -0.3, color: colors.ink, paddingHorizontal: 20, paddingTop: 8 }}>
-          Your system
+          {goals.length > 1 ? 'Your systems' : 'Your system'}
         </Text>
 
-        {!protocol ? (
+        {goals.length === 0 ? (
           <View style={{ marginTop: 16, marginHorizontal: 14, backgroundColor: colors.navy, borderRadius: 28, padding: 24 }}>
             <Text style={{ fontFamily: fonts.serif, fontSize: 20, lineHeight: 26, color: colors.creamText }}>
               No goal locked yet.
@@ -37,50 +103,12 @@ export default function GoalsScreen() {
             </Text>
           </View>
         ) : (
-          <>
-            <GoalHero protocol={protocol} />
-
-            {protocol.phases.map(phase => {
-              const milestones = protocol.milestones
-                .filter(m => m.week >= phase.start_week && m.week <= phase.end_week)
-                .sort((a, b) => a.week - b.week);
-              return (
-                <React.Fragment key={phase.id}>
-                  <SectionLabel style={{ marginTop: 22 }}>
-                    {`WEEKS ${phase.start_week}–${phase.end_week} · ${phase.title.toUpperCase()}`}
-                  </SectionLabel>
-                  <Text style={{ paddingHorizontal: 22, marginTop: -4, marginBottom: 10, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18, color: colors.muted }}>
-                    {phase.focus}
-                  </Text>
-                  <CreamCard>
-                    {phase.steps.map((step, i) => (
-                      <StepRow key={step.id} step={step} last={i === phase.steps.length - 1} />
-                    ))}
-                  </CreamCard>
-                  {milestones.map(m => (
-                    <MilestoneStrip key={m.id} week={m.week} title={m.title} />
-                  ))}
-                </React.Fragment>
-              );
-            })}
-
-            <Text
-              style={{
-                marginTop: 20, marginHorizontal: 30, fontFamily: fonts.regular, fontStyle: 'italic',
-                fontSize: 13, lineHeight: 20, color: colors.faintText, textAlign: 'center',
-              }}
-            >
-              “{protocol.coach_notes}”
-            </Text>
-            <Text
-              style={{
-                marginTop: 14, marginHorizontal: 30, fontFamily: fonts.semibold,
-                fontSize: 11.5, color: colors.sectionLabel, textAlign: 'center',
-              }}
-            >
-              Check-ins and mid-plan adjustments arrive with the living-protocol phase.
-            </Text>
-          </>
+          goals.map((goal, i) => (
+            <React.Fragment key={goal.id}>
+              {i > 0 && <View style={{ height: 1, backgroundColor: colors.hairline, marginHorizontal: 24, marginTop: 28 }} />}
+              <GoalSystem goal={goal} onDrop={() => dropGoal(goal.id)} />
+            </React.Fragment>
+          ))
         )}
       </ScrollView>
     </FadeInUp>

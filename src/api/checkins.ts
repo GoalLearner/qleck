@@ -7,7 +7,7 @@ import type { CheckIn } from '../lib/protocolTime';
 import { apiBase, getIdentity } from './device';
 
 const OUTBOX_KEY = 'qleck-checkin-outbox';
-const CACHE_KEY = 'qleck-checkins'; // per current goal
+const CACHE_KEY = 'qleck-checkins'; // Record<goalId, CheckIn[]> across active goals
 
 interface OutboxItem {
   id: string;
@@ -89,7 +89,20 @@ export async function flushOutbox(): Promise<void> {
   } finally { flushing = false; }
 }
 
-/** Server truth for a goal's check-ins, cached for offline rendering. */
+async function readCache(): Promise<Record<string, CheckIn[]>> {
+  try {
+    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown> & { goalId?: string; rows?: CheckIn[] };
+    // Pre-multi-goal shape was {goalId, rows}; fold it into the map.
+    if (typeof parsed.goalId === 'string' && Array.isArray(parsed.rows)) {
+      return { [parsed.goalId]: parsed.rows };
+    }
+    return parsed as Record<string, CheckIn[]>;
+  } catch { return {}; }
+}
+
+/** Server truth for a goal's check-ins, cached per goal for offline rendering. */
 export async function fetchCheckIns(goalId: string, from: string, to: string): Promise<CheckIn[]> {
   try {
     const { token } = await getIdentity();
@@ -99,14 +112,13 @@ export async function fetchCheckIns(goalId: string, from: string, to: string): P
     );
     if (!res.ok) throw new Error(String(res.status));
     const rows = ((await res.json()) as { checkIns: CheckIn[] }).checkIns;
-    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ goalId, rows })).catch(() => {});
+    const cache = await readCache();
+    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ ...cache, [goalId]: rows })).catch(() => {});
     return rows;
   } catch {
     // Offline: cached rows with the queued ops replayed in order on top.
     try {
-      const raw = await AsyncStorage.getItem(CACHE_KEY);
-      const cached = raw ? (JSON.parse(raw) as { goalId: string; rows: CheckIn[] }) : null;
-      let rows: CheckIn[] = cached?.goalId === goalId ? cached.rows : [];
+      let rows: CheckIn[] = (await readCache())[goalId] ?? [];
       for (const i of (await readOutbox()).filter(i => i.goalId === goalId)) {
         if (i.op === 'remove') {
           rows = rows.filter(r => !(r.step_id === i.stepId && r.local_date === i.localDate));

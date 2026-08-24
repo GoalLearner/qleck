@@ -172,6 +172,74 @@ export function missedYesterday(
   return phase.steps.some(s => stepPinnedOn(s, y));
 }
 
+/* ── multi-goal derivations (concurrent goals, 2026-08-24) ──────────────── */
+
+export interface ActiveGoalLike {
+  id: string;
+  startedOn: string;
+  protocol: Protocol;
+}
+
+export function allCheckIns(byGoal: Record<string, CheckIn[]>): CheckIn[] {
+  return Object.values(byGoal).flat();
+}
+
+/** Week strip across every active goal: a day is done when ANY goal logged;
+ * missed only when some goal had a pinned rep and nothing was logged at all. */
+export function mergedWeekStrip(
+  goals: ActiveGoalLike[], byGoal: Record<string, CheckIn[]>, today: string,
+): WeekDay[] {
+  const start = weekStart(today);
+  const merged = allCheckIns(byGoal);
+  const days: WeekDay[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(start, i);
+    const isToday = date === today;
+    const hasCheck = merged.some(c => c.local_date === date);
+    let kind: DayKind;
+    if (date > today) kind = 'up';
+    else if (hasCheck) kind = 'done';
+    else if (isToday) kind = 'today';
+    else {
+      const hadPinned = goals.some(g => {
+        if (date < g.startedOn) return false;
+        if (daysBetween(g.startedOn, date) >= g.protocol.duration_weeks * 7) return false;
+        const phase = phaseForWeek(g.protocol, weekOf(g.startedOn, date, g.protocol.duration_weeks));
+        return phase.steps.some(s => stepPinnedOn(s, date));
+      });
+      kind = hadPinned ? 'missed' : 'rest';
+    }
+    days.push({ letter: DAY_LETTERS[i], date, kind, isToday });
+  }
+  return days;
+}
+
+/** Any goal slipped a pinned rep yesterday with nothing logged for it. */
+export function mergedMissedYesterday(
+  goals: ActiveGoalLike[], byGoal: Record<string, CheckIn[]>, today: string,
+): boolean {
+  return goals.some(g => missedYesterday(g.protocol, g.startedOn, today, byGoal[g.id] ?? []));
+}
+
+/** First upcoming rep across every goal — the banner's one-line preview. */
+export function mergedTomorrowPreview(
+  goals: ActiveGoalLike[], byGoal: Record<string, CheckIn[]>, today: string,
+): string | null {
+  for (let i = 1; i <= 7; i++) {
+    const date = addDays(today, i);
+    for (const g of goals) {
+      const reps = repsForDate(g.protocol, g.startedOn, date, byGoal[g.id] ?? []);
+      if (reps.length > 0) {
+        const first = reps[0].step;
+        const metric = first.kind === 'duration' && first.duration_minutes ? ` — ${first.duration_minutes} min` : '';
+        const label = i === 1 ? 'Tomorrow' : weekdayName(date);
+        return `${label}: ${first.title}${metric}.`;
+      }
+    }
+  }
+  return null;
+}
+
 /** One muted line about the next day that has anything scheduled. */
 export function tomorrowPreview(
   protocol: Protocol, startedOn: string, today: string, checkIns: CheckIn[],

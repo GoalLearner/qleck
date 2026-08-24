@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { fetchCurrentGoal, saveGoal } from '../api/goals';
+import { abandonGoal, fetchGoals, mintGoalId, saveGoal } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
 import { localDate } from '../api/device';
 import type { CheckIn } from '../lib/protocolTime';
@@ -29,6 +29,16 @@ export const DEFAULT_PROFILE: UserProfile = {
   allowNotifications: false,
   allowMotion: false,
 };
+
+// An active goal as the app lives it: the locked protocol plus the fields the
+// temporal layer needs. Mirrors the server's goals table.
+export interface ActiveGoal {
+  id: string;
+  startedOn: string;
+  statement: string;
+  durationWeeks: number;
+  protocol: NonNullable<UserProfile['protocol']>;
+}
 
 // The funnel only knows what it actually asked for: the log-in path collects no
 // name at all, so anything blank keeps the default rather than wiping it.
@@ -59,17 +69,18 @@ interface RallyState {
   // and initial are right everywhere a friend is rendered.
   people: Record<FriendKey, Friend>;
   applyOnboarding: (result: OnboardingResult) => void;
-  // In-app "+" goal creation: replaces the current goal (P1 is single-goal;
-  // multiple concurrent goals arrive with the living-protocol phase).
+  // In-app "+" goal creation: appends another concurrent goal (owner call
+  // 2026-08-24 — goals coexist; Today renders them as groups).
   setGoalPlan: (plan: AcceptedPlan) => void;
-  // The monitoring record for the active goal (P2a). goalStartedOn feeds the
-  // temporal layer; checkInStep is optimistic + outbox-backed.
-  goalId: string | null;
-  goalStartedOn: string;
-  checkIns: CheckIn[];
-  checkInStep: (stepId: string, value?: number | null) => void;
+  // Every active goal plus its monitoring record (P2a). Check-ins are
+  // optimistic + outbox-backed, keyed per goal.
+  goals: ActiveGoal[];
+  checkInsByGoal: Record<string, CheckIn[]>;
+  checkInStep: (goalId: string, stepId: string, value?: number | null) => void;
   // Un-check (the canvas' toggling check): today only, mirrored to the server.
-  uncheckStep: (stepId: string) => void;
+  uncheckStep: (goalId: string, stepId: string) => void;
+  // Explicit drop — the only way a goal ends now that creation never replaces.
+  dropGoal: (goalId: string) => void;
   events: RallyEvent[];
   challenges: Challenge[];
   polls: Poll[];
@@ -102,13 +113,12 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const [jogState, setJogState] = useState<'joined' | null>(null);
   const [lastSent, setLastSent] = useState<RallyState['lastSent']>(null);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
-  const [goalId, setGoalId] = useState<string | null>(null);
-  const [goalStartedOn, setGoalStartedOn] = useState<string>(localDate());
-  const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
+  const [goals, setGoals] = useState<ActiveGoal[]>([]);
+  const [checkInsByGoal, setCheckInsByGoal] = useState<Record<string, CheckIn[]>>({});
   const hydratedRef = useRef(false);
 
-  // P2a hydration: cached profile first (instant, offline-friendly), then the
-  // server's active goal wins for goal fields. Persist changes thereafter.
+  // P2a hydration: cached profile + goals first (instant, offline-friendly),
+  // then the server's active-goal list wins. Persist changes thereafter.
   useEffect(() => {
     (async () => {
       try {
@@ -118,21 +128,20 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
           const cached = JSON.parse(raw) as Partial<UserProfile>;
           setProfile(prev => ({ ...prev, ...cached }));
         }
+        const goalsRaw = await AsyncStorage.getItem('qleck-goals');
+        if (goalsRaw) setGoals(JSON.parse(goalsRaw) as ActiveGoal[]);
       } catch { hydratedRef.current = true; }
       try {
         await flushOutbox();
-        const goal = await fetchCurrentGoal();
-        if (goal) {
-          setProfile(prev => ({
-            ...prev,
-            firstGoal: goal.statement,
-            goalPeriod: `${goal.duration_weeks} weeks`,
-            protocol: goal.protocol,
-          }));
-          setGoalId(goal.id);
-          setGoalStartedOn(goal.started_on);
-          setCheckIns(await fetchCheckIns(goal.id, goal.started_on, localDate()));
-        }
+        const remote = await fetchGoals();
+        const active = remote.map(g => ({
+          id: g.id, startedOn: g.started_on, statement: g.statement,
+          durationWeeks: g.duration_weeks, protocol: g.protocol,
+        }));
+        setGoals(active);
+        const today = localDate();
+        const rows = await Promise.all(active.map(g => fetchCheckIns(g.id, g.startedOn, today)));
+        setCheckInsByGoal(Object.fromEntries(active.map((g, i) => [g.id, rows[i]])));
       } catch { /* offline: cache already applied */ }
     })();
   }, []);
@@ -142,58 +151,72 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem('qleck-profile', JSON.stringify(profile)).catch(() => {});
   }, [profile]);
 
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    AsyncStorage.setItem('qleck-goals', JSON.stringify(goals)).catch(() => {});
+  }, [goals]);
+
+  // Optimistic append with the same client-minted id the server write uses,
+  // so check-ins land on the right goal even before the save resolves.
+  const addGoal = useCallback((plan: AcceptedPlan) => {
+    const id = mintGoalId();
+    setGoals(prev => [...prev, {
+      id, startedOn: localDate(), statement: plan.statement,
+      durationWeeks: plan.durationWeeks, protocol: plan.protocol,
+    }]);
+    saveGoal(plan, plan.goalText, id).catch(err => console.warn('goal save deferred:', err));
+  }, []);
+
   const applyOnboarding = useCallback((result: OnboardingResult) => {
     setProfile(prev => profileFromOnboarding(prev, result));
     if (result.protocol && result.goal) {
-      saveGoal(
-        {
-          goalText: result.goal,
-          statement: result.goal,
-          durationWeeks: parseInt(result.period ?? '', 10) || result.protocol.duration_weeks,
-          protocol: result.protocol,
-        },
-        result.goal,
-      )
-        .then(goal => { setGoalId(goal.id); setGoalStartedOn(goal.started_on); })
-        .catch(err => console.warn('goal save deferred:', err));
-    }
-  }, []);
-
-  const setGoalPlan = useCallback((plan: AcceptedPlan) => {
-    setProfile(prev => ({
-      ...prev,
-      firstGoal: plan.statement,
-      goalPeriod: `${plan.durationWeeks} weeks`,
-      protocol: plan.protocol,
-    }));
-    setGoalStartedOn(localDate());
-    setCheckIns([]);
-    // Write-through; the local state stays authoritative for this session and
-    // the next launch re-hydrates from the server.
-    saveGoal(plan, plan.goalText)
-      .then(goal => setGoalId(goal.id))
-      .catch(err => console.warn('goal save deferred:', err));
-  }, []);
-
-  const checkInStep = useCallback((stepId: string, value: number | null = null) => {
-    const today = localDate();
-    setCheckIns(prev => {
-      if (prev.some(c => c.step_id === stepId && c.local_date === today)) return prev;
-      return [...prev, { id: 'pending', step_id: stepId, local_date: today, value }];
-    });
-    if (goalId) {
-      void submitCheckIn(goalId, stepId, today, value).then(row => {
-        setCheckIns(prev => prev.map(c =>
-          c.id === 'pending' && c.step_id === stepId && c.local_date === today ? row : c));
+      addGoal({
+        goalText: result.goal,
+        statement: result.goal,
+        durationWeeks: parseInt(result.period ?? '', 10) || result.protocol.duration_weeks,
+        protocol: result.protocol,
       });
     }
-  }, [goalId]);
+  }, [addGoal]);
 
-  const uncheckStep = useCallback((stepId: string) => {
+  const setGoalPlan = useCallback((plan: AcceptedPlan) => {
+    addGoal(plan);
+  }, [addGoal]);
+
+  const checkInStep = useCallback((goalId: string, stepId: string, value: number | null = null) => {
     const today = localDate();
-    setCheckIns(prev => prev.filter(c => !(c.step_id === stepId && c.local_date === today)));
-    if (goalId) void removeCheckIn(goalId, stepId, today);
-  }, [goalId]);
+    setCheckInsByGoal(prev => {
+      const rows = prev[goalId] ?? [];
+      if (rows.some(c => c.step_id === stepId && c.local_date === today)) return prev;
+      return { ...prev, [goalId]: [...rows, { id: 'pending', step_id: stepId, local_date: today, value }] };
+    });
+    void submitCheckIn(goalId, stepId, today, value).then(row => {
+      setCheckInsByGoal(prev => ({
+        ...prev,
+        [goalId]: (prev[goalId] ?? []).map(c =>
+          c.id === 'pending' && c.step_id === stepId && c.local_date === today ? row : c),
+      }));
+    });
+  }, []);
+
+  const uncheckStep = useCallback((goalId: string, stepId: string) => {
+    const today = localDate();
+    setCheckInsByGoal(prev => ({
+      ...prev,
+      [goalId]: (prev[goalId] ?? []).filter(c => !(c.step_id === stepId && c.local_date === today)),
+    }));
+    void removeCheckIn(goalId, stepId, today);
+  }, []);
+
+  const dropGoal = useCallback((goalId: string) => {
+    setGoals(prev => prev.filter(g => g.id !== goalId));
+    setCheckInsByGoal(prev => {
+      const next = { ...prev };
+      delete next[goalId];
+      return next;
+    });
+    abandonGoal(goalId).catch(err => console.warn('goal drop deferred:', err));
+  }, []);
 
   const people = useMemo<Record<FriendKey, Friend>>(() => ({
     ...FRIENDS,
@@ -309,11 +332,11 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<RallyState>(() => ({
     profile, people, applyOnboarding, setGoalPlan,
-    goalId, goalStartedOn, checkIns, checkInStep, uncheckStep,
+    goals, checkInsByGoal, checkInStep, uncheckStep, dropGoal,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
   }), [profile, people, applyOnboarding, setGoalPlan,
-    goalId, goalStartedOn, checkIns, checkInStep, uncheckStep,
+    goals, checkInsByGoal, checkInStep, uncheckStep, dropGoal,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 

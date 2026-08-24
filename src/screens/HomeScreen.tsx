@@ -4,11 +4,12 @@
 // day done, rest day, missed-yesterday banner, milestone flag, no goal.
 //
 // Two layouts from the same data: the phone loop (canvas §1) and, on wide web
-// viewports, the desktop two-column Today (canvas §2) — reps left under a
-// per-goal group header, a living sidebar right (progress ring, streak,
-// week dots, next milestones). Checks toggle (un-check is a real server
-// delete), quantity reps log an actual number, and Qoach's one-liner reacts
-// to what's left.
+// viewports, the desktop two-column Today (canvas §2). Goals run
+// CONCURRENTLY (owner call 2026-08-24): each active goal is its own labeled
+// group with a color dot, phase and x/y count; the sidebar (ring, streak,
+// week dots, milestones) merges across all of them. Checks toggle (un-check
+// is a real server delete), quantity reps log an actual number, and Qoach's
+// one-liner reacts to what's left.
 //
 // P2a renders and records; P4 adds nudges, adaptation and the milestone
 // celebration moment (the canvas' "ease this week" card ships then, when the
@@ -21,18 +22,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
-import type { Protocol } from '../api/coachTypes';
+import type { ProtocolPhase } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import {
-  missedYesterday, phaseForWeek, repsForDate, streakDays, tomorrowPreview, weekdayName,
-  weekOf, weekStrip, type CheckIn, type DayRep, type WeekDay,
+  allCheckIns, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip,
+  phaseForWeek, repsForDate, streakDays, weekdayName, weekOf,
+  type CheckIn, type DayRep, type WeekDay,
 } from '../lib/protocolTime';
-import { useRally } from '../state/RallyContext';
+import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
 
 const INK = colors.ink;
 const FADED = colors.sectionLabel;
 const GREEN = '#47694f';
+
+// One dot color per goal, by position — stable while the goal list is stable.
+const GOAL_DOTS = [GREEN, '#4d5680', '#8a5f38', '#4f8fc9', '#c96f5f'];
 
 function greeting(restDay: boolean, name: string): string {
   if (restDay) return `Easy, ${name}.`;
@@ -257,43 +262,88 @@ function MissedBanner() {
   );
 }
 
-/* ── shared per-day derivations ─────────────────────────────────────────── */
+/* ── shared per-day derivations, merged across every active goal ────────── */
 
-function useTodayModel(protocol: Protocol, startedOn: string, checkIns: CheckIn[]) {
+interface GoalToday {
+  goal: ActiveGoal;
+  week: number;
+  phase: ProtocolPhase;
+  reps: DayRep[];
+  done: number;
+  dot: string;
+}
+
+function useTodayModel(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
   const today = localDate();
-  const week = weekOf(startedOn, today, protocol.duration_weeks);
-  const phase = phaseForWeek(protocol, week);
-  const reps = repsForDate(protocol, startedOn, today, checkIns);
-  const done = reps.filter(r => r.checked).length;
+  const perGoal: GoalToday[] = goals.map((g, i) => {
+    const week = weekOf(g.startedOn, today, g.protocol.duration_weeks);
+    const phase = phaseForWeek(g.protocol, week);
+    const reps = repsForDate(g.protocol, g.startedOn, today, byGoal[g.id] ?? []);
+    return { goal: g, week, phase, reps, done: reps.filter(r => r.checked).length, dot: GOAL_DOTS[i % GOAL_DOTS.length] };
+  });
+  const total = perGoal.reduce((n, g) => n + g.reps.length, 0);
+  const done = perGoal.reduce((n, g) => n + g.done, 0);
   return {
-    today, week, phase, reps, done,
-    total: reps.length,
-    allDone: reps.length > 0 && done === reps.length,
-    restDay: reps.length === 0,
-    strip: weekStrip(protocol, startedOn, today, checkIns),
-    streak: streakDays(today, checkIns),
-    missed: missedYesterday(protocol, startedOn, today, checkIns),
-    preview: tomorrowPreview(protocol, startedOn, today, checkIns),
+    today, perGoal, done, total,
+    allDone: total > 0 && done === total,
+    restDay: total === 0,
+    strip: mergedWeekStrip(goals, byGoal, today),
+    streak: streakDays(today, allCheckIns(byGoal)),
+    missed: mergedMissedYesterday(goals, byGoal, today),
+    preview: mergedTomorrowPreview(goals, byGoal, today),
   };
 }
 
-function loggedValueFor(checkIns: CheckIn[], stepId: string, today: string): number | null {
-  return checkIns.find(c => c.step_id === stepId && c.local_date === today)?.value ?? null;
+function headerSub(m: ReturnType<typeof useTodayModel>): string {
+  const day = weekdayName(m.today);
+  if (m.perGoal.length === 1) {
+    const g = m.perGoal[0];
+    return `${day} · week ${g.week} of ${g.goal.protocol.duration_weeks} — ${g.phase.title}`;
+  }
+  return `${day} · ${m.perGoal.length} goals in motion`;
 }
 
-/* ── the phone loop (canvas §1) ─────────────────────────────────────────── */
+function loggedValueFor(rows: CheckIn[], stepId: string, today: string): number | null {
+  return rows.find(c => c.step_id === stepId && c.local_date === today)?.value ?? null;
+}
 
-function TodayLoop({ protocol, startedOn, checkIns }: { protocol: Protocol; startedOn: string; checkIns: CheckIn[] }) {
+function nextMilestoneOf(g: GoalToday) {
+  return [...g.goal.protocol.milestones].sort((a, b) => a.week - b.week).find(mi => mi.week >= g.week) ?? null;
+}
+
+/* ── goal group header (shared by both layouts) ─────────────────────────── */
+
+function GroupHeader({ g, open, onToggle }: { g: GoalToday; open: boolean; onToggle: () => void }) {
+  return (
+    <Pressable
+      onPress={onToggle}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingTop: 8 }}
+    >
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: g.dot }} />
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: INK }}>
+        {g.goal.statement.toUpperCase()}
+      </Text>
+      <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: FADED }}>· {g.phase.title}</Text>
+      <View style={{ flex: 1 }} />
+      <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: g.dot }}>{g.done}/{g.reps.length}</Text>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: FADED, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
+    </Pressable>
+  );
+}
+
+/* ── the phone loop (canvas §1, grouped when goals run concurrently) ────── */
+
+function TodayLoop({ goals, byGoal }: { goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]> }) {
   const { checkInStep, uncheckStep, profile } = useRally();
-  const m = useTodayModel(protocol, startedOn, checkIns);
-  const nextMilestone = [...protocol.milestones].sort((a, b) => a.week - b.week).find(mi => mi.week >= m.week);
+  const m = useTodayModel(goals, byGoal);
+  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const multi = m.perGoal.length > 1;
+  const milestoneOwner = m.perGoal.find(g => nextMilestoneOf(g));
+  const nextMilestone = milestoneOwner ? nextMilestoneOf(milestoneOwner) : null;
 
   return (
     <>
-      <Header
-        title={greeting(m.restDay && !m.allDone, profile.firstName)}
-        sub={`${weekdayName(m.today)} · week ${m.week} of ${protocol.duration_weeks}`}
-      />
+      <Header title={greeting(m.restDay && !m.allDone, profile.firstName)} sub={headerSub(m)} />
       <WeekStrip days={m.strip} />
 
       <View style={{ flex: 1, gap: 14, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 130 }}>
@@ -311,18 +361,29 @@ function TodayLoop({ protocol, startedOn, checkIns }: { protocol: Protocol; star
           <>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: FADED }}>TODAY'S REPS</Text>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: FADED }}>
-                {m.phase.title.toUpperCase()}
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: multi ? GREEN : FADED }}>
+                {multi ? `${m.done} OF ${m.total} BANKED` : m.perGoal[0].phase.title.toUpperCase()}
               </Text>
             </View>
-            {m.reps.map(rep => (
-              <RepCard
-                key={rep.step.id}
-                rep={rep}
-                loggedValue={loggedValueFor(checkIns, rep.step.id, m.today)}
-                onCheck={() => checkInStep(rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : rep.step.kind === 'quantity' ? rep.step.quantity?.amount ?? null : null)}
-                onUncheck={() => uncheckStep(rep.step.id)}
-              />
+            {m.perGoal.filter(g => g.reps.length > 0).map(g => (
+              <React.Fragment key={g.goal.id}>
+                {multi && (
+                  <GroupHeader
+                    g={g}
+                    open={!closed[g.goal.id]}
+                    onToggle={() => setClosed(prev => ({ ...prev, [g.goal.id]: !prev[g.goal.id] }))}
+                  />
+                )}
+                {!closed[g.goal.id] && g.reps.map(rep => (
+                  <RepCard
+                    key={rep.step.id}
+                    rep={rep}
+                    loggedValue={loggedValueFor(byGoal[g.goal.id] ?? [], rep.step.id, m.today)}
+                    onCheck={() => checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : rep.step.kind === 'quantity' ? rep.step.quantity?.amount ?? null : null)}
+                    onUncheck={() => uncheckStep(g.goal.id, rep.step.id)}
+                  />
+                ))}
+              </React.Fragment>
             ))}
           </>
         )}
@@ -399,28 +460,31 @@ function ProgressRingCard({ done, total }: { done: number; total: number }) {
   );
 }
 
-function DesktopToday({ protocol, startedOn, checkIns }: { protocol: Protocol; startedOn: string; checkIns: CheckIn[] }) {
+function DesktopToday({ goals, byGoal }: { goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]> }) {
   const { checkInStep, uncheckStep, profile } = useRally();
   const navigation = useNavigation<any>();
-  const m = useTodayModel(protocol, startedOn, checkIns);
-  const [open, setOpen] = useState(true);
+  const m = useTodayModel(goals, byGoal);
+  const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [qtyVals, setQtyVals] = useState<Record<string, number>>({});
 
-  const milestones = [...protocol.milestones].sort((a, b) => a.week - b.week).filter(mi => mi.week >= m.week).slice(0, 2);
+  const milestoneRows = m.perGoal
+    .map(g => ({ g, mi: nextMilestoneOf(g) }))
+    .filter((r): r is { g: GoalToday; mi: NonNullable<ReturnType<typeof nextMilestoneOf>> } => r.mi !== null)
+    .slice(0, 3);
   const nudge = nudgeLine(m.done, m.total);
-  const milestoneDots = ['#4d5680', GREEN];
 
-  const qtyFor = (rep: DayRep): QtyControls | undefined => {
+  const qtyFor = (g: GoalToday, rep: DayRep): QtyControls | undefined => {
     const q = rep.step.quantity;
     if (rep.step.kind !== 'quantity' || !q) return undefined;
     const stepSize = q.amount >= 20 ? 5 : 1;
-    const value = qtyVals[rep.step.id] ?? q.amount;
-    const set = (v: number) => setQtyVals(prev => ({ ...prev, [rep.step.id]: v }));
+    const key = `${g.goal.id}:${rep.step.id}`;
+    const value = qtyVals[key] ?? q.amount;
+    const set = (v: number) => setQtyVals(prev => ({ ...prev, [key]: v }));
     return {
       value, unit: q.unit,
       inc: () => set(Math.min(999, value + stepSize)),
       dec: () => set(Math.max(stepSize === 5 ? 5 : 0, value - stepSize)),
-      log: () => checkInStep(rep.step.id, value),
+      log: () => checkInStep(g.goal.id, rep.step.id, value),
     };
   };
 
@@ -433,7 +497,7 @@ function DesktopToday({ protocol, startedOn, checkIns }: { protocol: Protocol; s
             {greeting(m.restDay && !m.allDone, profile.firstName)}
           </Text>
           <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 6 }}>
-            {weekdayName(m.today)} · week {m.week} of {protocol.duration_weeks} — {m.phase.title}
+            {headerSub(m)}
           </Text>
         </View>
         <Pressable onPress={() => navigation.navigate('You')}>
@@ -463,31 +527,24 @@ function DesktopToday({ protocol, startedOn, checkIns }: { protocol: Protocol; s
                 </Text>
               </View>
 
-              {/* goal group header — one goal today; the grouping is the
-                  multi-goal shape the canvas runs two of */}
-              <Pressable
-                onPress={() => setOpen(o => !o)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingTop: 8 }}
-              >
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: GREEN }} />
-                <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: INK }}>
-                  {protocol.goal_statement.toUpperCase()}
-                </Text>
-                <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: FADED }}>· {m.phase.title}</Text>
-                <View style={{ flex: 1 }} />
-                <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: GREEN }}>{m.done}/{m.total}</Text>
-                <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: FADED, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
-              </Pressable>
-
-              {open && m.reps.map(rep => (
-                <RepCard
-                  key={rep.step.id}
-                  rep={rep}
-                  loggedValue={loggedValueFor(checkIns, rep.step.id, m.today)}
-                  qty={qtyFor(rep)}
-                  onCheck={() => checkInStep(rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : null)}
-                  onUncheck={() => uncheckStep(rep.step.id)}
-                />
+              {m.perGoal.filter(g => g.reps.length > 0).map(g => (
+                <React.Fragment key={g.goal.id}>
+                  <GroupHeader
+                    g={g}
+                    open={!closed[g.goal.id]}
+                    onToggle={() => setClosed(prev => ({ ...prev, [g.goal.id]: !prev[g.goal.id] }))}
+                  />
+                  {!closed[g.goal.id] && g.reps.map(rep => (
+                    <RepCard
+                      key={rep.step.id}
+                      rep={rep}
+                      loggedValue={loggedValueFor(byGoal[g.goal.id] ?? [], rep.step.id, m.today)}
+                      qty={qtyFor(g, rep)}
+                      onCheck={() => checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : null)}
+                      onUncheck={() => uncheckStep(g.goal.id, rep.step.id)}
+                    />
+                  ))}
+                </React.Fragment>
               ))}
 
               {nudge && (
@@ -520,19 +577,21 @@ function DesktopToday({ protocol, startedOn, checkIns }: { protocol: Protocol; s
           <SideCard>
             <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: FADED, marginBottom: 12 }}>THIS WEEK</Text>
             <WeekDots days={m.strip} />
-            <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.muted, marginTop: 12 }}>
-              week {m.week} of {protocol.duration_weeks}
-            </Text>
+            {m.perGoal.length === 1 && (
+              <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.muted, marginTop: 12 }}>
+                week {m.perGoal[0].week} of {m.perGoal[0].goal.protocol.duration_weeks}
+              </Text>
+            )}
           </SideCard>
 
-          {milestones.length > 0 && (
+          {milestoneRows.length > 0 && (
             <SideCard tinted>
               <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: colors.inviteAccent }}>⚑ NEXT MILESTONES</Text>
-              {milestones.map((mi, i) => (
-                <View key={mi.id}>
+              {milestoneRows.map(({ g, mi }, i) => (
+                <View key={`${g.goal.id}:${mi.id}`}>
                   {i > 0 && <View style={{ height: 1, backgroundColor: colors.inviteBorder, marginVertical: 12 }} />}
                   <View style={{ flexDirection: 'row', gap: 9, marginTop: i === 0 ? 12 : 0 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: milestoneDots[i % 2], marginTop: 5 }} />
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: g.dot, marginTop: 5 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontFamily: fonts.serif, fontSize: 14.5, lineHeight: 19, color: INK }}>{mi.title}</Text>
                       <Text numberOfLines={2} style={{ fontFamily: fonts.semibold, fontSize: 11, lineHeight: 16.5, color: colors.inviteAccent, marginTop: 2 }}>
@@ -570,7 +629,7 @@ function Header({ title, sub }: { title: string; sub: string }) {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { profile, goalStartedOn, checkIns } = useRally();
+  const { profile, goals, checkInsByGoal } = useRally();
   const wide = Platform.OS === 'web' && width >= 980;
 
   return (
@@ -580,10 +639,10 @@ export default function HomeScreen() {
         contentContainerStyle={{ flexGrow: 1, paddingTop: wide ? 26 : Math.max(insets.top, 58) + 16 }}
         showsVerticalScrollIndicator={false}
       >
-        {profile.protocol ? (
+        {goals.length > 0 ? (
           wide
-            ? <DesktopToday protocol={profile.protocol} startedOn={goalStartedOn} checkIns={checkIns} />
-            : <TodayLoop protocol={profile.protocol} startedOn={goalStartedOn} checkIns={checkIns} />
+            ? <DesktopToday goals={goals} byGoal={checkInsByGoal} />
+            : <TodayLoop goals={goals} byGoal={checkInsByGoal} />
         ) : (
           <View style={wide ? { width: '100%', maxWidth: 560, alignSelf: 'center', paddingTop: 40 } : undefined}>
             <Header title={greeting(false, profile.firstName)} sub="Nothing on the clock yet" />

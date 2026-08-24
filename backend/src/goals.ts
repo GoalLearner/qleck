@@ -75,23 +75,31 @@ async function writeSteps(env: Env, goalId: string, version: number, protocol: P
   await env.DB.batch(stmts);
 }
 
+// Concurrent active goals per user (owner call 2026-08-24 — "why can I only
+// have one goal": the desktop Today runs goals as groups, so the single-goal
+// P1 training wheels came off). Creation no longer abandons anything; goals
+// end only via explicit abandonGoal.
+const MAX_ACTIVE_GOALS = 5;
+
 /**
  * Idempotent create: replaying the same client goal id returns the stored
- * goal. A new goal marks previous active goals abandoned (P1/P2a are
- * single-goal; concurrent goals arrive with the living-protocol phase).
+ * goal.
  */
 export async function createGoal(
   env: Env,
   userId: string,
   input: Exclude<ReturnType<typeof parseCreateGoal>, { ok: false }>,
-): Promise<GoalRecord> {
+): Promise<GoalRecord | { error: string }> {
   const existing = await getGoalById(env, userId, input.id);
   if (existing) return existing;
 
+  const active = await env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM goals WHERE user_id = ? AND status = 'active'`)
+    .bind(userId)
+    .first<{ n: number }>();
+  if ((active?.n ?? 0) >= MAX_ACTIVE_GOALS) return { error: 'too_many_goals' };
+
   await env.DB.batch([
-    env.DB
-      .prepare(`UPDATE goals SET status = 'abandoned', updated_at = datetime('now') WHERE user_id = ? AND status = 'active'`)
-      .bind(userId),
     env.DB
       .prepare(
         `INSERT OR IGNORE INTO goals (id, user_id, goal_text, statement, duration_weeks, started_on, timezone)
@@ -138,6 +146,30 @@ export async function getCurrentGoal(env: Env, userId: string): Promise<GoalReco
   const proto = await loadProtocol(env, goal.id);
   if (!proto) return null;
   return { ...goal, protocol: JSON.parse(proto.json) as Protocol, protocol_version: proto.version };
+}
+
+/** Every active goal, oldest first — the Today tab renders these as groups. */
+export async function listActiveGoals(env: Env, userId: string): Promise<GoalRecord[]> {
+  const rows = await env.DB
+    .prepare(`SELECT * FROM goals WHERE user_id = ? AND status = 'active' ORDER BY created_at`)
+    .bind(userId)
+    .all<Omit<GoalRecord, 'protocol' | 'protocol_version'>>();
+  const goals: GoalRecord[] = [];
+  for (const goal of rows.results ?? []) {
+    const proto = await loadProtocol(env, goal.id);
+    if (proto) goals.push({ ...goal, protocol: JSON.parse(proto.json) as Protocol, protocol_version: proto.version });
+  }
+  return goals;
+}
+
+/** Explicitly drop a goal. Idempotent; the rows stay (history, not deletion). */
+export async function abandonGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean }> {
+  if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false };
+  await env.DB
+    .prepare(`UPDATE goals SET status = 'abandoned', updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
+    .bind(goalId, userId)
+    .run();
+  return { ok: true };
 }
 
 /* ── check-ins (P2a): the monitoring record ─────────────────────────────── */

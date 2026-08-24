@@ -9,14 +9,16 @@
 //   POST /coach/sessions/:id/revise       {feedback, currentWeek} → revised protocol
 //   POST /device/register                 {timezone?}      → {userId, token}   (anonymous identity)
 //   POST /goals                           {id, goalText, statement, durationWeeks, startedOn, timezone, protocol}
-//   GET  /goals/current                   (Bearer token)   → goal + latest protocol
+//   GET  /goals                           (Bearer token)   → every active goal (Today renders these as groups)
+//   GET  /goals/current                   (Bearer token)   → newest active goal (legacy single-goal clients)
+//   POST /goals/:id/abandon               (Bearer token)   → explicit drop; rows kept as history
 //   POST /check-ins                       {id, goalId, stepId, localDate, value?} — idempotent
 //   GET  /check-ins?goalId=&from=&to=     (Bearer token)   → rows in range
 //   DELETE /check-ins?goalId=&stepId=&date= — un-check (idempotent by key)
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { registerDevice, touchUser, verifyToken } from './auth';
 import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type SessionRow, type Verdict } from './coach';
-import { createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
+import { abandonGoal, createGoal, deleteCheckIn, getCurrentGoal, listActiveGoals, listCheckIns, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
 import type { Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
@@ -79,11 +81,20 @@ export default {
         const parsed = parseCreateGoal((await request.json().catch(() => ({}))) as CreateGoalBody);
         if (!parsed.ok) return json({ error: parsed.error }, 400, cors);
         const goal = await createGoal(env, userId, parsed);
+        if ('error' in goal) return json({ error: goal.error }, 409, cors);
         return json({ goal }, 200, cors);
+      }
+      if (url.pathname === '/goals' && request.method === 'GET') {
+        return json({ goals: await listActiveGoals(env, userId) }, 200, cors);
       }
       if (url.pathname === '/goals/current' && request.method === 'GET') {
         const goal = await getCurrentGoal(env, userId);
         return json({ goal }, 200, cors);
+      }
+      const abandonMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/abandon$/);
+      if (abandonMatch && request.method === 'POST') {
+        await abandonGoal(env, userId, abandonMatch[1]);
+        return json({ ok: true }, 200, cors);
       }
       if (url.pathname === '/check-ins' && request.method === 'POST') {
         const result = await recordCheckIn(env, userId, (await request.json().catch(() => ({}))) as Record<string, unknown>);

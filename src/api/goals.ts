@@ -34,15 +34,16 @@ async function authed(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
-/** Persist an accepted plan. Fire-and-forget friendly: throws on failure. */
-export async function saveGoal(plan: AcceptedPlan, goalText: string): Promise<RemoteGoal> {
+/** Persist an accepted plan. Fire-and-forget friendly: throws on failure.
+ * Pass `id` when the caller already added the goal optimistically. */
+export async function saveGoal(plan: AcceptedPlan, goalText: string, id?: string): Promise<RemoteGoal> {
   const timezone = (() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null; } catch { return null; }
   })();
   const res = await authed('/goals', {
     method: 'POST',
     body: JSON.stringify({
-      id: mintId(),
+      id: id ?? mintId(),
       goalText: goalText || plan.statement,
       statement: plan.statement,
       durationWeeks: plan.durationWeeks,
@@ -61,3 +62,18 @@ export async function fetchCurrentGoal(): Promise<RemoteGoal | null> {
   if (!res.ok) throw new Error(`fetchCurrentGoal failed (${res.status})`);
   return ((await res.json()) as { goal: RemoteGoal | null }).goal;
 }
+
+/** Every active goal, oldest first. */
+export async function fetchGoals(): Promise<RemoteGoal[]> {
+  const res = await authed('/goals');
+  if (!res.ok) throw new Error(`fetchGoals failed (${res.status})`);
+  return ((await res.json()) as { goals: RemoteGoal[] }).goals;
+}
+
+/** Explicitly drop a goal (history kept server-side). */
+export async function abandonGoal(id: string): Promise<void> {
+  const res = await authed(`/goals/${id}/abandon`, { method: 'POST' });
+  if (!res.ok) throw new Error(`abandonGoal failed (${res.status})`);
+}
+
+export { mintId as mintGoalId };

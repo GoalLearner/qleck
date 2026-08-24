@@ -29,7 +29,7 @@ function Card({ children }: { children: React.ReactNode }) {
 
 export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
   const insets = useSafeAreaInsets();
-  const { profile } = useRally();
+  const { profile, goals } = useRally();
 
   return (
     <FadeInUp style={{ flex: 1 }}>
@@ -48,24 +48,32 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
           </Text>
         </View>
 
-        <SectionLabel style={{ marginTop: 22 }}>CURRENT GOAL</SectionLabel>
+        <SectionLabel style={{ marginTop: 22 }}>{goals.length > 1 ? 'CURRENT GOALS' : 'CURRENT GOAL'}</SectionLabel>
         <Card>
-          <View style={{ paddingVertical: 15, paddingHorizontal: 16 }}>
-            {profile.firstGoal ? (
-              <>
-                <Text style={{ fontSize: 14.5, fontFamily: fonts.extrabold, color: colors.ink }}>
-                  {profile.firstGoal}
-                </Text>
-                <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 3 }}>
-                  {profile.goalPeriod} · coached by Qoach
-                </Text>
-              </>
-            ) : (
+          {goals.length === 0 ? (
+            <View style={{ paddingVertical: 15, paddingHorizontal: 16 }}>
               <Text style={{ fontSize: 13, fontFamily: fonts.semibold, color: colors.muted }}>
                 No goal yet — tap + to talk to Qoach.
               </Text>
-            )}
-          </View>
+            </View>
+          ) : (
+            goals.map((goal, i) => (
+              <View
+                key={goal.id}
+                style={{
+                  paddingVertical: 15, paddingHorizontal: 16,
+                  borderBottomWidth: i < goals.length - 1 ? 1 : 0, borderBottomColor: colors.hairline,
+                }}
+              >
+                <Text style={{ fontSize: 14.5, fontFamily: fonts.extrabold, color: colors.ink }}>
+                  {goal.statement}
+                </Text>
+                <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 3 }}>
+                  {goal.durationWeeks} weeks · coached by Qoach
+                </Text>
+              </View>
+            ))
+          )}
         </Card>
 
         <SectionLabel>SETTINGS</SectionLabel>

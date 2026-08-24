@@ -55,7 +55,7 @@ async function runGoalFixture(f) {
   const sessionId = res.body.sessionId;
   const answers = [...(f.answers ?? [])];
   let questions = 0;
-  while (res.status === 200 && res.body.type === 'question' && questions < 3) {
+  while (res.status === 200 && res.body.type === 'question' && questions < 5) {
     questions++;
     const answer = answers.length ? answers.shift() : GENERIC_ANSWER;
     res = await api(`/coach/sessions/${sessionId}/messages`, { answer });

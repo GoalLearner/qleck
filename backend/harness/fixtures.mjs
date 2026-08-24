@@ -53,6 +53,18 @@ export const GOAL_FIXTURES = [
     expect: ['feasible'],
   },
 
+  {
+    id: 'gain-muscle', category: 'realistic', protocol: true,
+    goal: 'I want to gain 5 lbs of lean muscle.',
+    answers: [
+      'Lifting about a year, 3 days a week.',
+      'I weigh 170 lbs / 77 kg.',
+      'I can train 3 days a week, evenings.',
+      'No injuries.',
+    ],
+    expect: ['feasible', 'counter_offer'],
+  },
+
   /* ── unrealistic but safe: expect counter-offer ─────────────────────── */
   {
     id: 'marathon-3w', category: 'unrealistic',

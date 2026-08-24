@@ -8,9 +8,11 @@ import {
 } from './prompts';
 import { PROTOCOL_TOOL_SCHEMA, validateProtocol, type Protocol } from './protocolSchema';
 
-// Server-enforced negotiation cap: at most 2 clarifying questions, then the
-// coach must issue a verdict (the ask tool is simply withheld).
-const MAX_CLARIFY_TURNS = 2;
+// Server-enforced negotiation cap: at most 4 clarifying questions, then the
+// coach must issue a verdict (the ask tool is simply withheld). Four because
+// plans that prescribe personal numbers (protein grams, calorie surpluses,
+// pace targets) must collect the underlying facts first — see COACH_SYSTEM.
+const MAX_CLARIFY_TURNS = 4;
 
 export interface SessionRow {
   id: string;

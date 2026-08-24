@@ -300,10 +300,17 @@ function ChatThread({ coach, answer, setAnswer }: { coach: CoachFlow; answer: st
         <Text style={{ fontFamily: nightFonts.display, fontSize: 18, color: night.text, letterSpacing: 0.2 }}>Qoach</Text>
         <View style={{ flex: 1 }} />
         <View style={{ alignItems: 'flex-end', gap: 5 }}>
-          <MonoLabel text={`QUESTION ${coach.questionCount} OF 2`} color={night.textFaint} style={{ fontSize: 10.5, letterSpacing: 1 }} />
+          <MonoLabel text={`QUESTION ${coach.questionCount} OF 4`} color={night.textFaint} style={{ fontSize: 10.5, letterSpacing: 1 }} />
           <View style={{ flexDirection: 'row', gap: 5 }}>
-            <View style={{ width: 26, height: 4, borderRadius: 2, backgroundColor: night.accent }} />
-            <View style={{ width: 26, height: 4, borderRadius: 2, backgroundColor: coach.questionCount >= 2 ? night.accent : 'rgba(255,255,255,0.15)' }} />
+            {[1, 2, 3, 4].map(n => (
+              <View
+                key={n}
+                style={{
+                  width: 18, height: 4, borderRadius: 2,
+                  backgroundColor: coach.questionCount >= n ? night.accent : 'rgba(255,255,255,0.15)',
+                }}
+              />
+            ))}
           </View>
         </View>
       </View>

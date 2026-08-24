@@ -1,0 +1,20 @@
+{
+  "name": "qleck-api",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "migrate:local": "wrangler d1 migrations apply qleck --local",
+    "migrate:remote": "wrangler d1 migrations apply qleck --remote",
+    "harness": "node harness/run.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5",
+    "typescript": "~5.9.0",
+    "wrangler": "^4"
+  }
+}

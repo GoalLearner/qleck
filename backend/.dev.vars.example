@@ -1,0 +1,6 @@
+# Copy to .dev.vars (gitignored) for local `npm run dev`.
+# Active provider is AI_PROVIDER in wrangler.toml ("deepseek" default).
+# In production these are Worker secrets: npx wrangler secret put DEEPSEEK_API_KEY
+DEEPSEEK_API_KEY=sk-...
+# Only needed when AI_PROVIDER = "anthropic":
+# ANTHROPIC_API_KEY=sk-ant-...

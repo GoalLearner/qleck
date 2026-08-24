@@ -1,0 +1,30 @@
+# qleck-api — the AI coach proxy (ROADMAP.md P1).
+# The Anthropic key lives ONLY here as a Worker secret, never in the app bundle:
+#   npx wrangler secret put DEEPSEEK_API_KEY   (or ANTHROPIC_API_KEY for provider "anthropic")
+# Local dev reads it from .dev.vars (gitignored) instead.
+name = "qleck-api"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Nightly retention sweep: ai_request_payloads older than 30 days (non-synthetic).
+[triggers]
+crons = ["0 4 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "qleck"
+# Set after `npx wrangler d1 create qleck` (remote). Local dev ignores it.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[vars]
+# "deepseek" (default, cheap) or "anthropic" (Claude — quality tier, path kept warm).
+AI_PROVIDER = "deepseek"
+# Kill-switch: set to "false" (or anything else) to stop all AI spend instantly.
+AI_ENABLED = "true"
+# Per-day AI-request quotas, pre-auth (device header + IP). Tighten server-side
+# any time — no client release needed.
+DAILY_DEVICE_LIMIT = "30"
+DAILY_IP_LIMIT = "90"
+# Comma-separated allowed browser origins (Expo web preview).
+CORS_ORIGINS = "http://localhost:8090"

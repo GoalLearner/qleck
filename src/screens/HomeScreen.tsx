@@ -14,11 +14,12 @@
 // P2a renders and records; P4 adds nudges, adaptation and the milestone
 // celebration moment (the canvas' "ease this week" card ships then, when the
 // revise flow gets a client).
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Confetti, { type ConfettiHandle } from '../components/Confetti';
 import FadeInUp from '../components/FadeInUp';
 import { shortGoalName } from '../components/protocolViews';
 import { Pop } from '../onboarding/ui';
@@ -198,10 +199,12 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty }: {
 /* ── day states ─────────────────────────────────────────────────────────── */
 
 // A calm banner, not a takeover: the checked cards stay below as the day's
-// receipts (owner call, 2026-08-24 — evidence is the reward).
-function DayDone({ streak, preview }: { streak: number; preview: string | null }) {
+// receipts (owner call, 2026-08-24 — evidence is the reward). Tapping it
+// replays the confetti salute (the canvas' encore).
+function DayDone({ streak, preview, onEncore }: { streak: number; preview: string | null; onEncore: () => void }) {
   return (
-    <View
+    <Pressable
+      onPress={onEncore}
       style={{
         alignItems: 'center', gap: 12, backgroundColor: '#eef4ec',
         borderWidth: 1, borderColor: '#dcecdf', borderRadius: 26,
@@ -222,8 +225,19 @@ function DayDone({ streak, preview }: { streak: number; preview: string | null }
           {preview}
         </Text>
       )}
-    </View>
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 11, color: FADED }}>confetti's free — tap for an encore</Text>
+    </Pressable>
   );
+}
+
+/** Fire the salute when the last rep lands — not on a reload that already
+ * shows a finished day (the canvas fires on the transition only). */
+function useCelebrateOnDone(allDone: boolean, celebrate: () => void) {
+  const prev = useRef(allDone);
+  useEffect(() => {
+    if (allDone && !prev.current) celebrate();
+    prev.current = allDone;
+  }, [allDone, celebrate]);
 }
 
 function RestDay({ preview }: { preview: string | null }) {
@@ -335,13 +349,14 @@ function GroupHeader({ g, open, onToggle }: { g: GoalToday; open: boolean; onTog
 
 /* ── the phone loop (canvas §1, grouped when goals run concurrently) ────── */
 
-function TodayLoop({ goals, byGoal }: { goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]> }) {
+function TodayLoop({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>; celebrate: () => void }) {
   const { checkInStep, uncheckStep, profile } = useRally();
   const m = useTodayModel(goals, byGoal);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const multi = m.perGoal.length > 1;
   const milestoneOwner = m.perGoal.find(g => nextMilestoneOf(g));
   const nextMilestone = milestoneOwner ? nextMilestoneOf(milestoneOwner) : null;
+  useCelebrateOnDone(m.allDone, celebrate);
 
   return (
     <>
@@ -353,7 +368,7 @@ function TodayLoop({ goals, byGoal }: { goals: ActiveGoal[]; byGoal: Record<stri
 
         {m.allDone && (
           <Pop>
-            <DayDone streak={m.streak} preview={m.preview} />
+            <DayDone streak={m.streak} preview={m.preview} onEncore={celebrate} />
           </Pop>
         )}
 
@@ -462,12 +477,13 @@ function ProgressRingCard({ done, total }: { done: number; total: number }) {
   );
 }
 
-function DesktopToday({ goals, byGoal }: { goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]> }) {
+function DesktopToday({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>; celebrate: () => void }) {
   const { checkInStep, uncheckStep, profile } = useRally();
   const navigation = useNavigation<any>();
   const m = useTodayModel(goals, byGoal);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [qtyVals, setQtyVals] = useState<Record<string, number>>({});
+  useCelebrateOnDone(m.allDone, celebrate);
 
   const milestoneRows = m.perGoal
     .map(g => ({ g, mi: nextMilestoneOf(g) }))
@@ -514,7 +530,7 @@ function DesktopToday({ goals, byGoal }: { goals: ActiveGoal[]; byGoal: Record<s
 
           {m.allDone && (
             <Pop>
-              <DayDone streak={m.streak} preview={m.preview} />
+              <DayDone streak={m.streak} preview={m.preview} onEncore={celebrate} />
             </Pop>
           )}
 
@@ -633,6 +649,8 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const { profile, goals, checkInsByGoal } = useRally();
   const wide = Platform.OS === 'web' && width >= 980;
+  const confettiRef = useRef<ConfettiHandle>(null);
+  const celebrate = useCallback(() => confettiRef.current?.fire(), []);
 
   return (
     <FadeInUp style={{ flex: 1 }}>
@@ -643,8 +661,8 @@ export default function HomeScreen() {
       >
         {goals.length > 0 ? (
           wide
-            ? <DesktopToday goals={goals} byGoal={checkInsByGoal} />
-            : <TodayLoop goals={goals} byGoal={checkInsByGoal} />
+            ? <DesktopToday goals={goals} byGoal={checkInsByGoal} celebrate={celebrate} />
+            : <TodayLoop goals={goals} byGoal={checkInsByGoal} celebrate={celebrate} />
         ) : (
           <View style={wide ? { width: '100%', maxWidth: 560, alignSelf: 'center', paddingTop: 40 } : undefined}>
             <Header title={greeting(false, profile.firstName)} sub="Nothing on the clock yet" />
@@ -652,6 +670,9 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
+      {/* the salute lives outside the scroll so the cannons anchor to the
+          viewport corners, exactly like the canvas' fixed overlay */}
+      <Confetti ref={confettiRef} />
     </FadeInUp>
   );
 }

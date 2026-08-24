@@ -15,6 +15,8 @@ interface OutboxItem {
   stepId: string;
   localDate: string;
   value: number | null;
+  /** Missing = 'add' (items queued before un-check shipped). */
+  op?: 'add' | 'remove';
 }
 
 function mintId(): string {
@@ -37,6 +39,14 @@ async function writeOutbox(items: OutboxItem[]): Promise<void> {
 async function post(item: OutboxItem): Promise<boolean> {
   try {
     const { token } = await getIdentity();
+    if (item.op === 'remove') {
+      const qs = `goalId=${item.goalId}&stepId=${encodeURIComponent(item.stepId)}&date=${item.localDate}`;
+      const res = await fetch(`${apiBase()}/check-ins?${qs}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.ok;
+    }
     const res = await fetch(apiBase() + '/check-ins', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -50,10 +60,17 @@ async function post(item: OutboxItem): Promise<boolean> {
 export async function submitCheckIn(
   goalId: string, stepId: string, localDate: string, value: number | null = null,
 ): Promise<CheckIn> {
-  const item: OutboxItem = { id: mintId(), goalId, stepId, localDate, value };
+  const item: OutboxItem = { id: mintId(), goalId, stepId, localDate, value, op: 'add' };
   await writeOutbox([...(await readOutbox()), item]);
   void flushOutbox();
   return { id: item.id, step_id: stepId, local_date: localDate, value };
+}
+
+/** Un-check: queue-then-send delete, ordered after any pending add. */
+export async function removeCheckIn(goalId: string, stepId: string, localDate: string): Promise<void> {
+  const item: OutboxItem = { id: mintId(), goalId, stepId, localDate, value: null, op: 'remove' };
+  await writeOutbox([...(await readOutbox()), item]);
+  void flushOutbox();
 }
 
 let flushing = false;
@@ -85,16 +102,19 @@ export async function fetchCheckIns(goalId: string, from: string, to: string): P
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ goalId, rows })).catch(() => {});
     return rows;
   } catch {
-    // Offline: cached rows plus anything still queued for this goal.
+    // Offline: cached rows with the queued ops replayed in order on top.
     try {
       const raw = await AsyncStorage.getItem(CACHE_KEY);
       const cached = raw ? (JSON.parse(raw) as { goalId: string; rows: CheckIn[] }) : null;
-      const queued = (await readOutbox())
-        .filter(i => i.goalId === goalId)
-        .map(i => ({ id: i.id, step_id: i.stepId, local_date: i.localDate, value: i.value }));
-      const base = cached?.goalId === goalId ? cached.rows : [];
-      const seen = new Set(base.map(r => r.id));
-      return [...base, ...queued.filter(q => !seen.has(q.id))];
+      let rows: CheckIn[] = cached?.goalId === goalId ? cached.rows : [];
+      for (const i of (await readOutbox()).filter(i => i.goalId === goalId)) {
+        if (i.op === 'remove') {
+          rows = rows.filter(r => !(r.step_id === i.stepId && r.local_date === i.localDate));
+        } else if (!rows.some(r => r.id === i.id)) {
+          rows = [...rows, { id: i.id, step_id: i.stepId, local_date: i.localDate, value: i.value }];
+        }
+      }
+      return rows;
     } catch { return []; }
   }
 }

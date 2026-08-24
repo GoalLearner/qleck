@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchCurrentGoal, saveGoal } from '../api/goals';
-import { fetchCheckIns, flushOutbox, submitCheckIn } from '../api/checkins';
+import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
 import { localDate } from '../api/device';
 import type { CheckIn } from '../lib/protocolTime';
 import {
@@ -68,6 +68,8 @@ interface RallyState {
   goalStartedOn: string;
   checkIns: CheckIn[];
   checkInStep: (stepId: string, value?: number | null) => void;
+  // Un-check (the canvas' toggling check): today only, mirrored to the server.
+  uncheckStep: (stepId: string) => void;
   events: RallyEvent[];
   challenges: Challenge[];
   polls: Poll[];
@@ -187,6 +189,12 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     }
   }, [goalId]);
 
+  const uncheckStep = useCallback((stepId: string) => {
+    const today = localDate();
+    setCheckIns(prev => prev.filter(c => !(c.step_id === stepId && c.local_date === today)));
+    if (goalId) void removeCheckIn(goalId, stepId, today);
+  }, [goalId]);
+
   const people = useMemo<Record<FriendKey, Friend>>(() => ({
     ...FRIENDS,
     d: { ...FRIENDS.d, i: profile.initials, name: 'You' },
@@ -301,11 +309,11 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<RallyState>(() => ({
     profile, people, applyOnboarding, setGoalPlan,
-    goalId, goalStartedOn, checkIns, checkInStep,
+    goalId, goalStartedOn, checkIns, checkInStep, uncheckStep,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
   }), [profile, people, applyOnboarding, setGoalPlan,
-    goalId, goalStartedOn, checkIns, checkInStep,
+    goalId, goalStartedOn, checkIns, checkInStep, uncheckStep,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 

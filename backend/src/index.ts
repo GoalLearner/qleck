@@ -12,10 +12,11 @@
 //   GET  /goals/current                   (Bearer token)   → goal + latest protocol
 //   POST /check-ins                       {id, goalId, stepId, localDate, value?} — idempotent
 //   GET  /check-ins?goalId=&from=&to=     (Bearer token)   → rows in range
+//   DELETE /check-ins?goalId=&stepId=&date= — un-check (idempotent by key)
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { registerDevice, touchUser, verifyToken } from './auth';
 import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type SessionRow, type Verdict } from './coach';
-import { createGoal, getCurrentGoal, listCheckIns, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
+import { createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
 import type { Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
@@ -26,7 +27,7 @@ const MAX_ANSWER_CHARS = 600;
 function corsHeaders(env: Env, origin: string | null): Record<string, string> {
   const allowed = (env.CORS_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
   const headers: Record<string, string> = {
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Qleck-Device',
     'Access-Control-Max-Age': '86400',
   };
@@ -86,6 +87,16 @@ export default {
       }
       if (url.pathname === '/check-ins' && request.method === 'POST') {
         const result = await recordCheckIn(env, userId, (await request.json().catch(() => ({}))) as Record<string, unknown>);
+        if (!result.ok) return json({ error: result.error }, 400, cors);
+        return json({ ok: true }, 200, cors);
+      }
+      if (url.pathname === '/check-ins' && request.method === 'DELETE') {
+        const result = await deleteCheckIn(
+          env, userId,
+          url.searchParams.get('goalId') ?? '',
+          url.searchParams.get('stepId') ?? '',
+          url.searchParams.get('date') ?? '',
+        );
         if (!result.ok) return json({ error: result.error }, 400, cors);
         return json({ ok: true }, 200, cors);
       }

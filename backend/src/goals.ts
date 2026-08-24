@@ -187,6 +187,23 @@ export async function recordCheckIn(
   return { ok: true };
 }
 
+/**
+ * Un-check (the canvas' toggling check): idempotent delete keyed by
+ * (goal, step, local date) so the client never needs the row id — optimistic
+ * rows may still be pending in the outbox when the user changes their mind.
+ */
+export async function deleteCheckIn(
+  env: Env, userId: string, goalId: string, stepId: string, localDate: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false, error: 'invalid_id' };
+  if (!stepId || !CHECKIN_DATE_RE.test(localDate)) return { ok: false, error: 'invalid_key' };
+  await env.DB
+    .prepare(`DELETE FROM check_ins WHERE goal_id = ? AND user_id = ? AND step_id = ? AND local_date = ?`)
+    .bind(goalId, userId, stepId.slice(0, 64), localDate)
+    .run();
+  return { ok: true };
+}
+
 export async function listCheckIns(
   env: Env, userId: string, goalId: string, from: string, to: string,
 ): Promise<CheckInRow[]> {

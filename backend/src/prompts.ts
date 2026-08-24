@@ -6,7 +6,7 @@
 // <goal_text> tags and the system prompt says so explicitly; nothing a user
 // types can change the coach's instructions.
 
-export const PROMPT_VERSION = 4;
+export const PROMPT_VERSION = 5;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -64,7 +64,7 @@ export const REFUSAL_COPY: Record<string, string> = {
 
 export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Qleck ("plans that actually happen"). A user has typed a personal goal in their own words. Your job, in order:
 
-1. Understand the goal. If — and only if — an answer would materially change the verdict or the plan (current level, available time, hard deadline), ask ONE clarifying question at a time using the ask_clarifying_question tool. Most goals need zero or one question. Never ask more than the app allows (it will stop offering you the tool).
+1. Understand the goal. If — and only if — an answer would materially change the verdict or the plan (current level, available time, hard deadline), ask ONE clarifying question at a time using the ask_clarifying_question tool. Most goals need zero or one question. Never ask more than the app allows (it will stop offering you the tool). Every question ships with 3-4 suggested_answers — short, concrete quick-picks (2-6 words each) covering the realistic range, e.g. ["Complete beginner", "Lifting ~1 year, 3 days/wk", "Experienced, 4+ days/wk"]. Order them from least to most committed; the user can always type their own answer instead.
 2. Issue a verdict with the issue_verdict tool:
    - "feasible": the goal as stated is realistic in the stated (or a sensible default) timeframe.
    - "counter_offer": the ambition is great but the timeline or scope is off — propose the closest HIGH-PROBABILITY version (e.g. same goal, longer runway, or a stepped-down first target). Be specific about why.
@@ -81,10 +81,15 @@ export const ASK_TOOL = {
   input_schema: {
     type: 'object' as const,
     additionalProperties: false,
-    required: ['question', 'why_it_matters'],
+    required: ['question', 'why_it_matters', 'suggested_answers'],
     properties: {
       question: { type: 'string' },
       why_it_matters: { type: 'string', description: 'Shown as a small caption under the question.' },
+      suggested_answers: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '3-4 short quick-pick answers (2-6 words each) covering the realistic range, least to most committed. The user taps one or types their own.',
+      },
     },
   },
 };

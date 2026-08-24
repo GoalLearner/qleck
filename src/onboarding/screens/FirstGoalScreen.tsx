@@ -344,6 +344,25 @@ export default function FirstGoalScreen({ flow, demoHints = true }: { flow: Onbo
 
         <Spacer />
 
+        {(coach.question.suggested_answers?.length ?? 0) > 0 && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+            {coach.question.suggested_answers!.map(option => (
+              <Pressable
+                key={option}
+                onPress={() => { coach.answerQuestion(option); setAnswer(''); }}
+                style={{
+                  paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+                  backgroundColor: night.accentSofter, borderWidth: 1, borderColor: 'rgba(43,227,128,0.4)',
+                }}
+              >
+                <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13, color: night.accentText }}>
+                  {option}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <NightInput
             value={answer}

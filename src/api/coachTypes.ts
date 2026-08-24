@@ -22,6 +22,9 @@ export interface Verdict {
 export interface CoachQuestion {
   question: string;
   why_it_matters: string;
+  // 3-4 quick-pick answers from the coach; free text stays available. Older
+  // sessions / defensive: may be absent.
+  suggested_answers?: string[];
 }
 
 export interface CoachRefusal {

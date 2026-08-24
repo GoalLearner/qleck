@@ -22,8 +22,10 @@ AI_PROVIDER = "deepseek"
 # Kill-switch: set to "false" (or anything else) to stop all AI spend instantly.
 AI_ENABLED = "true"
 # Per-day AI-request quotas, pre-auth (device header + IP). Tighten server-side
-# any time — no client release needed.
-DAILY_DEVICE_LIMIT = "30"
-DAILY_IP_LIMIT = "90"
+# any time — no client release needed. A full goal costs ~6-10 requests, so
+# 150 ≈ 15-25 goals/day/device; worst-case runaway ≈ $0.15/day at DeepSeek
+# prices. Local dev overrides these in .dev.vars (effectively unlimited).
+DAILY_DEVICE_LIMIT = "150"
+DAILY_IP_LIMIT = "450"
 # Comma-separated allowed browser origins (Expo web preview).
 CORS_ORIGINS = "http://localhost:8090"

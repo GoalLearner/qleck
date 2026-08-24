@@ -297,12 +297,14 @@ export async function reclassifyRequest(db: D1Database, requestId: string, verdi
 export async function checkQuota(env: Env, deviceId: string, ip: string): Promise<string | null> {
   const deviceLimit = Number(env.DAILY_DEVICE_LIMIT ?? 30);
   const ipLimit = Number(env.DAILY_IP_LIMIT ?? 90);
+  // Calendar-day window (UTC) so the client's "resets at midnight" copy is
+  // true, rather than a rolling 24h window that quietly thaws.
   const [dev, addr] = await env.DB.batch([
     env.DB
-      .prepare(`SELECT COUNT(*) AS n FROM ai_requests WHERE device_id = ? AND synthetic = 0 AND created_at >= datetime('now', '-1 day')`)
+      .prepare(`SELECT COUNT(*) AS n FROM ai_requests WHERE device_id = ? AND synthetic = 0 AND created_at >= datetime('now', 'start of day')`)
       .bind(deviceId),
     env.DB
-      .prepare(`SELECT COUNT(*) AS n FROM ai_requests WHERE ip = ? AND synthetic = 0 AND created_at >= datetime('now', '-1 day')`)
+      .prepare(`SELECT COUNT(*) AS n FROM ai_requests WHERE ip = ? AND synthetic = 0 AND created_at >= datetime('now', 'start of day')`)
       .bind(ip),
   ]);
   const devCount = Number((dev.results?.[0] as { n: number } | undefined)?.n ?? 0);

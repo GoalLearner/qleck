@@ -11,6 +11,7 @@ import { Animated, Easing, Pressable, ScrollView, Text, View } from 'react-nativ
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
+import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
 import type { Protocol } from '../api/coachTypes';
 import { localDate } from '../api/device';
@@ -127,10 +128,18 @@ function RepCard({ rep, onCheck }: { rep: DayRep; onCheck: () => void }) {
 
 /* ── day states ─────────────────────────────────────────────────────────── */
 
+// A calm banner, not a takeover: the checked cards stay below as the day's
+// receipts (owner call, 2026-08-24 — evidence is the reward).
 function DayDone({ streak, preview }: { streak: number; preview: string | null }) {
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingBottom: 30, paddingHorizontal: 24 }}>
-      <Text style={{ fontFamily: fonts.serif, fontSize: 36, color: INK }}>That's today.</Text>
+    <View
+      style={{
+        alignItems: 'center', gap: 12, backgroundColor: '#eef4ec',
+        borderWidth: 1, borderColor: '#dcecdf', borderRadius: 26,
+        paddingVertical: 22, paddingHorizontal: 18,
+      }}
+    >
+      <Text style={{ fontFamily: fonts.serif, fontSize: 27, color: INK }}>That's today.</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: '#dcecdf' }}>
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: '#47694f' }}>{streak}-day streak</Text>
@@ -140,7 +149,7 @@ function DayDone({ streak, preview }: { streak: number; preview: string | null }
         </View>
       </View>
       {preview && (
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 13, lineHeight: 20.8, color: colors.muted, maxWidth: 250, textAlign: 'center', marginTop: 6 }}>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 20, color: colors.muted, textAlign: 'center' }}>
           {preview}
         </Text>
       )}
@@ -209,9 +218,13 @@ function TodayLoop({ protocol, startedOn, checkIns }: { protocol: Protocol; star
           </View>
         )}
 
-        {allDone ? (
-          <DayDone streak={streak} preview={preview} />
-        ) : restDay ? (
+        {allDone && (
+          <Pop>
+            <DayDone streak={streak} preview={preview} />
+          </Pop>
+        )}
+
+        {restDay ? (
           <RestDay preview={preview} />
         ) : (
           <>
@@ -227,7 +240,7 @@ function TodayLoop({ protocol, startedOn, checkIns }: { protocol: Protocol; star
           </>
         )}
 
-        {!allDone && !restDay && nextMilestone && (
+        {!restDay && nextMilestone && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.inviteBg, borderWidth: 1, borderColor: colors.inviteBorder, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 13 }}>
             <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: colors.inviteAccent }}>⚑</Text>
             <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.3, color: colors.inviteAccent }}>

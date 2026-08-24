@@ -7,7 +7,11 @@ challenges, quick group polls, and cheering each other's achievements. Every
 yes lands on everyone's calendar. Built with **React Native + Expo (SDK 56),
 TypeScript**. Visual language comes from the Claude Design project
 `Rally App.dc.html` (design project ccc3325c-9294-492a-bb94-8aa35ee9d8be);
-new screens follow its tokens (`src/theme.ts`).
+new in-app screens follow its tokens (`src/theme.ts`). The **onboarding funnel
+is a deliberate exception**: it is ported from `Qleck Onboarding.dc.html`
+(design project 7091d355-0d06-4e43-b873-002e9629705c) and uses its own dark
+"Electric Night" palette in `src/onboarding/theme.ts`. Keep the two token sets
+apart — cream Rally inside the app, Electric Night before you're logged in.
 
 ## Ground rules
 - Expo HAS CHANGED. Read the exact versioned docs at
@@ -22,8 +26,9 @@ new screens follow its tokens (`src/theme.ts`).
 Configured entirely in code. Do **not** mix in Expo Router.
 - Entry: `index.ts` → `registerRootComponent(App)` (NOT `expo-router/entry`).
 - There is intentionally **no `app/` directory** (that would signal Expo Router).
-- Hierarchy in `App.tsx`: root native stack — `Login` (when logged out) or
+- Hierarchy in `App.tsx`: root native stack — `Onboarding` (when logged out) or
   `Tabs` + `Event` + `Challenge` + `Friends` + `Friend` + `Create` (modal).
+  `Onboarding` runs its own internal screen switch, not a nested navigator.
   `Tabs` is a bottom-tab navigator (Home / Plans / Streaks / You) with a custom
   floating pill tab bar (`src/components/RallyTabBar.tsx`) whose center "+"
   opens `Create`.
@@ -35,20 +40,55 @@ Configured entirely in code. Do **not** mix in Expo Router.
 - `src/data/` — `types.ts` shapes + `mockData.ts` (people, events, challenges,
   polls, achievements).
 - `src/state/RallyContext.tsx` — app state: RSVP, invites, check-ins, follow
-  graph, poll votes, cheers, team-progress logging, create flow.
+  graph, poll votes, cheers, team-progress logging, create flow. Also owns
+  **who you are**: `profile` (`UserProfile`, seeded from `DEFAULT_PROFILE` =
+  the demo's "Dana") and `applyOnboarding(result)`, which folds an
+  `OnboardingResult` in — blank fields keep the default, so the log-in-only
+  path doesn't wipe your name. Read people through `people`, **not** the raw
+  `FRIENDS` map: `people` is `FRIENDS` with `'d'` ("you") rewritten from the
+  live profile, so your own name and initial are right in every avatar stack
+  and leaderboard.
 - `src/components/` — Avatar, ProgressRing, EventRow, WeekDots, PollCard,
-  AchievementCard, FollowPill, RallyTabBar, SectionLabel, FadeInUp.
-- `src/screens/` — Login, Home, Plans, Challenges (Streaks), Profile (You),
+  AchievementCard, FollowPill, RallyTabBar, SectionLabel, FadeInUp, YouAvatar
+  (your own avatar — the gradient you picked in onboarding, or the cream chip
+  when you never picked one).
+- `src/screens/` — Home, Plans, Challenges (Streaks), Profile (You),
   Friends, FriendProfile, EventDetail, ChallengeDetail, Create (3-step flow:
-  plan / challenge [streak or team total] / poll).
+  plan / challenge [streak or team total] / poll). `LoginScreen.tsx` is the
+  older cream-palette login — superseded by `src/onboarding/`, kept for
+  reference and no longer wired into `App.tsx`.
+- `src/onboarding/` — the whole logged-out funnel, ported from
+  `Qleck Onboarding.dc.html`. `theme.ts` (Electric Night tokens), `ui.tsx`
+  (shell / buttons / inputs / the canvas' keyframes as Animated wrappers),
+  `useOnboardingFlow.ts` (the state machine, 1:1 with the canvas' `DCLogic`),
+  `OnboardingFlow.tsx` (screen switch + toast), `screens/` (14 screens).
+  Three journeys share one state machine: sign-up (welcome → auth → signup →
+  verify → profile → goal → invite → perms → done), log-in (login → Face ID),
+  and recovery (forgot → sent → reset). Auth is still mocked exactly as the
+  canvas mocked it — code `424242`, password `qleck123`, `sara@qleck.com`
+  triggers the duplicate-account sheet — and `demoHints` shows the tap-through
+  affordances. Phase 2 replaces those branches; the screens and copy stay.
+  Fonts: Space Grotesk 700 + DM Sans 400/500 (loaded in `App.tsx`).
 
 ## Phases
+**Read docs/ROADMAP.md first** — the master roadmap (APPROVED 2026-08-23, P1-P6:
+AI proxy spike → schema freeze + persistence → FriendKey surgery → real auth on the
+funnel → living protocol → store gauntlet → friends-lite). It sequences the
+AI-coach vision on top of the coarse phases below, which are kept for capability
+detail. Qleck's core is an AI goal coach: free-text goal → feasibility verdict
+(counter-offer / safety refusal) → step-by-step protocol lived via the existing
+streak surfaces. AI calls go through a `qleck-api` CF Worker — never from the client.
 1. ✅ Full UI with mock data + local state — plans, invites, open invites,
    streak + team challenges, polls, cheers, follow/friend profiles.
 2. Accounts backend: email/SMS magic-link auth + password reset, verified
    profiles with photo (photo is a must), duplicate/impersonation guard,
    GDPR-compliant data handling (no leaked names/contacts), real follow graph,
-   open-events region filtering.
+   open-events region filtering. The **UI for all of this already exists** in
+   `src/onboarding/`, and its result already flows into `RallyContext` — name,
+   handle and avatar drive the app today; `firstGoal` / `goalPeriod` /
+   `allowNotifications` / `allowMotion` are stored on the profile but not yet
+   acted on. Phase 2 is swapping the mock auth branches for real calls and
+   persisting the profile across launches.
 3. Device integrations: HealthKit / Health Connect step import (manual entry
    stays as the fallback), real calendar sync (expo-calendar), push nudges.
 - **Parked** (owner's partner's ideas, deliberately not built yet): listings /

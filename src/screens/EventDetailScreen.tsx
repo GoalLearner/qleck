@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Rect } from 'react-native-svg';
 import Avatar from '../components/Avatar';
 import FadeInUp from '../components/FadeInUp';
-import { FRIENDS } from '../data/mockData';
 import { RsvpStatus } from '../data/types';
 import { useRally } from '../state/RallyContext';
 import { CATS, colors, fonts, radii } from '../theme';
@@ -69,17 +68,17 @@ export default function EventDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { events, setRsvp } = useRally();
+  const { events, setRsvp, people } = useRally();
 
   const event = events.find(e => e.id === route.params?.id) ?? events[0];
   const cat = CATS[event.cat];
-  const host = FRIENDS[event.hk];
+  const host = people[event.hk];
   const onCal = event.status === 'going' || event.hosting;
 
   const attFull = [
     { key: event.hk, ...host, name: event.hk === 'd' ? 'You' : host.name, sub: 'Host' },
-    ...event.att.filter(k => k !== event.hk).map(k => ({ key: k, ...FRIENDS[k], sub: 'Going' })),
-    ...(event.status === 'going' && !event.hosting ? [{ key: 'd' as const, ...FRIENDS.d, name: 'You', sub: 'Going' }] : []),
+    ...event.att.filter(k => k !== event.hk).map(k => ({ key: k, ...people[k], sub: 'Going' })),
+    ...(event.status === 'going' && !event.hosting ? [{ key: 'd' as const, ...people.d, name: 'You', sub: 'Going' }] : []),
   ];
 
   const seg = (label: string, value: RsvpStatus) => {

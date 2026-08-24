@@ -6,14 +6,13 @@ import Avatar from '../components/Avatar';
 import FadeInUp from '../components/FadeInUp';
 import ProgressRing from '../components/ProgressRing';
 import WeekDots from '../components/WeekDots';
-import { FRIENDS } from '../data/mockData';
 import { teamTotal, useRally, weekProgress } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
 export default function ChallengesScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { challenges, checkIn, logTeamProgress } = useRally();
+  const { challenges, checkIn, logTeamProgress, people } = useRally();
 
   return (
     <FadeInUp style={{ flex: 1 }}>
@@ -62,7 +61,7 @@ export default function ChallengesScreen() {
                 {isTeam ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
                     {(ch.contributions ?? []).map(([k]) => (
-                      <Avatar key={k} friend={FRIENDS[k]} size={28} fontSize={10.5} ringColor={colors.card} style={{ marginRight: -7 }} />
+                      <Avatar key={k} friend={people[k]} size={28} fontSize={10.5} ringColor={colors.card} style={{ marginRight: -7 }} />
                     ))}
                     <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: colors.muted, marginLeft: 14 }}>
                       everyone's {ch.unit} count toward the goal

@@ -1,4 +1,5 @@
 import { CatKey } from '../theme';
+import type { Protocol } from '../api/coachTypes';
 
 // One of the mock people (keyed by a short letter id, e.g. 'm' for Maya).
 // 'd' = you; 'o'/'t'/'r' are suggested users you don't follow yet.
@@ -10,6 +11,26 @@ export interface Friend {
   c: string; // avatar bg
   d: string; // avatar fg
   tag: string; // one-liner shown in the friend picker
+}
+
+// Who you are in the app. Seeded with the demo defaults, then overwritten by
+// whatever the onboarding funnel collected (see `applyOnboarding`).
+export interface UserProfile {
+  firstName: string;
+  fullName: string;
+  handle: string; // without the leading '@'
+  initials: string;
+  // The avatar the user picked during onboarding, as a 2-stop gradient.
+  // null = the app's default cream chip. Stands in for the real photo until
+  // Phase 2 ships uploads.
+  avatarColors: [string, string] | null;
+  firstGoal: string | null;
+  goalPeriod: string | null;
+  // The accepted Qoach protocol from onboarding. P1: in-memory only (lost on
+  // refresh, by design); P2a persists it; P4's execution engine consumes it.
+  protocol: Protocol | null;
+  allowNotifications: boolean;
+  allowMotion: boolean;
 }
 
 export type RsvpStatus = 'going' | 'maybe' | 'out' | null;

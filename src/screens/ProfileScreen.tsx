@@ -3,8 +3,9 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
-import { FRIENDS, PICKABLE_FRIENDS } from '../data/mockData';
+import { PICKABLE_FRIENDS } from '../data/mockData';
 import FadeInUp from '../components/FadeInUp';
+import YouAvatar from '../components/YouAvatar';
 import SectionLabel from '../components/SectionLabel';
 import { useRally } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
@@ -39,7 +40,7 @@ function Card({ children }: { children: React.ReactNode }) {
 export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { userName, challenges, following } = useRally();
+  const { profile, people, challenges, following } = useRally();
   const bestStreak = Math.max(...challenges.map(c => c.streak));
   const followedCount = Object.values(following).filter(Boolean).length;
 
@@ -51,12 +52,10 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ alignItems: 'center', paddingTop: 18, paddingHorizontal: 20 }}>
-          <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: colors.openBg, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: colors.accentLink, fontFamily: fonts.serif, fontSize: 30 }}>{userName[0]}</Text>
-          </View>
-          <Text style={{ fontFamily: fonts.serif, fontSize: 23, marginTop: 12, color: colors.ink }}>{userName} Whitfield</Text>
+          <YouAvatar size={84} fontSize={30} serif />
+          <Text style={{ fontFamily: fonts.serif, fontSize: 23, marginTop: 12, color: colors.ink }}>{profile.fullName}</Text>
           <Text style={{ fontSize: 12.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 4 }}>
-            @{userName.toLowerCase()} · joined June '26
+            @{profile.handle} · joined June '26
           </Text>
         </View>
 
@@ -100,7 +99,7 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
           >
             <View style={{ flexDirection: 'row' }}>
               {PICKABLE_FRIENDS.slice(0, 4).map(k => (
-                <Avatar key={k} friend={FRIENDS[k]} size={30} fontSize={11} ringColor={colors.card} style={{ marginRight: -8 }} />
+                <Avatar key={k} friend={people[k]} size={30} fontSize={11} ringColor={colors.card} style={{ marginRight: -8 }} />
               ))}
             </View>
             <View style={{ flex: 1, marginLeft: 10 }}>

@@ -1,14 +1,13 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { FRIENDS } from '../data/mockData';
 import { Poll } from '../data/types';
 import { useRally } from '../state/RallyContext';
 import Avatar from './Avatar';
 import { colors, fonts, radii } from '../theme';
 
 export default function PollCard({ poll }: { poll: Poll }) {
-  const { vote } = useRally();
-  const by = FRIENDS[poll.by];
+  const { vote, people } = useRally();
+  const by = people[poll.by];
   const total = poll.options.reduce((a, o) => a + o.votes.length, 0);
   const voted = poll.myVote !== null;
 

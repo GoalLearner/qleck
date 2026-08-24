@@ -6,23 +6,23 @@ import AchievementCard from '../components/AchievementCard';
 import Avatar from '../components/Avatar';
 import EventRow from '../components/EventRow';
 import FadeInUp from '../components/FadeInUp';
+import YouAvatar from '../components/YouAvatar';
 import PollCard from '../components/PollCard';
 import ProgressRing from '../components/ProgressRing';
 import SectionLabel from '../components/SectionLabel';
-import { FRIENDS } from '../data/mockData';
 import { nextUp, sortedEvents, teamTotal, useRally, weekProgress } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { userName, events, challenges, polls, achievements, inviteState, jogState, respondInvite, joinJog, checkIn } = useRally();
+  const { profile, people, events, challenges, polls, achievements, inviteState, jogState, respondInvite, joinJog, checkIn } = useRally();
 
   const evs = sortedEvents(events);
   const next = nextUp(events);
   const nextAvs = next ? next.att.slice(0, 3) : [];
   const others = next ? Math.max(next.att.length - 2, 0) : 0;
-  const nextNames = next ? next.att.slice(0, 2).map(k => FRIENDS[k].name).join(', ') : '';
+  const nextNames = next ? next.att.slice(0, 2).map(k => people[k].name).join(', ') : '';
 
   const openEvent = (id: string) => navigation.navigate('Event', { id });
 
@@ -37,17 +37,14 @@ export default function HomeScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 2 }}>
           <View>
             <Text style={{ fontFamily: fonts.serif, fontSize: 26, letterSpacing: -0.3, color: colors.ink }}>
-              Morning, {userName}.
+              Morning, {profile.firstName}.
             </Text>
             <Text style={{ fontSize: 12.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 5 }}>
               {evs.length} plans this week · {challenges[0].streak}-day streak. Look at you.
             </Text>
           </View>
-          <Pressable
-            onPress={() => navigation.navigate('You')}
-            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.openBg, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Text style={{ color: colors.accentLink, fontSize: 14, fontFamily: fonts.extrabold }}>{userName[0]}</Text>
+          <Pressable onPress={() => navigation.navigate('You')}>
+            <YouAvatar size={40} fontSize={14} />
           </Pressable>
         </View>
 
@@ -74,7 +71,7 @@ export default function HomeScreen() {
               style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}
             >
               {nextAvs.map(k => (
-                <Avatar key={k} friend={FRIENDS[k]} size={28} fontSize={10.5} ringColor={colors.navy} style={{ marginRight: -7 }} />
+                <Avatar key={k} friend={people[k]} size={28} fontSize={10.5} ringColor={colors.navy} style={{ marginRight: -7 }} />
               ))}
               <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: 'rgba(245,242,234,0.55)', marginLeft: 14 }}>
                 {nextNames}{others > 0 ? ` + ${others} are in` : ' are in'}
@@ -89,7 +86,7 @@ export default function HomeScreen() {
           {inviteState === null && (
             <>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Avatar friend={FRIENDS.l} size={42} fontSize={14} />
+                <Avatar friend={people.l} size={42} fontSize={14} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11.5, fontFamily: fonts.bold, color: colors.inviteAccent }}>Leo invited you</Text>
                   <Text style={{ fontFamily: fonts.serif, fontSize: 17, marginTop: 2, color: colors.ink }}>Dumpling crawl</Text>
@@ -137,7 +134,7 @@ export default function HomeScreen() {
         <SectionLabel>OPEN INVITE</SectionLabel>
         <View style={{ marginHorizontal: 14, backgroundColor: colors.openBg, borderWidth: 1, borderColor: colors.openBorder, borderRadius: radii.card, padding: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Avatar friend={FRIENDS.p} size={42} fontSize={14} />
+            <Avatar friend={people.p} size={42} fontSize={14} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 11.5, fontFamily: fonts.bold, color: colors.accentLink }}>Priya · open to everyone</Text>
               <Text style={{ fontFamily: fonts.serif, fontSize: 17, marginTop: 2, color: colors.ink }}>Morning jog</Text>

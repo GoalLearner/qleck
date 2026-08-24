@@ -1,8 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { FRIENDS } from '../data/mockData';
 import { RallyEvent } from '../data/types';
-import { statusPill } from '../state/RallyContext';
+import { statusPill, useRally } from '../state/RallyContext';
 import Avatar from './Avatar';
 import { CATS, colors, fonts, radii } from '../theme';
 
@@ -13,6 +12,7 @@ interface Props {
 }
 
 export default function EventRow({ event, onPress, showAvatars = false }: Props) {
+  const { people } = useRally();
   const cat = CATS[event.cat];
   const st = statusPill(event);
   return (
@@ -42,7 +42,7 @@ export default function EventRow({ event, onPress, showAvatars = false }: Props)
         {showAvatars && (
           <View style={{ flexDirection: 'row', marginTop: 7 }}>
             {event.att.map(k => (
-              <Avatar key={k} friend={FRIENDS[k]} size={22} fontSize={9} ringColor={colors.card} style={{ marginRight: -6 }} />
+              <Avatar key={k} friend={people[k]} size={22} fontSize={9} ringColor={colors.card} style={{ marginRight: -6 }} />
             ))}
           </View>
         )}

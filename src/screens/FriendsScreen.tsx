@@ -6,13 +6,14 @@ import Avatar from '../components/Avatar';
 import FadeInUp from '../components/FadeInUp';
 import FollowPill from '../components/FollowPill';
 import SectionLabel from '../components/SectionLabel';
-import { FRIENDS, PICKABLE_FRIENDS, SUGGESTED_PEOPLE } from '../data/mockData';
+import { PICKABLE_FRIENDS, SUGGESTED_PEOPLE } from '../data/mockData';
 import { FriendKey } from '../data/types';
 import { useRally } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
 function PersonRow({ k, onOpen, last }: { k: FriendKey; onOpen: () => void; last: boolean }) {
-  const f = FRIENDS[k];
+  const { people } = useRally();
+  const f = people[k];
   return (
     <View
       style={{
@@ -37,11 +38,11 @@ function PersonRow({ k, onOpen, last }: { k: FriendKey; onOpen: () => void; last
 export default function FriendsScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { following } = useRally();
+  const { following, people } = useRally();
   const [query, setQuery] = useState('');
 
   const everyone: FriendKey[] = [...PICKABLE_FRIENDS, ...SUGGESTED_PEOPLE];
-  const match = (k: FriendKey) => FRIENDS[k].name.toLowerCase().includes(query.trim().toLowerCase());
+  const match = (k: FriendKey) => people[k].name.toLowerCase().includes(query.trim().toLowerCase());
   const followed = everyone.filter(k => following[k] && match(k));
   const suggested = everyone.filter(k => !following[k] && match(k));
 

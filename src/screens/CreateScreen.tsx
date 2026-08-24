@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
 import FadeInUp from '../components/FadeInUp';
 import SectionLabel from '../components/SectionLabel';
-import { DAY_OPTIONS, FRIENDS, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS } from '../data/mockData';
+import { DAY_OPTIONS, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS } from '../data/mockData';
 import { Draft, FriendKey } from '../data/types';
 import { useRally } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
@@ -52,7 +52,7 @@ const inputStyle = {
 export default function CreateScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { sendRally } = useRally();
+  const { sendRally, people } = useRally();
 
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);
@@ -268,7 +268,7 @@ export default function CreateScreen() {
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 14 }}>
               {PICKABLE_FRIENDS.map(k => {
-                const f = FRIENDS[k];
+                const f = people[k];
                 const on = !!picks[k];
                 return (
                   <Pressable
@@ -311,7 +311,7 @@ export default function CreateScreen() {
               <View style={{ flexDirection: 'row' }}>
                 {sentAvs.map(k => (
                   <Avatar
-                    key={k} friend={FRIENDS[k]} size={52} fontSize={17}
+                    key={k} friend={people[k]} size={52} fontSize={17}
                     ringColor={colors.bg} ringWidth={3} style={{ marginHorizontal: -7 }}
                   />
                 ))}

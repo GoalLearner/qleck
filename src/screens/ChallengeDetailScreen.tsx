@@ -6,7 +6,6 @@ import Avatar from '../components/Avatar';
 import FadeInUp from '../components/FadeInUp';
 import ProgressRing from '../components/ProgressRing';
 import WeekDots from '../components/WeekDots';
-import { FRIENDS } from '../data/mockData';
 import { teamTotal, useRally, weekProgress } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
@@ -14,7 +13,7 @@ export default function ChallengeDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { challenges, checkIn, logTeamProgress } = useRally();
+  const { challenges, checkIn, logTeamProgress, people } = useRally();
 
   const ch = challenges.find(c => c.id === route.params?.id) ?? challenges[0];
   const isTeam = ch.kind === 'team';
@@ -127,7 +126,7 @@ export default function ChallengeDetailScreen() {
           }}
         >
           {(isTeam ? contributions : ch.board).map(([k, pts], idx) => {
-            const f = FRIENDS[k];
+            const f = people[k];
             const isYou = k === 'd';
             return (
               <View

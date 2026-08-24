@@ -8,7 +8,6 @@ import EventRow from '../components/EventRow';
 import FadeInUp from '../components/FadeInUp';
 import FollowPill from '../components/FollowPill';
 import SectionLabel from '../components/SectionLabel';
-import { FRIENDS } from '../data/mockData';
 import { FriendKey } from '../data/types';
 import { teamTotal, useRally } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
@@ -17,10 +16,10 @@ export default function FriendProfileScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { events, challenges, achievements, following } = useRally();
+  const { events, challenges, achievements, following, people } = useRally();
 
   const k: FriendKey = route.params?.key ?? 'm';
-  const f = FRIENDS[k];
+  const f = people[k];
 
   const sharedPlans = events
     .filter(e => e.att.includes(k) || e.hk === k)

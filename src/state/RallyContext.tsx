@@ -1,14 +1,58 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import {
-  DAYMAP, DAY_OPTIONS, DUMPLING, INITIAL_ACHIEVEMENTS, INITIAL_CHALLENGES, INITIAL_EVENTS,
-  INITIAL_POLLS, JOG, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS,
+  DAYMAP, DAY_OPTIONS, DUMPLING, FRIENDS, INITIAL_ACHIEVEMENTS, INITIAL_CHALLENGES,
+  INITIAL_EVENTS, INITIAL_POLLS, JOG, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS,
 } from '../data/mockData';
-import { Achievement, Challenge, Draft, FriendKey, Poll, RallyEvent, RsvpStatus } from '../data/types';
+import {
+  Achievement, Challenge, Draft, Friend, FriendKey, Poll, RallyEvent, RsvpStatus, UserProfile,
+} from '../data/types';
+import { AVATAR_GRADS } from '../onboarding/theme';
+import type { OnboardingResult } from '../onboarding/useOnboardingFlow';
+
+// Before onboarding runs (and for anyone who signs in without re-registering)
+// this is who you are — the demo's original "Dana".
+export const DEFAULT_PROFILE: UserProfile = {
+  firstName: 'Dana',
+  fullName: 'Dana Whitfield',
+  handle: 'dana',
+  initials: 'D',
+  avatarColors: null,
+  firstGoal: null,
+  goalPeriod: null,
+  protocol: null,
+  allowNotifications: false,
+  allowMotion: false,
+};
+
+// The funnel only knows what it actually asked for: the log-in path collects no
+// name at all, so anything blank keeps the default rather than wiping it.
+function profileFromOnboarding(prev: UserProfile, r: OnboardingResult): UserProfile {
+  const name = r.name.trim();
+  const parts = name ? name.split(/\s+/) : [];
+  return {
+    firstName: parts[0] || prev.firstName,
+    fullName: name || prev.fullName,
+    handle: r.username || prev.handle,
+    initials: parts.length
+      ? parts.map(w => w[0]).slice(0, 2).join('').toUpperCase()
+      : prev.initials,
+    avatarColors: r.avatar > 0 ? AVATAR_GRADS[r.avatar] : prev.avatarColors,
+    firstGoal: r.goal ?? prev.firstGoal,
+    goalPeriod: r.goal ? r.period : prev.goalPeriod,
+    protocol: r.protocol ?? prev.protocol,
+    allowNotifications: r.allowNotifications,
+    allowMotion: r.allowMotion,
+  };
+}
 
 // The demo's in-memory state machine (originally ported from the design
 // canvas' DCLogic; extended with follow/polls/cheers/team challenges).
 interface RallyState {
-  userName: string;
+  profile: UserProfile;
+  // FRIENDS with 'd' ("you") rewritten from the live profile, so your own name
+  // and initial are right everywhere a friend is rendered.
+  people: Record<FriendKey, Friend>;
+  applyOnboarding: (result: OnboardingResult) => void;
   events: RallyEvent[];
   challenges: Challenge[];
   polls: Poll[];
@@ -40,6 +84,16 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const [inviteState, setInviteState] = useState<'yes' | 'no' | null>(null);
   const [jogState, setJogState] = useState<'joined' | null>(null);
   const [lastSent, setLastSent] = useState<RallyState['lastSent']>(null);
+  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+
+  const applyOnboarding = useCallback((result: OnboardingResult) => {
+    setProfile(prev => profileFromOnboarding(prev, result));
+  }, []);
+
+  const people = useMemo<Record<FriendKey, Friend>>(() => ({
+    ...FRIENDS,
+    d: { ...FRIENDS.d, i: profile.initials, name: 'You' },
+  }), [profile.initials]);
 
   const setRsvp = useCallback((eventId: string, status: RsvpStatus) => {
     setEvents(evs => evs.map(e => (e.id === eventId ? { ...e, status } : e)));
@@ -149,10 +203,11 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<RallyState>(() => ({
-    userName: 'Dana',
+    profile, people, applyOnboarding,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
-  }), [events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
+  }), [profile, people, applyOnboarding,
+    events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 
   return <RallyContext.Provider value={value}>{children}</RallyContext.Provider>;

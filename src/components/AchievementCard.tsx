@@ -1,17 +1,16 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { FRIENDS } from '../data/mockData';
 import { Achievement } from '../data/types';
 import { useRally } from '../state/RallyContext';
 import Avatar from './Avatar';
 import { colors, fonts, radii } from '../theme';
 
 export default function AchievementCard({ achievement }: { achievement: Achievement }) {
-  const { cheer } = useRally();
-  const who = FRIENDS[achievement.who];
+  const { cheer, people } = useRally();
+  const who = people[achievement.who];
   const others = achievement.cheers.filter(k => k !== 'd');
   const cheerLine = others.length
-    ? `${others.slice(0, 2).map(k => FRIENDS[k].name).join(', ')}${others.length > 2 ? ` + ${others.length - 2}` : ''}${achievement.cheeredByMe ? ' and you' : ''} cheered`
+    ? `${others.slice(0, 2).map(k => people[k].name).join(', ')}${others.length > 2 ? ` + ${others.length - 2}` : ''}${achievement.cheeredByMe ? ' and you' : ''} cheered`
     : achievement.cheeredByMe ? 'You cheered' : 'No cheers yet — be first';
 
   return (

@@ -1,6 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchCurrentGoal, saveGoal } from '../api/goals';
+import { fetchCheckIns, flushOutbox, submitCheckIn } from '../api/checkins';
+import { localDate } from '../api/device';
+import type { CheckIn } from '../lib/protocolTime';
 import {
   DAYMAP, DAY_OPTIONS, DUMPLING, FRIENDS, INITIAL_ACHIEVEMENTS, INITIAL_CHALLENGES,
   INITIAL_EVENTS, INITIAL_POLLS, JOG, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS,
@@ -59,6 +62,12 @@ interface RallyState {
   // In-app "+" goal creation: replaces the current goal (P1 is single-goal;
   // multiple concurrent goals arrive with the living-protocol phase).
   setGoalPlan: (plan: AcceptedPlan) => void;
+  // The monitoring record for the active goal (P2a). goalStartedOn feeds the
+  // temporal layer; checkInStep is optimistic + outbox-backed.
+  goalId: string | null;
+  goalStartedOn: string;
+  checkIns: CheckIn[];
+  checkInStep: (stepId: string, value?: number | null) => void;
   events: RallyEvent[];
   challenges: Challenge[];
   polls: Poll[];
@@ -91,6 +100,9 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const [jogState, setJogState] = useState<'joined' | null>(null);
   const [lastSent, setLastSent] = useState<RallyState['lastSent']>(null);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const [goalId, setGoalId] = useState<string | null>(null);
+  const [goalStartedOn, setGoalStartedOn] = useState<string>(localDate());
+  const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const hydratedRef = useRef(false);
 
   // P2a hydration: cached profile first (instant, offline-friendly), then the
@@ -106,6 +118,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
         }
       } catch { hydratedRef.current = true; }
       try {
+        await flushOutbox();
         const goal = await fetchCurrentGoal();
         if (goal) {
           setProfile(prev => ({
@@ -114,6 +127,9 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
             goalPeriod: `${goal.duration_weeks} weeks`,
             protocol: goal.protocol,
           }));
+          setGoalId(goal.id);
+          setGoalStartedOn(goal.started_on);
+          setCheckIns(await fetchCheckIns(goal.id, goal.started_on, localDate()));
         }
       } catch { /* offline: cache already applied */ }
     })();
@@ -135,7 +151,9 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
           protocol: result.protocol,
         },
         result.goal,
-      ).catch(err => console.warn('goal save deferred:', err));
+      )
+        .then(goal => { setGoalId(goal.id); setGoalStartedOn(goal.started_on); })
+        .catch(err => console.warn('goal save deferred:', err));
     }
   }, []);
 
@@ -146,10 +164,28 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
       goalPeriod: `${plan.durationWeeks} weeks`,
       protocol: plan.protocol,
     }));
+    setGoalStartedOn(localDate());
+    setCheckIns([]);
     // Write-through; the local state stays authoritative for this session and
     // the next launch re-hydrates from the server.
-    saveGoal(plan, plan.goalText).catch(err => console.warn('goal save deferred:', err));
+    saveGoal(plan, plan.goalText)
+      .then(goal => setGoalId(goal.id))
+      .catch(err => console.warn('goal save deferred:', err));
   }, []);
+
+  const checkInStep = useCallback((stepId: string, value: number | null = null) => {
+    const today = localDate();
+    setCheckIns(prev => {
+      if (prev.some(c => c.step_id === stepId && c.local_date === today)) return prev;
+      return [...prev, { id: 'pending', step_id: stepId, local_date: today, value }];
+    });
+    if (goalId) {
+      void submitCheckIn(goalId, stepId, today, value).then(row => {
+        setCheckIns(prev => prev.map(c =>
+          c.id === 'pending' && c.step_id === stepId && c.local_date === today ? row : c));
+      });
+    }
+  }, [goalId]);
 
   const people = useMemo<Record<FriendKey, Friend>>(() => ({
     ...FRIENDS,
@@ -265,9 +301,11 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<RallyState>(() => ({
     profile, people, applyOnboarding, setGoalPlan,
+    goalId, goalStartedOn, checkIns, checkInStep,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
   }), [profile, people, applyOnboarding, setGoalPlan,
+    goalId, goalStartedOn, checkIns, checkInStep,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 

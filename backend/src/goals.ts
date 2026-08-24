@@ -139,3 +139,64 @@ export async function getCurrentGoal(env: Env, userId: string): Promise<GoalReco
   if (!proto) return null;
   return { ...goal, protocol: JSON.parse(proto.json) as Protocol, protocol_version: proto.version };
 }
+
+/* ── check-ins (P2a): the monitoring record ─────────────────────────────── */
+
+const CHECKIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export interface CheckInRow {
+  id: string;
+  step_id: string;
+  local_date: string;
+  value: number | null;
+}
+
+/**
+ * Idempotent by client-minted id AND by (goal, step, date, user) uniqueness:
+ * an offline outbox can replay endlessly without double-counting (binding
+ * invariant: INSERT OR IGNORE, client-asserted local_date is authoritative).
+ */
+export async function recordCheckIn(
+  env: Env,
+  userId: string,
+  body: { id?: unknown; goalId?: unknown; stepId?: unknown; localDate?: unknown; value?: unknown },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = String(body.id ?? '');
+  const goalId = String(body.goalId ?? '');
+  const stepId = String(body.stepId ?? '').slice(0, 64);
+  const localDate = String(body.localDate ?? '');
+  if (!/^[0-9a-fA-F-]{36}$/.test(id) || !/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false, error: 'invalid_id' };
+  if (!stepId) return { ok: false, error: 'invalid_step' };
+  if (!CHECKIN_DATE_RE.test(localDate)) return { ok: false, error: 'invalid_date' };
+  const value = body.value === undefined || body.value === null ? null : Number(body.value);
+  if (value !== null && !Number.isFinite(value)) return { ok: false, error: 'invalid_value' };
+
+  const goal = await env.DB
+    .prepare(`SELECT id FROM goals WHERE id = ? AND user_id = ?`)
+    .bind(goalId, userId)
+    .first<{ id: string }>();
+  if (!goal) return { ok: false, error: 'goal_not_found' };
+
+  await env.DB
+    .prepare(
+      `INSERT OR IGNORE INTO check_ins (id, goal_id, user_id, step_id, local_date, value)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(id, goalId, userId, stepId, localDate, value)
+    .run();
+  return { ok: true };
+}
+
+export async function listCheckIns(
+  env: Env, userId: string, goalId: string, from: string, to: string,
+): Promise<CheckInRow[]> {
+  const rows = await env.DB
+    .prepare(
+      `SELECT id, step_id, local_date, value FROM check_ins
+       WHERE goal_id = ? AND user_id = ? AND local_date >= ? AND local_date <= ?
+       ORDER BY local_date`,
+    )
+    .bind(goalId, userId, from, to)
+    .all<CheckInRow>();
+  return rows.results ?? [];
+}

@@ -10,10 +10,12 @@
 //   POST /device/register                 {timezone?}      → {userId, token}   (anonymous identity)
 //   POST /goals                           {id, goalText, statement, durationWeeks, startedOn, timezone, protocol}
 //   GET  /goals/current                   (Bearer token)   → goal + latest protocol
+//   POST /check-ins                       {id, goalId, stepId, localDate, value?} — idempotent
+//   GET  /check-ins?goalId=&from=&to=     (Bearer token)   → rows in range
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { registerDevice, touchUser, verifyToken } from './auth';
 import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type SessionRow, type Verdict } from './coach';
-import { createGoal, getCurrentGoal, parseCreateGoal, type CreateGoalBody } from './goals';
+import { createGoal, getCurrentGoal, listCheckIns, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
 import type { Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
@@ -65,7 +67,7 @@ export default {
       return json(created, 200, cors);
     }
 
-    if (url.pathname.startsWith('/goals')) {
+    if (url.pathname.startsWith('/goals') || url.pathname.startsWith('/check-ins')) {
       if (!env.AUTH_SECRET) return json({ error: 'auth_unconfigured' }, 503, cors);
       const bearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
       const userId = await verifyToken(env, bearer || null);
@@ -81,6 +83,20 @@ export default {
       if (url.pathname === '/goals/current' && request.method === 'GET') {
         const goal = await getCurrentGoal(env, userId);
         return json({ goal }, 200, cors);
+      }
+      if (url.pathname === '/check-ins' && request.method === 'POST') {
+        const result = await recordCheckIn(env, userId, (await request.json().catch(() => ({}))) as Record<string, unknown>);
+        if (!result.ok) return json({ error: result.error }, 400, cors);
+        return json({ ok: true }, 200, cors);
+      }
+      if (url.pathname === '/check-ins' && request.method === 'GET') {
+        const goalId = url.searchParams.get('goalId') ?? '';
+        const from = url.searchParams.get('from') ?? '';
+        const to = url.searchParams.get('to') ?? '';
+        if (!/^[0-9a-fA-F-]{36}$/.test(goalId) || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+          return json({ error: 'invalid_query' }, 400, cors);
+        }
+        return json({ checkIns: await listCheckIns(env, userId, goalId, from, to) }, 200, cors);
       }
       return json({ error: 'not_found' }, 404, cors);
     }

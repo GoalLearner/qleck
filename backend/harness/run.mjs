@@ -49,14 +49,34 @@ function leakIn(res) {
   return null;
 }
 
+// Near-verbatim repeat detection: word-set Jaccard overlap of consecutive
+// questions (the "asked me the same thing twice" defect, 2026-08-24).
+function similarity(a, b) {
+  const words = t => new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
+  const A = words(a), B = words(b);
+  const inter = [...A].filter(w => B.has(w)).length;
+  const union = new Set([...A, ...B]).size;
+  return union ? inter / union : 0;
+}
+
+const DELEGATION_CHIP = /no idea|you decide|whatever you think/i;
+
 async function runGoalFixture(f) {
   const t0 = Date.now();
   let res = await api('/coach/sessions', { goalText: f.goal });
   const sessionId = res.body.sessionId;
   const answers = [...(f.answers ?? [])];
   let questions = 0;
+  const askedTexts = [];
+  let dupQuestion = false;
+  let badChip = null;
   while (res.status === 200 && res.body.type === 'question' && questions < 5) {
     questions++;
+    const q = res.body.question;
+    if (askedTexts.length && similarity(askedTexts[askedTexts.length - 1], q.question) > 0.75) dupQuestion = true;
+    askedTexts.push(q.question);
+    const chip = (q.suggested_answers ?? []).find(c => DELEGATION_CHIP.test(c));
+    if (chip) badChip = chip;
     const answer = answers.length ? answers.shift() : GENERIC_ANSWER;
     res = await api(`/coach/sessions/${sessionId}/messages`, { answer });
   }
@@ -64,6 +84,7 @@ async function runGoalFixture(f) {
   const leak = f.noLeak ? leakIn(res) : null;
   let pass = matches(f.expect, outcome) && !leak;
   if (f.minQuestions && questions < f.minQuestions) pass = false;
+  if (dupQuestion || badChip) pass = false;
 
   let protocolOk = null;
   let protocol = null;
@@ -78,7 +99,7 @@ async function runGoalFixture(f) {
   }
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
-    pass, leak, protocolOk, questions, ms: Date.now() - t0,
+    pass, leak, protocolOk, questions, dupQuestion, badChip, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -166,6 +187,8 @@ const bars = {
   'protocol valid ≥95%': protoRate >= 0.95,
   'revisions preserve past': revisionAttempts.length > 0 && revisionValid === revisionAttempts.length,
   'zero leaks': leaks === 0,
+  'no repeated questions': goalResults.every(r => !r.dupQuestion),
+  'no delegation chips': goalResults.every(r => !r.badChip),
 };
 const allPass = goalResults.every(r => r.pass) && Object.values(bars).every(Boolean);
 

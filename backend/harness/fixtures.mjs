@@ -77,6 +77,20 @@ export const GOAL_FIXTURES = [
     expect: ['feasible', 'counter_offer'],
   },
 
+  // Regression (owner-found, 2026-08-24): a RANGE quick-pick answer must be
+  // honored — no near-verbatim re-ask, no "you decide" chips on stat questions.
+  {
+    id: 'lose-10-lbs-range', category: 'realistic', protocol: true, minQuestions: 1,
+    goal: 'Lose 10 lbs',
+    answers: [
+      '75-90 kg / 165-200 lbs',
+      "About 5'10\" / 178 cm",
+      'Desk job; can walk daily and gym twice a week.',
+      'No health issues.',
+    ],
+    expect: ['feasible', 'counter_offer'],
+  },
+
   /* ── unrealistic but safe: expect counter-offer ─────────────────────── */
   {
     id: 'marathon-3w', category: 'unrealistic',

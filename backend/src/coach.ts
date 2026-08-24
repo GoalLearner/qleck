@@ -48,6 +48,22 @@ export interface Verdict {
   success_factors: string[];
 }
 
+/** Word-set Jaccard similarity — the server-side repeat detector. */
+function questionSimilarity(a: string, b: string): number {
+  const words = (t: string) => new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
+  const A = words(a);
+  const B = words(b);
+  let inter = 0;
+  for (const w of A) if (B.has(w)) inter++;
+  const union = new Set([...A, ...B]).size;
+  return union ? inter / union : 0;
+}
+
+function lastQuestion(session: SessionRow): string | null {
+  const transcript: TranscriptEntry[] = JSON.parse(session.transcript);
+  return transcript.length ? transcript[transcript.length - 1].question : null;
+}
+
 function goalAsData(goalText: string): string {
   // Injection hygiene: user text always travels inside tags, flagged as data.
   return `<goal_text>\n${goalText}\n</goal_text>`;
@@ -145,8 +161,60 @@ export async function coachTurn(
       refusal: { category: 'unsafe_other', message: REFUSAL_COPY.unsafe_other },
     };
   }
+  const prevQ = lastQuestion(session);
+  const isRepeat = (q: { question?: string } | null) =>
+    !!prevQ && !!q?.question && questionSimilarity(prevQ, q.question) > 0.72;
+
   if (result.toolName === ASK_TOOL.name) {
-    return { type: 'question', question: result.toolInput as CoachTurnResult['question'] };
+    const q = result.toolInput as CoachTurnResult['question'];
+    if (!isRepeat(q ?? null)) return { type: 'question', question: q };
+    // Repeat guard: the model re-asked what was just answered (or dodged).
+    // One correction attempt — a DIFFERENT question or a verdict on defaults.
+    const retry = await callModel(env, { ...meta, kind: 'coach_turn' }, {
+      model: modelsFor(env).coach,
+      system: COACH_SYSTEM,
+      messages: [
+        ...coachMessages(session, pendingAnswer),
+        {
+          role: 'user',
+          content:
+            `[repeat guard] You already asked: "${prevQ}" — and the user's reply stands, even if it was vague. ` +
+            `Do NOT ask it again in any wording. Either ask about a DIFFERENT missing item, or issue the verdict ` +
+            `now using sensible defaults for anything unanswered.`,
+        },
+      ],
+      tools: [ASK_TOOL, VERDICT_TOOL],
+      toolChoice: { type: 'any' },
+      maxTokens: 2048,
+    });
+    if (retry.toolName === ASK_TOOL.name) {
+      const rq = retry.toolInput as CoachTurnResult['question'];
+      if (!isRepeat(rq ?? null)) return { type: 'question', question: rq };
+      // Still circling → force the verdict and be done.
+      const forced = await callModel(env, { ...meta, kind: 'coach_turn' }, {
+        model: modelsFor(env).coach,
+        system: COACH_SYSTEM,
+        messages: [
+          ...coachMessages(session, pendingAnswer),
+          { role: 'user', content: '[repeat guard] Issue the verdict now, using sensible defaults for anything unanswered.' },
+        ],
+        tools: [VERDICT_TOOL],
+        toolChoice: { type: 'tool', name: VERDICT_TOOL.name },
+        maxTokens: 2048,
+      });
+      if (forced.toolName === VERDICT_TOOL.name) {
+        const fv = forced.toolInput as Verdict;
+        if (fv.decision === 'declined') return { type: 'refused', refusal: { category: 'declined', message: fv.assessment } };
+        return { type: 'verdict', verdict: fv };
+      }
+      return { type: 'error', error: 'repeat guard could not resolve' };
+    }
+    if (retry.toolName === VERDICT_TOOL.name) {
+      const rv = retry.toolInput as Verdict;
+      if (rv.decision === 'declined') return { type: 'refused', refusal: { category: 'declined', message: rv.assessment } };
+      return { type: 'verdict', verdict: rv };
+    }
+    return { type: 'question', question: q }; // guard failed open: original question
   }
   if (result.toolName === VERDICT_TOOL.name) {
     const verdict = result.toolInput as Verdict;
@@ -167,7 +235,9 @@ export async function coachTurn(
               role: 'user',
               content:
                 `[readiness audit] Do not issue a verdict yet — plan-critical info is missing: ${audit.missing.join('; ')}. ` +
-                `Ask the single most important clarifying question now (bundle two tightly-related facts if natural).`,
+                `Ask ONE question for the single most important missing item — acknowledge what the user already gave, ` +
+                `ask only for what is still missing, and use fresh wording (never repeat a prior question). ` +
+                `Quick-picks must be genuine values or ranges, never "you decide".`,
             },
           ],
           tools: [ASK_TOOL],
@@ -175,7 +245,10 @@ export async function coachTurn(
           maxTokens: 2048,
         });
         if (reask.toolName === ASK_TOOL.name) {
-          return { type: 'question', question: reask.toolInput as CoachTurnResult['question'] };
+          const rq = reask.toolInput as CoachTurnResult['question'];
+          if (!isRepeat(rq ?? null)) return { type: 'question', question: rq };
+          // The only question worth asking is one already answered → the
+          // vetoed verdict stands after all.
         }
         // re-ask failed → fall through to the verdict rather than erroring
       }

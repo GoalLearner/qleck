@@ -1,22 +1,17 @@
 // The app's first API client: the qleck-api coach surface (ROADMAP.md P1).
-//
-// Base URL: web preview talks to localhost:8787; a device running Expo Go
-// derives this machine's LAN address from Metro's hostUri, so the phone
-// reaches the same local Worker with zero config. Production URL lands with
-// the first deploy (P3-ish) — one constant to change.
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import {
   CoachApiError, type CoachTurnResponse, type ProtocolResponse,
 } from './coachTypes';
 
-const PROD_URL: string | null = null; // set when qleck-api is deployed
+const PROD_URL = 'https://qleck-api.richmondcampano93.workers.dev';
 
+// Web preview stays on the local Worker (fast iteration, local D1, and prod
+// CORS only admits localhost anyway); phones via Expo Go hit production so
+// the coach works from anywhere with no LAN setup.
 function baseUrl(): string {
-  if (PROD_URL) return PROD_URL;
   if (Platform.OS === 'web') return 'http://localhost:8787';
-  const host = Constants.expoConfig?.hostUri?.split(':')[0];
-  return host ? `http://${host}:8787` : 'http://localhost:8787';
+  return PROD_URL;
 }
 
 /**

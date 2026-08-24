@@ -14,8 +14,7 @@ crons = ["0 4 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "qleck"
-# Set after `npx wrangler d1 create qleck` (remote). Local dev ignores it.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "6dc260dc-f302-4951-815c-c25328578877"
 
 [vars]
 # "deepseek" (default, cheap) or "anthropic" (Claude — quality tier, path kept warm).

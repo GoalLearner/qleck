@@ -63,6 +63,7 @@ async function runGoalFixture(f) {
   const outcome = outcomeOf(res);
   const leak = f.noLeak ? leakIn(res) : null;
   let pass = matches(f.expect, outcome) && !leak;
+  if (f.minQuestions && questions < f.minQuestions) pass = false;
 
   let protocolOk = null;
   let protocol = null;

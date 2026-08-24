@@ -3,8 +3,8 @@
 // session id and the newest message.
 import { callModel, modelsFor, reclassifyRequest, type ChatMessage, type Env } from './ai';
 import {
-  ASK_TOOL, COACH_SYSTEM, PROTOCOL_SYSTEM, REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM,
-  SAFETY_TOOL, VERDICT_TOOL, protocolTool,
+  ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, PROTOCOL_SYSTEM, REFUSAL_COPY,
+  REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
 import { PROTOCOL_TOOL_SCHEMA, validateProtocol, type Protocol } from './protocolSchema';
 
@@ -92,6 +92,36 @@ function coachMessages(session: SessionRow, pendingAnswer?: string): ChatMessage
   return messages;
 }
 
+/**
+ * Readiness audit (cheap tier): a second opinion on whether enough
+ * user-specific info exists to build a personalized plan. Fails open —
+ * an audit error never blocks the verdict.
+ */
+async function auditReadiness(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  pendingAnswer?: string,
+): Promise<{ sufficient: boolean; missing: string[] }> {
+  try {
+    const result = await callModel(env, { ...meta, kind: 'audit' }, {
+      model: modelsFor(env).classifier,
+      system: AUDIT_SYSTEM,
+      messages: [
+        ...coachMessages(session, pendingAnswer),
+        { role: 'user', content: 'Audit the conversation above: is there enough user-specific information to build a personalized plan?' },
+      ],
+      tools: [AUDIT_TOOL],
+      toolChoice: { type: 'tool', name: AUDIT_TOOL.name },
+      maxTokens: 512,
+    });
+    const input = result.toolInput as { sufficient?: boolean; missing_facts?: string[] } | null;
+    return { sufficient: input?.sufficient ?? true, missing: input?.missing_facts ?? [] };
+  } catch {
+    return { sufficient: true, missing: [] };
+  }
+}
+
 /** Step 2 — one coach turn: either a clarifying question or the verdict. */
 export async function coachTurn(
   env: Env,
@@ -122,6 +152,33 @@ export async function coachTurn(
     const verdict = result.toolInput as Verdict;
     if (verdict.decision === 'declined') {
       return { type: 'refused', refusal: { category: 'declined', message: verdict.assessment } };
+    }
+    // Sufficiency gate: while question budget remains, a cheap auditor gets a
+    // veto — a verdict on thin information becomes one more targeted question.
+    if (!forceVerdict) {
+      const audit = await auditReadiness(env, meta, session, pendingAnswer);
+      if (!audit.sufficient && audit.missing.length > 0) {
+        const reask = await callModel(env, { ...meta, kind: 'coach_turn' }, {
+          model: modelsFor(env).coach,
+          system: COACH_SYSTEM,
+          messages: [
+            ...coachMessages(session, pendingAnswer),
+            {
+              role: 'user',
+              content:
+                `[readiness audit] Do not issue a verdict yet — plan-critical info is missing: ${audit.missing.join('; ')}. ` +
+                `Ask the single most important clarifying question now (bundle two tightly-related facts if natural).`,
+            },
+          ],
+          tools: [ASK_TOOL],
+          toolChoice: { type: 'tool', name: ASK_TOOL.name },
+          maxTokens: 2048,
+        });
+        if (reask.toolName === ASK_TOOL.name) {
+          return { type: 'question', question: reask.toolInput as CoachTurnResult['question'] };
+        }
+        // re-ask failed → fall through to the verdict rather than erroring
+      }
     }
     return { type: 'verdict', verdict };
   }

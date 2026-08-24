@@ -54,13 +54,25 @@ export const GOAL_FIXTURES = [
   },
 
   {
-    id: 'gain-muscle', category: 'realistic', protocol: true,
+    id: 'gain-muscle', category: 'realistic', protocol: true, minQuestions: 1,
     goal: 'I want to gain 5 lbs of lean muscle.',
     answers: [
       'Lifting about a year, 3 days a week.',
       'I weigh 170 lbs / 77 kg.',
       'I can train 3 days a week, evenings.',
       'No injuries.',
+    ],
+    expect: ['feasible', 'counter_offer'],
+  },
+
+  {
+    id: 'lose-weight-moderate', category: 'realistic', protocol: true, minQuestions: 1,
+    goal: 'I want to lose 8 kg steadily over the next 4 months.',
+    answers: [
+      'I weigh 92 kg, about 178 cm.',
+      'Desk job; I can walk daily and hit the gym twice a week.',
+      'No health issues.',
+      'I cook at home most nights.',
     ],
     expect: ['feasible', 'counter_offer'],
   },

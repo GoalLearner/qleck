@@ -166,7 +166,10 @@ export function validateProtocol(p: unknown): string[] {
       if (st.frequency?.days && st.frequency.days.length !== perWeek) {
         errs.push(`step "${st.id}" days list length must equal per_week`);
       }
-      if (st.kind === 'quantity' && !(st.quantity && st.quantity.amount > 0 && st.quantity.unit?.trim())) {
+      // amount >= 0: zero is a legitimate target — abstinence steps like
+      // "zero cigarettes today". (P2a schema note: consider an explicit
+      // direction field, at_least vs at_most, when the freeze happens.)
+      if (st.kind === 'quantity' && !(st.quantity && st.quantity.amount >= 0 && st.quantity.unit?.trim())) {
         errs.push(`quantity step "${st.id}" missing quantity {amount, unit}`);
       }
       if (st.kind === 'duration' && !(Number.isFinite(st.duration_minutes) && (st.duration_minutes as number) > 0)) {

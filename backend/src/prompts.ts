@@ -6,7 +6,7 @@
 // <goal_text> tags and the system prompt says so explicitly; nothing a user
 // types can change the coach's instructions.
 
-export const PROMPT_VERSION = 7;
+export const PROMPT_VERSION = 8;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -179,6 +179,7 @@ Design principles:
 - 2-4 phases across the duration, each with a clear focus. Steps are concrete, repeatable reps a person can check off: binary (did it / didn't), quantity (amount + unit), or duration (minutes).
 - 3-6 steps per phase maximum. A protocol someone can't hold in their head is a protocol they quit.
 - Frequencies are honest: if the goal needs 3 sessions a week, say 3 — don't pad with filler dailies.
+- Quantity steps that CAP something (cigarettes, drinks, spending, screen-time) set direction "at_most"; build-up targets use the default "at_least".
 - NUMBERS MUST BE EARNED: every personalized numeric target (protein grams, calorie surplus, paces, loads) must be derived from facts the user actually gave in the Q&A (e.g. protein ≈ 1.6-2.2 g per kg of the body weight they reported — state the number you computed, not the formula). If a needed fact was never collected, do NOT invent a number — make that step behavior-based instead ("protein at every meal", "eat to slight fullness") or self-scaling ("add one rep over last session").
 - Every step MUST match its kind exactly: kind "duration" REQUIRES duration_minutes (a number); kind "quantity" REQUIRES quantity {amount, unit}; kind "binary" carries neither. If a step doesn't need a measured amount or minutes, make it binary.
 - frequency.days is optional — but when you include it, it must list EXACTLY per_week day names. If the schedule is flexible, omit days entirely.

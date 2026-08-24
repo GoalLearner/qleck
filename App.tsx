@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
@@ -67,7 +68,13 @@ function Tabs({ onLogout }: { onLogout: () => void }) {
 }
 
 export default function App() {
-  const [loggedIn, setLoggedIn] = useState(false);
+  // null = still reading the stored session flag (interim until P3 sessions).
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  useEffect(() => {
+    AsyncStorage.getItem('qleck-session').then(v => setLoggedIn(v === '1')).catch(() => setLoggedIn(false));
+  }, []);
+  const logIn = () => { setLoggedIn(true); AsyncStorage.setItem('qleck-session', '1').catch(() => {}); };
+  const logOut = () => { setLoggedIn(false); AsyncStorage.removeItem('qleck-session').catch(() => {}); };
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
     PlusJakartaSans_500Medium,
@@ -81,7 +88,7 @@ export default function App() {
     DMSans_500Medium,
   });
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded || loggedIn === null) {
     return <View style={{ flex: 1, backgroundColor: '#0C0F14' }} />;
   }
 
@@ -93,12 +100,12 @@ export default function App() {
           <RootStack.Navigator screenOptions={{ headerShown: false }}>
             {!loggedIn ? (
               <RootStack.Screen name="Onboarding">
-                {() => <Onboarding onDone={() => setLoggedIn(true)} />}
+                {() => <Onboarding onDone={logIn} />}
               </RootStack.Screen>
             ) : (
               <>
                 <RootStack.Screen name="Tabs">
-                  {() => <Tabs onLogout={() => setLoggedIn(false)} />}
+                  {() => <Tabs onLogout={logOut} />}
                 </RootStack.Screen>
                 <RootStack.Screen name="NewGoal" component={NewGoalScreen} options={{ presentation: 'modal' }} />
               </>

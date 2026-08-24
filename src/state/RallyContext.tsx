@@ -1,4 +1,6 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchCurrentGoal, saveGoal } from '../api/goals';
 import {
   DAYMAP, DAY_OPTIONS, DUMPLING, FRIENDS, INITIAL_ACHIEVEMENTS, INITIAL_CHALLENGES,
   INITIAL_EVENTS, INITIAL_POLLS, JOG, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS,
@@ -89,9 +91,52 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const [jogState, setJogState] = useState<'joined' | null>(null);
   const [lastSent, setLastSent] = useState<RallyState['lastSent']>(null);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const hydratedRef = useRef(false);
+
+  // P2a hydration: cached profile first (instant, offline-friendly), then the
+  // server's active goal wins for goal fields. Persist changes thereafter.
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem('qleck-profile');
+        hydratedRef.current = true;
+        if (raw) {
+          const cached = JSON.parse(raw) as Partial<UserProfile>;
+          setProfile(prev => ({ ...prev, ...cached }));
+        }
+      } catch { hydratedRef.current = true; }
+      try {
+        const goal = await fetchCurrentGoal();
+        if (goal) {
+          setProfile(prev => ({
+            ...prev,
+            firstGoal: goal.statement,
+            goalPeriod: `${goal.duration_weeks} weeks`,
+            protocol: goal.protocol,
+          }));
+        }
+      } catch { /* offline: cache already applied */ }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    AsyncStorage.setItem('qleck-profile', JSON.stringify(profile)).catch(() => {});
+  }, [profile]);
 
   const applyOnboarding = useCallback((result: OnboardingResult) => {
     setProfile(prev => profileFromOnboarding(prev, result));
+    if (result.protocol && result.goal) {
+      saveGoal(
+        {
+          goalText: result.goal,
+          statement: result.goal,
+          durationWeeks: parseInt(result.period ?? '', 10) || result.protocol.duration_weeks,
+          protocol: result.protocol,
+        },
+        result.goal,
+      ).catch(err => console.warn('goal save deferred:', err));
+    }
   }, []);
 
   const setGoalPlan = useCallback((plan: AcceptedPlan) => {
@@ -101,6 +146,9 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
       goalPeriod: `${plan.durationWeeks} weeks`,
       protocol: plan.protocol,
     }));
+    // Write-through; the local state stays authoritative for this session and
+    // the next launch re-hydrates from the server.
+    saveGoal(plan, plan.goalText).catch(err => console.warn('goal save deferred:', err));
   }, []);
 
   const people = useMemo<Record<FriendKey, Friend>>(() => ({

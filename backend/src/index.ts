@@ -7,8 +7,13 @@
 //   POST /coach/sessions/:id/messages     {answer}         → question | verdict | refusal
 //   POST /coach/sessions/:id/protocol     {}               → protocol (verdict sessions only)
 //   POST /coach/sessions/:id/revise       {feedback, currentWeek} → revised protocol
+//   POST /device/register                 {timezone?}      → {userId, token}   (anonymous identity)
+//   POST /goals                           {id, goalText, statement, durationWeeks, startedOn, timezone, protocol}
+//   GET  /goals/current                   (Bearer token)   → goal + latest protocol
 import { checkQuota, provider, providerReady, type Env } from './ai';
+import { registerDevice, touchUser, verifyToken } from './auth';
 import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type SessionRow, type Verdict } from './coach';
+import { createGoal, getCurrentGoal, parseCreateGoal, type CreateGoalBody } from './goals';
 import type { Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
@@ -20,7 +25,7 @@ function corsHeaders(env: Env, origin: string | null): Record<string, string> {
   const allowed = (env.CORS_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
   const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Qleck-Device',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Qleck-Device',
     'Access-Control-Max-Age': '86400',
   };
   if (origin && allowed.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
@@ -49,6 +54,36 @@ export default {
     const url = new URL(request.url);
     const cors = corsHeaders(env, request.headers.get('Origin'));
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+
+    /* ── identity + goals (P2a) ─────────────────────────────────────────── */
+
+    if (url.pathname === '/device/register' && request.method === 'POST') {
+      if (!env.AUTH_SECRET) return json({ error: 'auth_unconfigured' }, 503, cors);
+      const body = (await request.json().catch(() => ({}))) as { timezone?: unknown };
+      const timezone = body.timezone ? String(body.timezone).slice(0, 64) : null;
+      const created = await registerDevice(env, timezone);
+      return json(created, 200, cors);
+    }
+
+    if (url.pathname.startsWith('/goals')) {
+      if (!env.AUTH_SECRET) return json({ error: 'auth_unconfigured' }, 503, cors);
+      const bearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+      const userId = await verifyToken(env, bearer || null);
+      if (!userId) return json({ error: 'unauthorized' }, 401, cors);
+      await touchUser(env, userId);
+
+      if (url.pathname === '/goals' && request.method === 'POST') {
+        const parsed = parseCreateGoal((await request.json().catch(() => ({}))) as CreateGoalBody);
+        if (!parsed.ok) return json({ error: parsed.error }, 400, cors);
+        const goal = await createGoal(env, userId, parsed);
+        return json({ goal }, 200, cors);
+      }
+      if (url.pathname === '/goals/current' && request.method === 'GET') {
+        const goal = await getCurrentGoal(env, userId);
+        return json({ goal }, 200, cors);
+      }
+      return json({ error: 'not_found' }, 404, cors);
+    }
 
     if (url.pathname === '/health' && request.method === 'GET') {
       return json({ ok: true, migration: '0001', provider: provider(env), ai: env.AI_ENABLED === 'true' && providerReady(env) }, 200, cors);

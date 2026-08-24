@@ -19,7 +19,9 @@ export interface ProtocolStep {
     per_week: number;     // 1..7
     days?: string[];      // optional preferred days, e.g. ["mon","wed","fri"]
   };
-  quantity?: { amount: number; unit: string };  // required when kind === 'quantity'
+  // required when kind === 'quantity'. amount 0 + direction 'at_most' is an
+  // abstinence target ("zero cigarettes"); direction defaults to 'at_least'.
+  quantity?: { amount: number; unit: string; direction?: 'at_least' | 'at_most' };
   duration_minutes?: number;                    // required when kind === 'duration'
   details: string;        // how to actually do it
   week_progression?: string; // how this step ramps across the phase, if it does
@@ -100,7 +102,14 @@ export const PROTOCOL_TOOL_SCHEMA = {
                   type: 'object',
                   additionalProperties: false,
                   required: ['amount', 'unit'],
-                  properties: { amount: { type: 'number' }, unit: { type: 'string' } },
+                  properties: {
+                    amount: { type: 'number' },
+                    unit: { type: 'string' },
+                    direction: {
+                      type: 'string', enum: ['at_least', 'at_most'],
+                      description: "at_least (default) = hit at least this much; at_most = stay at or under it (abstinence/cap targets, e.g. 0 cigarettes).",
+                    },
+                  },
                   description: "REQUIRED when kind is 'quantity'; omit otherwise.",
                 },
                 duration_minutes: { type: 'number', description: "REQUIRED when kind is 'duration'; omit otherwise." },

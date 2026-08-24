@@ -23,7 +23,8 @@ export type CoachPhase =
   | 'error';      // normalized failure, maybe retryable
 
 export interface AcceptedPlan {
-  statement: string;
+  goalText: string;        // what the user typed
+  statement: string;       // what the coach accepted
   durationWeeks: number;
   protocol: Protocol;
 }
@@ -120,7 +121,7 @@ export function useCoachFlow() {
 
   const acceptedPlan: AcceptedPlan | null =
     protocol && verdict
-      ? { statement: verdict.goal_statement, durationWeeks: verdict.duration_weeks, protocol }
+      ? { goalText, statement: verdict.goal_statement, durationWeeks: verdict.duration_weeks, protocol }
       : null;
 
   return {

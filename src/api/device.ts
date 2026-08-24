@@ -1,0 +1,63 @@
+// Anonymous device identity (ROADMAP.md P2a): registered once with qleck-api,
+// persisted in AsyncStorage, promoted to a real account at P3 sign-up. All
+// authenticated calls (goals, later check-ins) ride this token.
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+
+const KEY = 'qleck-identity';
+
+export interface DeviceIdentity {
+  userId: string;
+  token: string;
+}
+
+const PROD_URL = 'https://qleck-api.richmondcampano93.workers.dev';
+
+export function apiBase(): string {
+  if (Platform.OS === 'web') return 'http://localhost:8787';
+  return PROD_URL;
+}
+
+let cached: DeviceIdentity | null = null;
+let inflight: Promise<DeviceIdentity> | null = null;
+
+async function register(): Promise<DeviceIdentity> {
+  const timezone = (() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null; } catch { return null; }
+  })();
+  const res = await fetch(apiBase() + '/device/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timezone }),
+  });
+  if (!res.ok) throw new Error(`device register failed (${res.status})`);
+  const identity = (await res.json()) as DeviceIdentity;
+  if (!identity.userId || !identity.token) throw new Error('device register malformed');
+  await AsyncStorage.setItem(KEY, JSON.stringify(identity)).catch(() => {});
+  return identity;
+}
+
+/** The stored identity, registering on first call. Coalesces concurrent calls. */
+export async function getIdentity(): Promise<DeviceIdentity> {
+  if (cached) return cached;
+  if (!inflight) {
+    inflight = (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as DeviceIdentity;
+          if (parsed.userId && parsed.token) return (cached = parsed);
+        }
+      } catch { /* fall through to fresh registration */ }
+      return (cached = await register());
+    })().finally(() => { inflight = null; });
+  }
+  return inflight;
+}
+
+/** Today's date in the device's local time, as YYYY-MM-DD. */
+export function localDate(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

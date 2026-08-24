@@ -21,6 +21,8 @@ export interface Env {
   // When set, requests carrying a matching X-Qleck-Harness header are marked
   // synthetic (excluded from quotas, user metrics, and retention sweeps).
   HARNESS_SECRET?: string;
+  // Signs anonymous device tokens (P2a identity). Worker secret in prod.
+  AUTH_SECRET?: string;
 }
 
 // Provider-neutral shapes so coach.ts never imports an SDK type.

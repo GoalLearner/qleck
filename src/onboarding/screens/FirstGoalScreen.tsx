@@ -7,27 +7,31 @@
 // The canvas' device frame + flow-map rail are mockup chrome (not ported);
 // its fake routes are replaced by the real pipeline via useCoachFlow.
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
-import { NightInput, Note, Pop, PrimaryButton, Pulse, Screen, Spacer, Spin, TextButton, Title } from '../ui';
+import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, TextButton, Title } from '../ui';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import type { Protocol, ProtocolStep } from '../../api/coachTypes';
 
 const BLUE = '#5BC4F5';
 const MONO = nightFonts.mono;
 
+// Canvas section 3 ("first-page glow-up"): goal chips carry a rep-kind glyph.
 const SUGGESTIONS = [
-  'Walk 10 000 steps a day',
-  'Run a 4k in six weeks',
-  'Smoke-free streak',
-  'Read 10 min before bed',
+  { g: 'D', c: BLUE, bg: 'rgba(14,159,232,0.14)', bd: 'rgba(14,159,232,0.5)', label: 'Run a 5k' },
+  { g: '#', c: '#B69CFF', bg: 'rgba(139,92,246,0.14)', bd: 'rgba(139,92,246,0.5)', label: 'Lose 10 lbs' },
+  { g: '✓', c: '#2BE380', bg: 'rgba(43,227,128,0.12)', bd: 'rgba(43,227,128,0.5)', label: 'Quit smoking' },
+  { g: '#', c: '#B69CFF', bg: 'rgba(139,92,246,0.14)', bd: 'rgba(139,92,246,0.5)', label: 'Save $5,000' },
+  { g: 'D', c: BLUE, bg: 'rgba(14,159,232,0.14)', bd: 'rgba(14,159,232,0.5)', label: 'Read 12 books this year' },
+  { g: '✓', c: '#2BE380', bg: 'rgba(43,227,128,0.12)', bd: 'rgba(43,227,128,0.5)', label: 'Gym 3 mornings a week' },
 ];
 
-// Demo chips prefill goals that genuinely trigger each verdict via the live AI.
-const DEMO_GOALS = [
-  { label: 'demo: counter-offer', goal: 'Full marathon in 3 weeks — never run before', bd: 'rgba(247,179,43,0.45)', fg: 'rgba(247,179,43,0.85)' },
-  { label: 'demo: refusal', goal: 'Lose 15 kg in 3 weeks, whatever it takes', bd: 'rgba(139,92,246,0.45)', fg: 'rgba(182,156,255,0.85)' },
+// Cycling ghost prompt inside the empty ask-box.
+const GHOSTS = [
+  '“run a 4k in six weeks”', '“quit smoking for good”', '“bake a proper sourdough”',
+  '“read 10 min before bed”', '“do 20 clean pull-ups”', '“cold shower every morning”',
 ];
 
 const THINK_LINES = ['Reading your goal…', 'Stress-testing the timeline…', 'Building your protocol…'];
@@ -56,6 +60,38 @@ function MonoLabel({ text, color = night.textGhost, style }: { text: string; col
     <Text style={[{ fontFamily: MONO, fontSize: 9.5, letterSpacing: 1.2, color, fontWeight: '700' }, style]}>
       {text}
     </Text>
+  );
+}
+
+// Soft radial ambience behind the intake hero (canvas: two blurred orbs).
+function AmbientGlow({ id, color, size, style }: { id: string; color: string; size: number; style: object }) {
+  return (
+    <Svg width={size} height={size} style={[{ position: 'absolute' }, style]} pointerEvents="none">
+      <Defs>
+        <RadialGradient id={id}>
+          <Stop offset="0" stopColor={color} stopOpacity={0.13} />
+          <Stop offset="0.65" stopColor={color} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
+function GhostPrompt() {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setIdx(i => i + 1), 2600);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', top: 16, left: 20 }}>
+      <Pop key={idx} duration={400}>
+        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 16, color: 'rgba(150,160,170,0.5)' }}>
+          {GHOSTS[idx % GHOSTS.length]}
+        </Text>
+      </Pop>
+    </View>
   );
 }
 
@@ -434,15 +470,24 @@ export default function FirstGoalScreen({
   const [draft, setDraft] = useState('');
   const [answer, setAnswer] = useState('');
   const [adjustHint, setAdjustHint] = useState(false);
+  const [boxFocused, setBoxFocused] = useState(false);
+  const [shakeCount, setShakeCount] = useState(0);
 
   const lockIn = () => {
     if (coach.acceptedPlan) onLocked(coach.acceptedPlan);
   };
 
-  /* intake */
+  /* intake — the stage, not a form (canvas section 3) */
   if (coach.phase === 'intake') {
+    const ask = () => {
+      if (draft.trim()) coach.submitGoal(draft);
+      else setShakeCount(c => c + 1);
+    };
     return (
-      <Screen>
+      <Screen scroll={false}>
+        <AmbientGlow id="glow-a" color={night.accent} size={420} style={{ top: -160, left: -80 }} />
+        <AmbientGlow id="glow-v" color={night.violet} size={480} style={{ bottom: -200, right: -120 }} />
+
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
           <QoachMark />
           <Text style={{ fontFamily: nightFonts.display, fontSize: 19, color: night.text, letterSpacing: 0.2 }}>Qoach</Text>
@@ -450,52 +495,92 @@ export default function FirstGoalScreen({
             <MonoLabel text="AI COACH" color={night.violetText} style={{ letterSpacing: 1 }} />
           </View>
         </View>
-        <Title style={{ marginTop: 24, marginBottom: 8 }}>What do you want to pull off?</Title>
-        <Text style={{ fontFamily: nightFonts.body, fontSize: 15, lineHeight: 22.5, color: night.textMuted, marginBottom: 18 }}>
-          Say it plain — like you'd text a friend. Qoach sets the timeline, that's the point.
-        </Text>
-        <NightInput
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="run a 4k · quit smoking · bake a proper cake…"
-          multiline
-          style={{ height: 104, paddingTop: 14, fontSize: 15.5, textAlignVertical: 'top' }}
-        />
-        <MonoLabel text="OR STEAL ONE" color={night.textGhost} style={{ fontFamily: nightFonts.display, fontSize: 10.5, letterSpacing: 1.5, marginTop: 16 }} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-          {SUGGESTIONS.map(s => (
-            <Pressable
-              key={s}
-              onPress={() => setDraft(s)}
+
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 34, lineHeight: 38, color: night.text, textAlign: 'center', marginBottom: 12 }}>
+            What do you want to <Text style={{ color: night.accent }}>pull off?</Text>
+          </Text>
+          <Text style={{ fontFamily: nightFonts.body, fontSize: 15.5, lineHeight: 23, color: night.textMuted, textAlign: 'center', marginBottom: 26 }}>
+            Say it plain — like you'd text a friend. Qoach sets the timeline, that's the point.
+          </Text>
+
+          <Shake trigger={shakeCount}>
+            <View
               style={{
-                paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-                backgroundColor: night.surface, borderWidth: 1, borderColor: night.border,
+                backgroundColor: night.surface, borderRadius: 22, borderWidth: 1.5,
+                borderColor: boxFocused ? night.accent : night.hairline,
+                shadowColor: boxFocused ? night.accent : '#000',
+                shadowOpacity: boxFocused ? 0.18 : 0.35,
+                shadowRadius: boxFocused ? 18 : 24,
+                shadowOffset: { width: 0, height: 12 },
               }}
             >
-              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.text }}>{s}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {demoHints && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 16 }}>
-            {DEMO_GOALS.map(d => (
-              <Pressable
-                key={d.label}
-                onPress={() => setDraft(d.goal)}
+              {!draft && <GhostPrompt />}
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                onFocus={() => setBoxFocused(true)}
+                onBlur={() => setBoxFocused(false)}
+                multiline
+                placeholder=""
                 style={{
-                  paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999,
-                  borderWidth: 1, borderColor: d.bd, borderStyle: 'dashed',
+                  height: 88, color: night.text, fontFamily: nightFonts.bodyMedium, fontSize: 16,
+                  lineHeight: 23, paddingHorizontal: 20, paddingTop: 16, textAlignVertical: 'top',
                 }}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 10, paddingBottom: 10 }}>
+                <Pressable
+                  onPress={ask}
+                  style={({ pressed }) => ({
+                    height: 46, paddingHorizontal: 26, borderRadius: 23, backgroundColor: night.accent,
+                    alignItems: 'center', justifyContent: 'center',
+                    opacity: draft.trim() ? (pressed ? 0.88 : 1) : 0.55,
+                    shadowColor: night.accent, shadowOpacity: 0.28, shadowRadius: 12, shadowOffset: { width: 0, height: 8 },
+                  })}
+                >
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: night.accentInk }}>Ask Qoach</Text>
+                </Pressable>
+              </View>
+            </View>
+          </Shake>
+
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 10.5, letterSpacing: 1.6, color: night.textGhost, textAlign: 'center', marginTop: 26, marginBottom: 10 }}>
+            OR STEAL ONE
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 9 }}>
+            {SUGGESTIONS.map(sg => (
+              <Pressable
+                key={sg.label}
+                onPress={() => setDraft(sg.label)}
+                style={({ pressed }) => ({
+                  flexDirection: 'row', alignItems: 'center', gap: 9,
+                  paddingVertical: 9, paddingLeft: 9, paddingRight: 15, borderRadius: 999,
+                  backgroundColor: pressed ? night.surface : night.surfaceDeep,
+                  borderWidth: 1, borderColor: pressed ? 'rgba(43,227,128,0.65)' : night.border,
+                })}
               >
-                <Text style={{ fontFamily: MONO, fontSize: 11.5, color: d.fg }}>{d.label}</Text>
+                <View
+                  style={{
+                    width: 24, height: 24, borderRadius: 8, backgroundColor: sg.bg,
+                    borderWidth: 1, borderColor: sg.bd, alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: sg.c }}>{sg.g}</Text>
+                </View>
+                <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13, color: night.text }}>{sg.label}</Text>
               </Pressable>
             ))}
           </View>
-        )}
-        <Spacer />
-        <Note>Your goal is sent to our AI coach to build your plan.</Note>
-        <PrimaryButton label="Ask Qoach" onPress={() => coach.submitGoal(draft)} disabled={!draft.trim()} />
-        <TextButton label={dismissLabel} onPress={onDismiss} height={46} />
+
+          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'baseline', gap: 16, marginTop: 22 }}>
+            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: 'rgba(242,245,244,0.35)' }}>
+              Your goal is sent to our AI coach to build your plan.
+            </Text>
+            <Pressable onPress={onDismiss} hitSlop={8}>
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textFaint }}>{dismissLabel}</Text>
+            </Pressable>
+          </View>
+        </View>
       </Screen>
     );
   }

@@ -11,8 +11,7 @@ import { Animated, Easing, Pressable, ScrollView, Text, View } from 'react-nativ
 import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
 import { NightInput, Note, Pop, PrimaryButton, Pulse, Screen, Spacer, Spin, TextButton, Title } from '../ui';
-import type { OnboardingFlow } from '../useOnboardingFlow';
-import { useCoachFlow, type CoachFlow } from '../useCoachFlow';
+import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import type { Protocol, ProtocolStep } from '../../api/coachTypes';
 
 const BLUE = '#5BC4F5';
@@ -417,17 +416,24 @@ function ChatThread({ coach, answer, setAnswer }: { coach: CoachFlow; answer: st
 
 /* ── the screen ─────────────────────────────────────────────────────────── */
 
-export default function FirstGoalScreen({ flow, demoHints = true }: { flow: OnboardingFlow; demoHints?: boolean }) {
+// Hosted in two places: the onboarding funnel (dismiss = skip ahead) and the
+// in-app "+" modal (dismiss = cancel). The Qoach surfaces keep Electric Night
+// in both — the coach is its own sub-brand.
+export default function FirstGoalScreen({
+  onLocked, onDismiss, dismissLabel = 'Skip for now', demoHints = true,
+}: {
+  onLocked: (plan: AcceptedPlan) => void;
+  onDismiss: () => void;
+  dismissLabel?: string;
+  demoHints?: boolean;
+}) {
   const coach = useCoachFlow();
   const [draft, setDraft] = useState('');
   const [answer, setAnswer] = useState('');
   const [adjustHint, setAdjustHint] = useState(false);
 
   const lockIn = () => {
-    if (coach.acceptedPlan) {
-      flow.setPlan(coach.acceptedPlan);
-      flow.nav('invite');
-    }
+    if (coach.acceptedPlan) onLocked(coach.acceptedPlan);
   };
 
   /* intake */
@@ -486,7 +492,7 @@ export default function FirstGoalScreen({ flow, demoHints = true }: { flow: Onbo
         <Spacer />
         <Note>Your goal is sent to our AI coach to build your plan.</Note>
         <PrimaryButton label="Ask Qoach" onPress={() => coach.submitGoal(draft)} disabled={!draft.trim()} />
-        <TextButton label="Skip for now" onPress={() => flow.nav('invite')} height={46} />
+        <TextButton label={dismissLabel} onPress={onDismiss} height={46} />
       </Screen>
     );
   }
@@ -696,7 +702,7 @@ export default function FirstGoalScreen({ flow, demoHints = true }: { flow: Onbo
           </Text>
         </View>
         <PrimaryButton label="Try a different goal" onPress={() => { setDraft(''); coach.reset(); }} />
-        <TextButton label="Skip for now" onPress={() => flow.nav('invite')} height={44} />
+        <TextButton label={dismissLabel} onPress={onDismiss} height={44} />
       </Screen>
     );
   }
@@ -716,7 +722,7 @@ export default function FirstGoalScreen({ flow, demoHints = true }: { flow: Onbo
           </View>
         </View>
         <PrimaryButton label="Back to my goal" onPress={coach.reset} />
-        <TextButton label="Skip for now" onPress={() => flow.nav('invite')} height={44} />
+        <TextButton label={dismissLabel} onPress={onDismiss} height={44} />
       </Screen>
     );
   }
@@ -733,7 +739,7 @@ export default function FirstGoalScreen({ flow, demoHints = true }: { flow: Onbo
       </View>
       {coach.error?.retryable && <PrimaryButton label="Retry" onPress={coach.retry} />}
       <TextButton label="Back to my goal" onPress={coach.reset} height={46} />
-      <TextButton label="Skip for now" onPress={() => flow.nav('invite')} height={40} />
+      <TextButton label={dismissLabel} onPress={onDismiss} height={40} />
     </Screen>
   );
 }

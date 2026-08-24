@@ -45,13 +45,16 @@ function YouIcon({ color }: { color: string }) {
 }
 
 const ICONS: Record<string, (p: { color: string }) => React.ReactElement> = {
+  Today: PlansIcon,   // calendar-ish: the day's reps
+  Goals: HomeIcon,    // target: the goal
+  You: YouIcon,
+  // Quarantined Rally-era surfaces keep their glyphs for the demo build:
   Home: HomeIcon,
   Plans: PlansIcon,
   Streaks: StreaksIcon,
-  You: YouIcon,
 };
 
-// Floating pill tab bar with a center "+" that opens the Create flow.
+// Floating pill tab bar with a center "+" that starts a new goal with Qoach.
 export default function RallyTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
 
@@ -89,7 +92,7 @@ export default function RallyTabBar({ state, navigation }: BottomTabBarProps) {
     >
       {state.routes.slice(0, 2).map((r, i) => tab(r, i))}
       <Pressable
-        onPress={() => navigation.getParent()?.navigate('Create' as never)}
+        onPress={() => navigation.getParent()?.navigate('NewGoal' as never)}
         style={{
           width: 52, height: 52, borderRadius: 26, backgroundColor: colors.navy,
           alignItems: 'center', justifyContent: 'center', marginTop: -2,
@@ -99,7 +102,7 @@ export default function RallyTabBar({ state, navigation }: BottomTabBarProps) {
       >
         <Text style={{ color: colors.cream, fontSize: 22, fontFamily: fonts.semibold, marginTop: -2 }}>+</Text>
       </Pressable>
-      {state.routes.slice(2, 4).map((r, i) => tab(r, i + 2))}
+      {state.routes.slice(2).map((r, i) => tab(r, i + 2))}
     </View>
   );
 }

@@ -29,9 +29,16 @@ Configured entirely in code. Do **not** mix in Expo Router.
 - Hierarchy in `App.tsx`: root native stack — `Onboarding` (when logged out) or
   `Tabs` + `Event` + `Challenge` + `Friends` + `Friend` + `Create` (modal).
   `Onboarding` runs its own internal screen switch, not a nested navigator.
-  `Tabs` is a bottom-tab navigator (Home / Plans / Streaks / You) with a custom
+  `Tabs` is a bottom-tab navigator (Today / Goals / You) with a custom
   floating pill tab bar (`src/components/RallyTabBar.tsx`) whose center "+"
-  opens `Create`.
+  opens `NewGoal` — the in-app Qoach intake modal. The app is **purely the
+  coach** (owner call 2026-08-24): Rally-era social surfaces (Plans, Streaks,
+  Create, Friends, Event/Challenge detail screens) are quarantined out of the
+  shell — files kept, routes removed — and return behind real backends per
+  ROADMAP P6. **Palette exception:** Qoach surfaces (intake, chat thread,
+  verdicts, NewGoal modal) keep Electric Night inside the app — the coach is
+  its own sub-brand; a locked protocol renders in cream via
+  `src/components/protocolViews.tsx` on Today/Goals/You.
 
 ## Structure
 - `App.tsx` — fonts (Young Serif + Plus Jakarta Sans), providers, navigators.

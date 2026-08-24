@@ -101,7 +101,13 @@ export default function OnboardingFlow({
       {screen === 'signup' && <SignupScreen flow={flow} demoHints={demoHints} />}
       {screen === 'verify' && <VerifyScreen flow={flow} demoHints={demoHints} />}
       {screen === 'profile' && <ProfileSetupScreen flow={flow} />}
-      {screen === 'goal' && <FirstGoalScreen flow={flow} demoHints={demoHints} />}
+      {screen === 'goal' && (
+        <FirstGoalScreen
+          demoHints={demoHints}
+          onLocked={plan => { flow.setPlan(plan); flow.nav('invite'); }}
+          onDismiss={() => flow.nav('invite')}
+        />
+      )}
       {screen === 'invite' && <InviteScreen flow={flow} />}
       {screen === 'perms' && <PermissionsScreen flow={flow} />}
       {screen === 'done' && <DoneScreen flow={flow} demoHints={demoHints} />}

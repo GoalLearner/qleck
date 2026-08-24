@@ -8,6 +8,7 @@ import {
 } from '../data/types';
 import { AVATAR_GRADS } from '../onboarding/theme';
 import type { OnboardingResult } from '../onboarding/useOnboardingFlow';
+import type { AcceptedPlan } from '../onboarding/useCoachFlow';
 
 // Before onboarding runs (and for anyone who signs in without re-registering)
 // this is who you are — the demo's original "Dana".
@@ -53,6 +54,9 @@ interface RallyState {
   // and initial are right everywhere a friend is rendered.
   people: Record<FriendKey, Friend>;
   applyOnboarding: (result: OnboardingResult) => void;
+  // In-app "+" goal creation: replaces the current goal (P1 is single-goal;
+  // multiple concurrent goals arrive with the living-protocol phase).
+  setGoalPlan: (plan: AcceptedPlan) => void;
   events: RallyEvent[];
   challenges: Challenge[];
   polls: Poll[];
@@ -88,6 +92,15 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   const applyOnboarding = useCallback((result: OnboardingResult) => {
     setProfile(prev => profileFromOnboarding(prev, result));
+  }, []);
+
+  const setGoalPlan = useCallback((plan: AcceptedPlan) => {
+    setProfile(prev => ({
+      ...prev,
+      firstGoal: plan.statement,
+      goalPeriod: `${plan.durationWeeks} weeks`,
+      protocol: plan.protocol,
+    }));
   }, []);
 
   const people = useMemo<Record<FriendKey, Friend>>(() => ({
@@ -203,10 +216,10 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<RallyState>(() => ({
-    profile, people, applyOnboarding,
+    profile, people, applyOnboarding, setGoalPlan,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
-  }), [profile, people, applyOnboarding,
+  }), [profile, people, applyOnboarding, setGoalPlan,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 

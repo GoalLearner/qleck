@@ -18,16 +18,14 @@ import { SpaceGrotesk_700Bold } from '@expo-google-fonts/space-grotesk';
 import { DMSans_400Regular, DMSans_500Medium } from '@expo-google-fonts/dm-sans';
 
 import RallyTabBar from './src/components/RallyTabBar';
-import ChallengeDetailScreen from './src/screens/ChallengeDetailScreen';
-import ChallengesScreen from './src/screens/ChallengesScreen';
-import CreateScreen from './src/screens/CreateScreen';
-import EventDetailScreen from './src/screens/EventDetailScreen';
-import FriendProfileScreen from './src/screens/FriendProfileScreen';
-import FriendsScreen from './src/screens/FriendsScreen';
+import GoalsScreen from './src/screens/GoalsScreen';
 import HomeScreen from './src/screens/HomeScreen';
+import NewGoalScreen from './src/screens/NewGoalScreen';
 import OnboardingFlow from './src/onboarding/OnboardingFlow';
-import PlansScreen from './src/screens/PlansScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+// Rally-era social surfaces (Plans/Streaks/Create/Friends/Event/Challenge
+// screens) are quarantined out of the shell per the owner's coach-first call
+// (2026-08-24); they return behind real backends per ROADMAP P6.
 import { RallyProvider, useRally } from './src/state/RallyContext';
 import { colors } from './src/theme';
 
@@ -59,9 +57,8 @@ function Tabs({ onLogout }: { onLogout: () => void }) {
       tabBar={props => <RallyTabBar {...props} />}
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.bg } }}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Plans" component={PlansScreen} />
-      <Tab.Screen name="Streaks" component={ChallengesScreen} />
+      <Tab.Screen name="Today" component={HomeScreen} />
+      <Tab.Screen name="Goals" component={GoalsScreen} />
       <Tab.Screen name="You">
         {() => <ProfileScreen onLogout={onLogout} />}
       </Tab.Screen>
@@ -103,11 +100,7 @@ export default function App() {
                 <RootStack.Screen name="Tabs">
                   {() => <Tabs onLogout={() => setLoggedIn(false)} />}
                 </RootStack.Screen>
-                <RootStack.Screen name="Event" component={EventDetailScreen} />
-                <RootStack.Screen name="Challenge" component={ChallengeDetailScreen} />
-                <RootStack.Screen name="Friends" component={FriendsScreen} />
-                <RootStack.Screen name="Friend" component={FriendProfileScreen} />
-                <RootStack.Screen name="Create" component={CreateScreen} options={{ presentation: 'modal' }} />
+                <RootStack.Screen name="NewGoal" component={NewGoalScreen} options={{ presentation: 'modal' }} />
               </>
             )}
           </RootStack.Navigator>

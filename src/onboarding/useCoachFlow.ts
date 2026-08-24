@@ -28,11 +28,18 @@ export interface AcceptedPlan {
   protocol: Protocol;
 }
 
+/** One clarify round, for rendering the conversation as a thread. */
+export interface QaEntry {
+  question: CoachQuestion;
+  answer?: string;
+}
+
 export function useCoachFlow() {
   const [phase, setPhase] = useState<CoachPhase>('intake');
   const [goalText, setGoalText] = useState('');
   const [question, setQuestion] = useState<CoachQuestion | null>(null);
   const [questionCount, setQuestionCount] = useState(0);
+  const [qa, setQa] = useState<QaEntry[]>([]);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [refusal, setRefusal] = useState<CoachRefusal | null>(null);
   const [protocol, setProtocol] = useState<Protocol | null>(null);
@@ -56,6 +63,7 @@ export function useCoachFlow() {
     if (res.type === 'question') {
       setQuestion(res.question);
       setQuestionCount(n => n + 1);
+      setQa(prev => [...prev, { question: res.question }]);
       setPhase('question');
     } else if (res.type === 'verdict') {
       setVerdict(res.verdict);
@@ -78,6 +86,7 @@ export function useCoachFlow() {
     const a = answer.trim();
     const id = sessionId.current;
     if (!a || !id) return;
+    setQa(prev => prev.map((entry, i) => (i === prev.length - 1 ? { ...entry, answer: a } : entry)));
     setPhase('thinking');
     answerCoachQuestion(id, a).then(handleTurn, err => fail(err, () => answerQuestion(a)));
   }, [fail, handleTurn]);
@@ -99,6 +108,7 @@ export function useCoachFlow() {
     setGoalText('');
     setQuestion(null);
     setQuestionCount(0);
+    setQa([]);
     setVerdict(null);
     setRefusal(null);
     setProtocol(null);
@@ -114,7 +124,7 @@ export function useCoachFlow() {
       : null;
 
   return {
-    phase, goalText, question, questionCount, verdict, refusal, protocol, error,
+    phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan,
   };
 }

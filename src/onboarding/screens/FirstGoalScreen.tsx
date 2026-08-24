@@ -6,13 +6,13 @@
 //
 // The canvas' device frame + flow-map rail are mockup chrome (not ported);
 // its fake routes are replaced by the real pipeline via useCoachFlow.
-import React, { useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, ScrollView, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
 import { NightInput, Note, Pop, PrimaryButton, Pulse, Screen, Spacer, Spin, TextButton, Title } from '../ui';
 import type { OnboardingFlow } from '../useOnboardingFlow';
-import { useCoachFlow } from '../useCoachFlow';
+import { useCoachFlow, type CoachFlow } from '../useCoachFlow';
 import type { Protocol, ProtocolStep } from '../../api/coachTypes';
 
 const BLUE = '#5BC4F5';
@@ -222,6 +222,192 @@ function ThinkingView({ building }: { building: boolean }) {
   );
 }
 
+/* ── chat thread (clarify conversation) ─────────────────────────────────── */
+
+function Dot({ delay }: { delay: number }) {
+  const t = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(t, { toValue: 1, duration: 330, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(t, { toValue: 0, duration: 330, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+        Animated.delay(440),
+      ]),
+    );
+    const id = setTimeout(() => loop.start(), delay);
+    return () => { clearTimeout(id); loop.stop(); };
+  }, [delay, t]);
+  return (
+    <Animated.View
+      style={{
+        width: 7, height: 7, borderRadius: 4, backgroundColor: night.accent,
+        opacity: t.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }),
+        transform: [{ translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) }],
+      }}
+    />
+  );
+}
+
+const QOACH_BUBBLE = {
+  backgroundColor: night.surface,
+  borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  borderTopLeftRadius: 4, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 18,
+} as const;
+
+function TypingRow() {
+  return (
+    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+      <QoachMark size={34} fontSize={18} />
+      <View style={[QOACH_BUBBLE, { flexDirection: 'row', gap: 5, paddingHorizontal: 18, paddingVertical: 17, alignItems: 'center' }]}>
+        <Dot delay={0} /><Dot delay={150} /><Dot delay={300} />
+      </View>
+    </View>
+  );
+}
+
+function UserBubble({ text }: { text: string }) {
+  return (
+    <View
+      style={{
+        maxWidth: 520, backgroundColor: 'rgba(43,227,128,0.1)',
+        borderWidth: 1, borderColor: 'rgba(43,227,128,0.35)',
+        borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 4,
+        paddingHorizontal: 18, paddingVertical: 13,
+      }}
+    >
+      <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 15, lineHeight: 22.5, color: night.text }}>{text}</Text>
+    </View>
+  );
+}
+
+function ChatThread({ coach, answer, setAnswer }: { coach: CoachFlow; answer: string; setAnswer: (v: string) => void }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const thinking = coach.phase === 'thinking';
+  const send = (text: string) => {
+    if (text.trim() && !thinking) { coach.answerQuestion(text); setAnswer(''); }
+  };
+
+  return (
+    <Screen scroll={false} horizontal={0}>
+      <View
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 9,
+          paddingHorizontal: 24, paddingBottom: 14,
+          borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)',
+        }}
+      >
+        <QoachMark />
+        <Text style={{ fontFamily: nightFonts.display, fontSize: 18, color: night.text, letterSpacing: 0.2 }}>Qoach</Text>
+        <View style={{ flex: 1 }} />
+        <View style={{ alignItems: 'flex-end', gap: 5 }}>
+          <MonoLabel text={`QUESTION ${coach.questionCount} OF 2`} color={night.textFaint} style={{ fontSize: 10.5, letterSpacing: 1 }} />
+          <View style={{ flexDirection: 'row', gap: 5 }}>
+            <View style={{ width: 26, height: 4, borderRadius: 2, backgroundColor: night.accent }} />
+            <View style={{ width: 26, height: 4, borderRadius: 2, backgroundColor: coach.questionCount >= 2 ? night.accent : 'rgba(255,255,255,0.15)' }} />
+          </View>
+        </View>
+      </View>
+
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          maxWidth: 720, width: '100%', alignSelf: 'center',
+          paddingHorizontal: 24, paddingTop: 24, paddingBottom: 18, gap: 18,
+        }}
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={{ alignItems: 'flex-end', gap: 5 }}>
+          <MonoLabel text="YOUR GOAL" style={{ paddingRight: 4 }} />
+          <UserBubble text={coach.goalText} />
+        </View>
+
+        {coach.qa.map((entry, i) => {
+          const isActive = i === coach.qa.length - 1 && coach.phase === 'question';
+          return (
+            <React.Fragment key={i}>
+              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+                <QoachMark size={34} fontSize={18} />
+                <View style={{ gap: 10, flex: 1, maxWidth: 560, alignItems: 'flex-start' }}>
+                  <Pop style={{ alignSelf: 'stretch' }}>
+                    <View style={[QOACH_BUBBLE, { paddingHorizontal: 20, paddingVertical: 16 }]}>
+                      <Text style={{ fontFamily: nightFonts.display, fontSize: 19, lineHeight: 24.7, color: night.text, marginBottom: 7 }}>
+                        {entry.question.question}
+                      </Text>
+                      <Text style={{ fontFamily: nightFonts.body, fontSize: 13.5, lineHeight: 20.9, color: night.textSoft }}>
+                        {entry.question.why_it_matters}
+                      </Text>
+                    </View>
+                  </Pop>
+                  {isActive && (entry.question.suggested_answers?.length ?? 0) > 0 && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {entry.question.suggested_answers!.map(option => (
+                        <Pressable
+                          key={option}
+                          onPress={() => send(option)}
+                          style={({ pressed }) => ({
+                            paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999,
+                            backgroundColor: pressed ? 'rgba(43,227,128,0.12)' : night.surfaceDeep,
+                            borderWidth: 1, borderColor: pressed ? night.accent : 'rgba(43,227,128,0.4)',
+                          })}
+                        >
+                          <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, color: night.text }}>{option}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+              {entry.answer !== undefined && (
+                <View style={{ alignItems: 'flex-end' }}>
+                  <UserBubble text={entry.answer} />
+                </View>
+              )}
+            </React.Fragment>
+          );
+        })}
+
+        {thinking && <TypingRow />}
+      </ScrollView>
+
+      <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' }}>
+        <View style={{ maxWidth: 720, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 14, gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <NightInput
+              value={answer}
+              onChangeText={setAnswer}
+              placeholder="Answer honestly — it shapes the plan"
+              style={{ flex: 1, height: 54, fontSize: 15 }}
+              editable={!thinking}
+              onSubmitEditing={() => send(answer)}
+            />
+            <Pressable
+              onPress={() => send(answer)}
+              style={{
+                width: 54, height: 54, borderRadius: 27, backgroundColor: night.accent,
+                alignItems: 'center', justifyContent: 'center',
+                opacity: answer.trim() && !thinking ? 1 : 0.4,
+                shadowColor: night.accent, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 6 },
+              }}
+            >
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 22, color: night.accentInk }}>{'\u2191'}</Text>
+            </Pressable>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>
+              Tap a suggestion to send it {'\u2014'} or type your own
+            </Text>
+            <Text style={{ fontFamily: MONO, fontSize: 10.5, color: 'rgba(242,245,244,0.35)' }}>
+              your answers shape the plan
+            </Text>
+          </View>
+        </View>
+      </View>
+    </Screen>
+  );
+}
+
 /* ── the screen ─────────────────────────────────────────────────────────── */
 
 export default function FirstGoalScreen({ flow, demoHints = true }: { flow: OnboardingFlow; demoHints?: boolean }) {
@@ -298,92 +484,14 @@ export default function FirstGoalScreen({ flow, demoHints = true }: { flow: Onbo
     );
   }
 
-  /* thinking / building */
-  if (coach.phase === 'thinking' || coach.phase === 'building') {
+  /* thinking / building — full-screen orb only outside the conversation */
+  if (coach.phase === 'building' || (coach.phase === 'thinking' && coach.qa.length === 0)) {
     return <ThinkingView building={coach.phase === 'building'} />;
   }
 
-  /* clarifying question */
-  if (coach.phase === 'question' && coach.question) {
-    return (
-      <Screen>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-          <QoachMark />
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 17, color: night.text }}>Qoach</Text>
-          <View style={{ flex: 1 }} />
-          <MonoLabel text={`QUESTION ${coach.questionCount} OF 2`} color={night.textFaint} style={{ fontSize: 10.5, letterSpacing: 1 }} />
-        </View>
-
-        <View
-          style={{
-            marginTop: 22, borderRadius: 14, backgroundColor: night.surfaceDeep,
-            borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 14, paddingVertical: 10,
-          }}
-        >
-          <MonoLabel text="YOUR GOAL" style={{ marginBottom: 3 }} />
-          <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13, lineHeight: 18, color: 'rgba(242,245,244,0.75)' }}>
-            {coach.goalText}
-          </Text>
-        </View>
-
-        <Pop style={{ marginTop: 14 }}>
-          <View
-            style={{
-              borderRadius: 20, backgroundColor: night.surface,
-              borderWidth: 1, borderColor: 'rgba(43,227,128,0.35)', padding: 20,
-            }}
-          >
-            <Text style={{ fontFamily: nightFonts.display, fontSize: 19, lineHeight: 24.5, color: night.text, marginBottom: 10 }}>
-              {coach.question.question}
-            </Text>
-            <Text style={{ fontFamily: nightFonts.body, fontSize: 13, lineHeight: 19.5, color: night.textSoft }}>
-              {coach.question.why_it_matters}
-            </Text>
-          </View>
-        </Pop>
-
-        <Spacer />
-
-        {(coach.question.suggested_answers?.length ?? 0) > 0 && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-            {coach.question.suggested_answers!.map(option => (
-              <Pressable
-                key={option}
-                onPress={() => { coach.answerQuestion(option); setAnswer(''); }}
-                style={{
-                  paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-                  backgroundColor: night.accentSofter, borderWidth: 1, borderColor: 'rgba(43,227,128,0.4)',
-                }}
-              >
-                <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13, color: night.accentText }}>
-                  {option}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <NightInput
-            value={answer}
-            onChangeText={setAnswer}
-            placeholder="Answer honestly — it shapes the plan"
-            style={{ flex: 1, fontSize: 15 }}
-            onSubmitEditing={() => { if (answer.trim()) { coach.answerQuestion(answer); setAnswer(''); } }}
-          />
-          <Pressable
-            onPress={() => { if (answer.trim()) { coach.answerQuestion(answer); setAnswer(''); } }}
-            style={{
-              width: 52, height: 52, borderRadius: 26, backgroundColor: night.accent,
-              alignItems: 'center', justifyContent: 'center', opacity: answer.trim() ? 1 : 0.4,
-              shadowColor: night.accent, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 6 },
-            }}
-          >
-            <Text style={{ fontFamily: nightFonts.display, fontSize: 22, color: night.accentInk }}>↑</Text>
-          </Pressable>
-        </View>
-      </Screen>
-    );
+  /* clarify conversation — chat thread (canvas section 2) */
+  if ((coach.phase === 'question' || coach.phase === 'thinking') && coach.qa.length > 0) {
+    return <ChatThread coach={coach} answer={answer} setAnswer={setAnswer} />;
   }
 
   /* verdict — feasible */

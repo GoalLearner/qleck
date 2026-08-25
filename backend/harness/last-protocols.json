@@ -1,0 +1,2293 @@
+[
+  {
+    "id": "run-4k",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Build up to running a continuous 4k (2.5 miles) in six weeks, training 3 mornings a week.",
+      "duration_weeks": 6,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Run/Walk Foundation",
+          "focus": "Cover distance with intervals, not speed. Build the morning routine.",
+          "start_week": 1,
+          "end_week": 2,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Run/walk intervals — 20 minutes",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 3
+              },
+              "duration_minutes": 20,
+              "details": "Run 1 minute, walk 1 minute, repeat for 20 minutes. Keep the running pace slow enough that you could hold a conversation. Lay out your shorts, shirt, and shoes by the door the night before so the morning starts with zero decisions.",
+              "week_progression": "Keep the same 1:1 run/walk ratio across both weeks. The goal is consistency, not speed."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Prep your kit the night before",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 3
+              },
+              "details": "Each training night, set out your running clothes and shoes in plain sight before you go to bed. Put your water bottle by the door too. When you wake, the run is already half-done."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Getting Back in the Door",
+          "focus": "Rebuild the habit gently after a missed week — small, doable sessions that make showing up the win.",
+          "start_week": 3,
+          "end_week": 4,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Run/walk intervals — 15 minutes",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 3
+              },
+              "duration_minutes": 15,
+              "details": "Run 1 minute, walk 1 minute, repeat for 15 minutes. That's just seven short rounds. Conversational pace — if you can't talk, slow down. Your only job is to get out the door three times this week; the distance is already small.",
+              "week_progression": "Week 3 stay at 1:1 for 15 minutes — easy on purpose. Week 4 stretch to 20 minutes at the same 1:1 ratio, then nudge the run segments to 2 minutes on the 1-minute walk."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Prep your kit the night before",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 3
+              },
+              "details": "Each training night, set out your running clothes and shoes in plain sight before bed. Put your water bottle by the door too. When you wake, the run is already half-done — one less thing to talk yourself out of."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "Walk the cooldown to the door",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 3
+              },
+              "details": "After each session, walk the last 2-3 minutes back to your door at an easy pace. It earns you the stretch of feeling finished and winded-down, not wrecked, before the workday."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Low-Impact Recovery & Build-Back",
+          "focus": "Keep the habit alive while the ankle heals — easy, low-impact movement this week, then a gentle build back toward running.",
+          "start_week": 5,
+          "end_week": 6,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Low-impact walk — 20 minutes",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 3
+              },
+              "duration_minutes": 20,
+              "details": "A brisk, flat walk for 20 minutes on level ground. Keep it comfortable — no hills, no uneven trail, nothing that jolts the ankle. This keeps your morning routine and your legs moving without loading the twist. If a walk feels fine, you're ready to ease back in next week.",
+              "week_progression": "Week 5: steady 20-minute flat walks, three mornings. Week 6: reintroduce short run segments — 1 minute run, 2 minutes walk, repeat for 20 minutes, staying on flat ground and stopping if the ankle protests."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Prep your kit the night before",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 3
+              },
+              "details": "Each training night, set out your clothes and shoes in plain sight before bed. Put your water bottle by the door too. When you wake, the session is already half-done."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Walk the cooldown to the door",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 3
+              },
+              "details": "After each session, walk the last 2-3 minutes back to your door at an easy pace. It earns you the stretch of feeling finished and winded-down, not wrecked."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 2,
+          "title": "Six sessions done",
+          "criteria": "Complete all six 20-minute run/walk sessions across weeks 1-2 without skipping a morning."
+        },
+        {
+          "id": "m2",
+          "week": 4,
+          "title": "Back in the rhythm",
+          "criteria": "Complete six sessions across weeks 3-4 — even the short 15-minute ones count. The point is showing up again."
+        },
+        {
+          "id": "m3",
+          "week": 6,
+          "title": "Eased back in, ankle on board",
+          "criteria": "Hold three low-impact walks in week 5 and ease back into gentle 1:2 run/walk intervals in week 6, all on flat ground."
+        }
+      ],
+      "coach_notes": "The easier version is working — that's exactly what we wanted, so let's not undo it. And a lightly twisted ankle is a real thing: we're not going to run through it and we're not going to guilt you about it. This week stays genuinely gentle — three flat, easy 20-minute walks, nothing that jolts the ankle. Same night-before kit prep keeps the cue alive, and the cooldown walk to the door stays. That's it. Next week we test the waters with short run segments at a 1:2 run/walk ratio, still flat ground, and we stop the moment the ankle protests. The continuous 4k is still the goal — but we get there by keeping the habit warm and letting the ankle heal, one easy morning at a time. Showing up light is still showing up."
+    }
+  },
+  {
+    "id": "bake-cake",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Learn to bake a proper layered birthday cake from scratch in one month, starting as a complete beginner with weekends free and a working oven.",
+      "duration_weeks": 4,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Gear up and bake your first layer",
+          "focus": "Set up your workspace and get one clean, level cake layer out of the oven",
+          "start_week": 1,
+          "end_week": 1,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Gather your baking kit",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "One afternoon, lay out everything you'll need where you'll bake: a 9-inch round cake pan (or two), parchment paper, a mixing bowl, whisk, spatula, measuring cups and spoons, a serrated knife for cutting, a turntable or lazy Susan if you have one, and a cooling rack. Set it all on the counter so your first bake has zero hunting."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Bake your first single-layer vanilla cake",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "Follow a simple vanilla cake recipe from scratch. Grease the pan, line the bottom with parchment, pour in the batter, and bake. The goal is a fully cooked, evenly browned layer — not perfection. Write the recipe's bake time and temp on a sticky note and stick it to the fridge so it's right there next weekend."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "Level and crumb-coat your first layer",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 1
+              },
+              "duration_minutes": 30,
+              "details": "Once the layer is cool, use your serrated knife to trim the domed top flat. Then spread a thin layer of buttercream over the whole cake — this is the crumb coat that traps loose crumbs. Chill it for 20 minutes. This is the single most important skill for a clean layered cake, so take your time."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Stack two layers with filling",
+          "focus": "Bake two layers and get them stacked flat with filling between",
+          "start_week": 2,
+          "end_week": 2,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Bake two matching layers",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "Bake two identical cake layers from scratch. Weigh the batter and split it evenly between two pans so they come out the same height. Level both domes while they're cool, just like last week."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Stack with filling and crumb-coat",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 1
+              },
+              "duration_minutes": 45,
+              "details": "Put your bottom layer on the plate, spread a generous layer of filling (jam, curd, or buttercream) across the top, then place the second layer on top. Crumb-coat the whole stack and chill 20 minutes. Check the sides are straight and the top is level — adjust the filling if it's leaning."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "Do a full frosting pass",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 1
+              },
+              "duration_minutes": 30,
+              "details": "After the crumb coat sets, apply the final coat of buttercream in one even layer. Use a bench scraper or spatula and spin the cake on your turntable to smooth the sides. This is practice for the real thing — it doesn't need to be perfect."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Polish the finish and try a decoration",
+          "focus": "Refine frosting smoothness and add a simple decoration technique",
+          "start_week": 3,
+          "end_week": 3,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Bake a full practice cake and finish it cleanly",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 1
+              },
+              "duration_minutes": 120,
+              "details": "Run the whole sequence end to end: bake two layers from scratch, level, stack with filling, crumb-coat, chill, and apply a smooth final coat. This time aim for glassy-smooth sides and a clean top edge. This is your dress rehearsal."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Practice one piping border",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 1
+              },
+              "duration_minutes": 20,
+              "details": "Fit a piping bag with a star tip and pipe a simple border of rosettes around the bottom edge of your practice cake. Watch one short video before you start. Even if it's wobbly, you'll know exactly what to do next weekend."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Write out your final recipe card",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "The night before the big bake, write out one clean card with your exact recipe, bake temp and time, and the assembly order: bake, level, stack, fill, crumb-coat, chill, final coat, border. Keep it on the counter so Saturday morning is pure execution, not scrambling."
+            }
+          ]
+        },
+        {
+          "id": "ph4",
+          "title": "Bake the birthday cake",
+          "focus": "Put it all together for the real layered cake",
+          "start_week": 4,
+          "end_week": 4,
+          "steps": [
+            {
+              "id": "ph4-s1",
+              "title": "Bake and level your final layers",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 1
+              },
+              "duration_minutes": 90,
+              "details": "Bake your two layers from scratch, level them clean, and let them cool completely before touching them. Follow your recipe card exactly — you've done this three times now."
+            },
+            {
+              "id": "ph4-s2",
+              "title": "Stack, fill, and crumb-coat",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 1
+              },
+              "duration_minutes": 45,
+              "details": "Layer up with filling, crumb-coat the whole thing, and chill for 20-30 minutes until the crumb coat is set. Take your time — this is the foundation the finish sits on."
+            },
+            {
+              "id": "ph4-s3",
+              "title": "Final coat, border, and serve",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 1
+              },
+              "duration_minutes": 60,
+              "details": "Apply the smooth final coat, pipe your border around the bottom, add any writing or topper you planned, and present it. You've built up to this exact moment across four weekends."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 1,
+          "title": "First clean layer in the oven",
+          "criteria": "Baked, leveled, and crumb-coated your first single-layer cake from scratch."
+        },
+        {
+          "id": "m2",
+          "week": 2,
+          "title": "Two layers stacked and frosted",
+          "criteria": "Baked two matching layers, stacked them with filling, and got a full frosting coat on."
+        },
+        {
+          "id": "m3",
+          "week": 3,
+          "title": "Dress rehearsal done",
+          "criteria": "Completed a full end-to-end practice cake with smooth sides and a piped border."
+        },
+        {
+          "id": "m4",
+          "week": 4,
+          "title": "The real birthday cake",
+          "criteria": "Baked, stacked, frosted, and presented a proper layered cake from scratch."
+        }
+      ],
+      "coach_notes": "You're not behind — you're exactly on schedule, because every weekend has been one skill layered on the last. The week-4 cake is the payoff, not a test you can fail; you've already done every step of it three times. One wobble or a slightly lopsided top is noise, not a verdict — the rep after it is the one that locks it in. Bake for someone you like, and enjoy the smell."
+    }
+  },
+  {
+    "id": "read-nightly",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Read 10 minutes before bed each night for the next month (4 weeks).",
+      "duration_weeks": 4,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Set the Stage",
+          "focus": "Make the book impossible to miss and the phone hard to reach.",
+          "start_week": 1,
+          "end_week": 1,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Place a book on your pillow",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "Tonight, pick a book you actually want to read and leave it sitting on your pillow before you leave the bedroom. It's the first thing you see when you walk in to wind down."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Read 10 minutes before bed",
+              "kind": "duration",
+              "duration_minutes": 10,
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Right after you brush your teeth and before lights out, sit up and read for 10 minutes. Keep the book on the pillow so it's already waiting. If 10 feels heavy one night, even 2 pages counts — just get the book in your hands."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "Park your phone across the room",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "Choose a charging spot outside arm's reach of the bed — a dresser, a desk, the other side of the room. Plug it in there tonight and every night. If the phone is in your hand, the book loses."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Build the Rhythm",
+          "focus": "Make the 10 minutes feel automatic and genuinely enjoyable.",
+          "start_week": 2,
+          "end_week": 2,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Read 10 minutes before bed",
+              "kind": "duration",
+              "duration_minutes": 10,
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Same slot — teeth brushed, phone parked across the room, book already on the pillow. Read for 10 minutes. If a book is dragging, swap it for something lighter; the point is showing up, not pushing through a slog."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Leave the book open at your stopping point",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "When you finish, leave the book open face-down where you stopped instead of closing it. Tomorrow the page is already waiting — no hunting for your spot, no excuse to skip."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Own the Streak",
+          "focus": "Hold the habit steady and keep it forgiving.",
+          "start_week": 3,
+          "end_week": 3,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Read 10 minutes before bed",
+              "kind": "duration",
+              "duration_minutes": 10,
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "The book is on the pillow, the phone is across the room, the page is open. All you do is sit up and read for 10 minutes. If you miss a night, that's noise — the next night is the one that counts."
+            }
+          ]
+        },
+        {
+          "id": "ph4",
+          "title": "Make It Yours",
+          "focus": "Let the habit settle in and look ahead.",
+          "start_week": 4,
+          "end_week": 4,
+          "steps": [
+            {
+              "id": "ph4-s1",
+              "title": "Read 10 minutes before bed",
+              "kind": "duration",
+              "duration_minutes": 10,
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Final stretch — same 10 minutes, same book waiting on the pillow. You've built a month of this. Keep reading whatever actually holds your attention; a book you enjoy beats a book you feel you should read."
+            },
+            {
+              "id": "ph4-s2",
+              "title": "Pick your next book",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "Before the month ends, choose the next book and set it on the pillow the night you finish the current one. A waiting book keeps the habit alive with zero effort."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 1,
+          "title": "The stage is set",
+          "criteria": "Book on the pillow, phone parked across the room, and you read at least one night."
+        },
+        {
+          "id": "m2",
+          "week": 2,
+          "title": "Two weeks in",
+          "criteria": "You've read most nights and the routine feels automatic by the end of the week."
+        },
+        {
+          "id": "m3",
+          "week": 4,
+          "title": "A month of reading",
+          "criteria": "You've read before bed for a full month and picked your next book."
+        }
+      ],
+      "coach_notes": "Ten minutes is tiny, and that's the whole trick — you're not building a reading identity, just a rerun of a habit. Miss a night and it's noise, not failure; the night after the miss is the one that decides it. Keep the book genuinely fun, keep the phone out of reach, and this one basically runs itself."
+    }
+  },
+  {
+    "id": "quit-smoking",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Quit smoking over the next three months, cutting down from ~10 a day to zero, using a gradual taper rather than cold turkey.",
+      "duration_weeks": 12,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Shrink the daily count",
+          "focus": "Step down from 10 to 7 a day and make the pack harder to reach.",
+          "start_week": 1,
+          "end_week": 3,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Smoke at most 7 cigarettes today",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 7,
+                "unit": "cigarettes",
+                "direction": "at_most"
+              },
+              "details": "Count every cigarette you light. When you hit 7, the pack goes somewhere you have to walk to get — the car, the garage, a drawer across the house. That small distance is the whole trick this week.",
+              "week_progression": "Week 1: cap at 8. Week 2: cap at 7. Week 3: cap at 7."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Leave the pack out of reach overnight",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Each night before bed, move your cigarettes to a spot that requires effort to reach — a locked drawer, the trunk of the car, the far end of the house. Do not leave a pack, lighter, or ashtray on the table, counter, or bedside. Make the first morning cigarette a decision, not a reflex."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "Delay the urge for 10 minutes before lighting",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 7
+              },
+              "duration_minutes": 10,
+              "details": "When an urge hits, don't reach for the pack. Set a 10-minute timer and do something with your hands — glass of water, a short walk, wash a few dishes, scroll your phone. If you still want one after the timer, you can have it. Most urges pass inside those 10 minutes; you'll be surprised how often you skip it entirely.",
+              "week_progression": "Weeks 1-3: hold the 10-minute delay."
+            },
+            {
+              "id": "ph1-s4",
+              "title": "Empty every ashtray and bin the lighters",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "One-time sweep this first week: dump and wash every ashtray in the house, car, and office, and put them out of sight. Throw out or hide spare lighters so only one lives with the pack. A clean, smoke-free environment makes every cigarette a deliberate act instead of an automatic one."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Cut the peak-urge moments",
+          "focus": "Step down to 4 a day and build a replacement ritual for the moments you'd normally smoke.",
+          "start_week": 4,
+          "end_week": 7,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Smoke at most 4 cigarettes today",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 4,
+                "unit": "cigarettes",
+                "direction": "at_most"
+              },
+              "details": "Keep counting every cigarette. At 4, you're done for the day — pack goes back to its out-of-reach spot. Save your cigarettes for the ones that matter most: after a meal, with coffee, on the drive. The filler smokes are the ones that drop away first.",
+              "week_progression": "Week 4: cap at 5. Weeks 5-7: cap at 4."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Swap one usual smoking moment for a 5-minute walk",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 7
+              },
+              "duration_minutes": 5,
+              "details": "Pick the smoking moment you reach for most often — the one right after lunch, or the one when you get off work. Every time that moment comes, take a 5-minute walk instead. Keep a pack of gum or a water bottle in your pocket for that slot. You're not quitting the moment — you're replacing what you do in it.",
+              "week_progression": "Weeks 4-7: one swapped moment daily."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "Delay the urge for 15 minutes before lighting",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 7
+              },
+              "duration_minutes": 15,
+              "details": "Your delay stretches from 10 to 15 minutes. Same rule: timer, hands busy, water or a walk. The longer you hold the urge, the more often it dissolves on its own. You're building proof that the craving is a wave — it peaks, then it passes.",
+              "week_progression": "Weeks 4-7: hold the 15-minute delay."
+            },
+            {
+              "id": "ph2-s4",
+              "title": "Put the money saved from 3 fewer cigarettes in a jar",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "One time this week, work out what 3 cigarettes a day costs you for the week and drop that cash into a visible jar. It's a small amount, but watching it grow is the point. That jar is your reward for every cigarette you didn't smoke — and it's the thing you can see filling up as the taper works."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Dismantle the habit",
+          "focus": "Step down to 2 a day and make each remaining cigarette a conscious choice.",
+          "start_week": 8,
+          "end_week": 10,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Smoke at most 2 cigarettes today",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 2,
+                "unit": "cigarettes",
+                "direction": "at_most"
+              },
+              "details": "Down to 2. Pick the two you'd keep if you could only have two — often the after-meal one and the one with coffee. Everything else is gone. At 2, count each one like it costs you real money, because it does.",
+              "week_progression": "Weeks 8-10: cap at 2."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Hold each cigarette for 2 full minutes before lighting",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 7
+              },
+              "duration_minutes": 2,
+              "details": "Before you light one of your 2, hold it in your hand for a full 2 minutes and look at it. Ask yourself: do I actually want this, or am I just doing the routine? This turns the automatic reach into a conscious decision. You'll skip some of these entirely.",
+              "week_progression": "Weeks 8-10: hold each smoke for the full 2 minutes."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Keep the pack in a locked box or the car trunk",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Your 2 cigarettes now live somewhere inconvenient — a locked drawer, the car trunk, a neighbor's garage. Every cigarette costs you a real trip. When the effort outweighs the urge, you'll find yourself skipping smokes you used to take for granted."
+            },
+            {
+              "id": "ph3-s4",
+              "title": "Tell one person your quit date and count",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "Pick one person — partner, friend, coworker — and tell them you're at 2 a day and cutting to zero in two weeks. Tell them the date. Knowing someone else expects you to show up at zero is a real force when the last few cigarettes are the hardest ones to give up."
+            }
+          ]
+        },
+        {
+          "id": "ph4",
+          "title": "Go to zero and stay there",
+          "focus": "Drop to no cigarettes and hold the line through the hardest stretch.",
+          "start_week": 11,
+          "end_week": 12,
+          "steps": [
+            {
+              "id": "ph4-s1",
+              "title": "Smoke at most 0 cigarettes today",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 0,
+                "unit": "cigarettes",
+                "direction": "at_most"
+              },
+              "details": "Zero. The pack is gone — you throw out whatever's left on the first day. Every cigarette you don't smoke is a win you can see in that jar. This is the moment you've been building toward for two and a half months.",
+              "week_progression": "Weeks 11-12: zero cigarettes."
+            },
+            {
+              "id": "ph4-s2",
+              "title": "Take a 5-minute walk when the urge hits",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 7
+              },
+              "duration_minutes": 5,
+              "details": "The urge will still fire, especially in week 11. When it does, you walk — 5 minutes, hands busy, water in hand. You've already done this hundreds of times by now. The wave peaks and passes; you just have to ride it out.",
+              "week_progression": "Weeks 11-12: walk every urge."
+            },
+            {
+              "id": "ph4-s3",
+              "title": "Keep the house, car, and workspace 100% smoke-free",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "No packs, no lighters, no ashtrays, no spare cigarettes in any drawer or jacket pocket. Do a sweep today and every day this phase. If there's nothing to reach for, the urge has nowhere to land."
+            },
+            {
+              "id": "ph4-s4",
+              "title": "Spend your jar money on a reward",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "At the end of week 12, count the jar and spend it on something you actually want — a dinner, a new shirt, a game. This is the payoff for three months of taper. You earned it, and it makes the whole project feel real."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 3,
+          "title": "Tapered from 10 to 7",
+          "criteria": "Hit the 7-a-day cap for a full week without going over."
+        },
+        {
+          "id": "m2",
+          "week": 7,
+          "title": "Cut your count in half",
+          "criteria": "Smoked at most 4 a day for a full week."
+        },
+        {
+          "id": "m3",
+          "week": 10,
+          "title": "Down to two",
+          "criteria": "Smoked at most 2 a day for a full week."
+        },
+        {
+          "id": "m4",
+          "week": 12,
+          "title": "Smoke-free",
+          "criteria": "Went a full week with zero cigarettes and spent your jar money."
+        }
+      ],
+      "coach_notes": "You've crashed at week two twice on cold turkey — that's not a failure of will, it's a bad method. This taper removes the cliff entirely: each week's cap is small enough to hold, and the delay-and-walk drills give you a script for the exact moment cold turkey undid you. One slip is noise, not a verdict — the cigarette after the slip is the one that decides the habit, so miss a day, keep the cap, and get back on it. The jar is the part worth taking seriously: three months of watching it grow is a lot easier to stay honest about than a promise to yourself."
+    }
+  },
+  {
+    "id": "10k-steps",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Build up to and hold a daily average of 10,000 steps, starting from ~4,000, using a gradual ramp over 6 weeks.",
+      "duration_weeks": 6,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Wake up the walker",
+          "focus": "Get moving daily and build the habit of a morning walk before the numbers climb.",
+          "start_week": 1,
+          "end_week": 2,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Morning walk",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 7
+              },
+              "duration_minutes": 15,
+              "details": "Set your shoes by the door the night before. Right after you wake up, before coffee or your phone, step out for 15 minutes. This is the block that anchors your whole day."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Lunch stroll",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 10,
+              "details": "After lunch, loop the block or pace the hallway for 10 minutes. Do it right after you finish eating so it's part of the meal, not something you have to remember later."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "Step-bursts on calls",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 1000,
+                "unit": "steps",
+                "direction": "at_least"
+              },
+              "details": "Any time you take a phone call, stand up and pace. Stairs instead of the elevator, park at the far end of the lot, walk to a colleague instead of messaging. These micro-bursts quietly add up to your 1,000-step cushion."
+            },
+            {
+              "id": "ph1-s4",
+              "title": "Set up daily tracking",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "One-time setup: turn on step counting on your phone or fitness band, and put the widget on your home screen so your daily number is one glance away."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Climb the ramp",
+          "focus": "Push the daily total up by roughly 1,000 steps per week by lengthening the blocks you already built.",
+          "start_week": 3,
+          "end_week": 4,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Morning walk, longer",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 7
+              },
+              "duration_minutes": 25,
+              "details": "Add 10 minutes to the morning block. Same shoes-by-the-door routine, same time — just extend the route one extra block out and back."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Lunch stroll, longer",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 15,
+              "details": "Add 5 minutes to the lunch loop. Walk a little further from the building before you turn around."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "Evening cooldown lap",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 3,
+                "days": [
+                  "mon",
+                  "wed",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 15,
+              "details": "After dinner, take a slow 15-minute lap around the neighborhood. It's not about pace — it settles the day and banks extra steps before you hit your target."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Push to ten thousand",
+          "focus": "Reach the 10,000 daily average by adding one more block and pushing the total across the line.",
+          "start_week": 5,
+          "end_week": 6,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Morning walk, full length",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 7
+              },
+              "duration_minutes": 35,
+              "details": "Extend the morning block to 35 minutes. Walk out to a landmark and back — a coffee shop, a park bench, a corner store — so the route feels like a destination."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Lunch stroll, full length",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 20,
+              "details": "Take the full lunch break out of the building. Walk to get food instead of ordering in, or circle the block twice before heading back."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Evening cooldown lap",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 20,
+              "details": "After dinner, a steady 20-minute lap. By now the evening walk is something your body expects — it's the last push that reliably lands you at or past 10,000."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 2,
+          "title": "A week of daily walking",
+          "criteria": "Complete the morning walk every day and land your step-bursts on all seven days of week 2."
+        },
+        {
+          "id": "m2",
+          "week": 4,
+          "title": "Halfway there",
+          "criteria": "Hold a daily average of roughly 7,000 steps across week 4 with your extended blocks."
+        },
+        {
+          "id": "m3",
+          "week": 6,
+          "title": "Ten thousand club",
+          "criteria": "Hit a daily average of 10,000 steps in the final week and hold it across all seven days."
+        }
+      ],
+      "coach_notes": "You're not sprinting to 10k — you're walking there, one extra minute at a time, and that's exactly the right pace. A missed day is noise; the walk you take the day after is the one that decides whether this sticks. By week 6 the morning shoe-tying will feel automatic, and ten thousand will just be your normal day."
+    }
+  },
+  {
+    "id": "spanish-convo",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Hold a basic 5-minute conversation in Spanish within 3 months, starting from near zero, with ~30 minutes of practice most days.",
+      "duration_weeks": 12,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Sound, Greetings & Core Phrases",
+          "focus": "Get comfortable making sounds and exchanging the first real sentences out loud.",
+          "start_week": 1,
+          "end_week": 3,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Daily 20-min app lesson",
+              "kind": "duration",
+              "duration_minutes": 20,
+              "frequency": {
+                "per_week": 6
+              },
+              "details": "Work through your Spanish app one lesson a day. Sit in the same chair at the same time each day — leave the app open on your phone so it's one tap to start. Say every word out loud, never silently. Week 1 just do 20 minutes; resist the urge to binge more."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Repeat the day's 5 new phrases out loud",
+              "kind": "duration",
+              "duration_minutes": 5,
+              "frequency": {
+                "per_week": 6
+              },
+              "details": "Right after your app lesson, pick the 5 phrases you just learned and say each one out loud 5 times. Slow and exaggerated is fine — you're teaching your mouth the sounds. Keep a running list on your phone notes so you can see it grow."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "Say greetings & introductions to your partner",
+              "kind": "duration",
+              "duration_minutes": 5,
+              "frequency": {
+                "per_week": 3
+              },
+              "days": [
+                "mon",
+                "wed",
+                "fri"
+              ],
+              "details": "Over dinner or coffee, greet your partner in Spanish and introduce yourself — name, where you're from, a simple 'how are you'. Let them answer back in Spanish and just try to catch the words you know. Keep it to 5 easy minutes; the point is the real back-and-forth, not perfection."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Build the Conversation Toolkit",
+          "focus": "Learn the high-frequency questions and answers that keep a basic talk moving.",
+          "start_week": 4,
+          "end_week": 7,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Daily 15-min app lesson",
+              "kind": "duration",
+              "duration_minutes": 15,
+              "frequency": {
+                "per_week": 6
+              },
+              "details": "Keep the daily lesson, trimmed to 15 minutes so you have room for speaking reps. Stay in the same spot and same time. Focus your app time on question words and common verbs — qué, dónde, cuándo, tener, querer, gustar."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Practice 10 question-and-answer exchanges out loud",
+              "kind": "duration",
+              "duration_minutes": 10,
+              "frequency": {
+                "per_week": 6
+              },
+              "details": "From a list of 10 core questions (what's your name, where are you from, what do you like, what do you do), ask and answer each one out loud — play both parts. Your phone notes list from week 1 now becomes your script. Speak at a normal pace, no reading."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "One 5-minute Spanish chat with your partner",
+              "kind": "duration",
+              "duration_minutes": 5,
+              "frequency": {
+                "per_week": 3
+              },
+              "days": [
+                "mon",
+                "wed",
+                "fri"
+              ],
+              "details": "Now aim for a full 5-minute conversation about your day — what you did, what you ate, what you liked. Ask your partner one of your 10 questions and answer theirs. When you get stuck, say 'no sé' and switch to a question you know. Keeping it going for 5 minutes is the win."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Real-Life Scenarios",
+          "focus": "Practice the mini-scenes you'd actually hit in a 5-minute talk: ordering, small talk, asking for help.",
+          "start_week": 8,
+          "end_week": 10,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Daily 10-min app lesson",
+              "kind": "duration",
+              "duration_minutes": 10,
+              "frequency": {
+                "per_week": 5
+              },
+              "details": "Trim to 10 minutes and shift the focus to real-scenario vocabulary: ordering food, asking directions, talking about the weather and your weekend. Use leftover minutes for the speaking reps below."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Run one 5-minute scenario out loud",
+              "kind": "duration",
+              "duration_minutes": 5,
+              "frequency": {
+                "per_week": 5
+              },
+              "details": "Pick a scenario — ordering at a café, asking for directions, small talk about the weekend — and act it out solo out loud, playing both sides. Talk to an empty chair as if it's a waiter or a stranger. Keep a running list of the phrases that trip you up and repeat those 5 times."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Two full 5-minute chats with your partner",
+              "kind": "duration",
+              "duration_minutes": 5,
+              "frequency": {
+                "per_week": 2
+              },
+              "days": [
+                "sat",
+                "sun"
+              ],
+              "details": "This week, hold two separate 5-minute conversations — one about your weekend plans, one ordering or pretending to order a meal. Ask your partner to correct you on just one thing per chat, no more. If you run dry, fall back on your 10 core questions."
+            }
+          ]
+        },
+        {
+          "id": "ph4",
+          "title": "The 5-Minute Test Run",
+          "focus": "Pull it all together into one smooth, unscripted 5-minute conversation.",
+          "start_week": 11,
+          "end_week": 12,
+          "steps": [
+            {
+              "id": "ph4-s1",
+              "title": "Daily 15-min free-flow practice",
+              "kind": "duration",
+              "duration_minutes": 15,
+              "frequency": {
+                "per_week": 6
+              },
+              "details": "Drop the app as the main driver. Spend 15 minutes talking out loud about your day, your plans, your opinions — no script, just your own words. When you hit a word you don't know, say it in English and immediately look up the Spanish and repeat the sentence. This is where it becomes yours."
+            },
+            {
+              "id": "ph4-s2",
+              "title": "One unscripted 5-minute chat with your partner",
+              "kind": "duration",
+              "duration_minutes": 5,
+              "frequency": {
+                "per_week": 3
+              },
+              "days": [
+                "mon",
+                "wed",
+                "fri"
+              ],
+              "details": "Full 5-minute conversations with no topic given ahead of time. Let it wander — your day, the news, a movie you saw. Use the questions you know to keep it alive when it stalls. The goal is simply to keep talking for 5 straight minutes without switching to English."
+            },
+            {
+              "id": "ph4-s3",
+              "title": "Record yourself holding a 5-minute solo talk",
+              "kind": "duration",
+              "duration_minutes": 5,
+              "frequency": {
+                "per_week": 2
+              },
+              "days": [
+                "sat",
+                "sun"
+              ],
+              "details": "Set your phone to record and talk for 5 full minutes about anything — your week, your plans, a story. Play it back once and note the moments you froze. Then do it again, aiming for fewer pauses. Listening back is uncomfortable but it's the fastest way to see how far you've come."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 3,
+          "title": "First real exchange",
+          "criteria": "You greeted your partner in Spanish and introduced yourself with a real back-and-forth — no English rescue."
+        },
+        {
+          "id": "m2",
+          "week": 7,
+          "title": "Five minutes of back-and-forth",
+          "criteria": "You held a full 5-minute conversation about your day with your partner, using your core questions to keep it alive."
+        },
+        {
+          "id": "m3",
+          "week": 10,
+          "title": "Scenarios handled",
+          "criteria": "You ran a 5-minute scenario (ordering, directions, small talk) out loud without the script in front of you."
+        },
+        {
+          "id": "m4",
+          "week": 12,
+          "title": "The unscripted 5 minutes",
+          "criteria": "You held a 5-minute conversation with no prepared topic, staying in Spanish the whole time."
+        }
+      ],
+      "coach_notes": "The whole game is speaking out loud from week one — your partner is your secret weapon, so lean on them for real back-and-forth instead of just tapping through an app. One missed day is noise; the rep right after a miss is the one that decides this. By week 12 you're not fluent, you're having a basic 5-minute conversation — and that's a genuinely impressive thing to be able to do."
+    }
+  },
+  {
+    "id": "pushups-30",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Go from ~8 push-ups to 30 in a row within 8 weeks, training 3 days a week.",
+      "duration_weeks": 8,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Build the habit and the base",
+          "focus": "Three sessions a week, low volume, learn the groove",
+          "start_week": 1,
+          "end_week": 2,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Push-up session",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 3
+              },
+              "quantity": {
+                "amount": 3,
+                "unit": "sets",
+                "direction": "at_least"
+              },
+              "details": "Do 3 sets of push-ups with 90 seconds of rest between sets. Aim for 6-8 reps per set — stop each set one rep short of failure. Pick a time you can hold (morning before work, or right after you get home) and keep it the same every session.",
+              "week_progression": "Week 1: 3 sets of 6-8. Week 2: 3 sets of 8-10."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Max test",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 1
+              },
+              "quantity": {
+                "amount": 1,
+                "unit": "max attempt",
+                "direction": "at_least"
+              },
+              "details": "Once a week, rested and fresh, do one all-out set and count how many you get. Don't do this on a training day — use a day in between. This tells us where you actually are.",
+              "week_progression": "Same every week: one fresh max test. Don't chase a number, just get a real count."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Climb the reps",
+          "focus": "Push volume up, add a tempo and a harder variation",
+          "start_week": 3,
+          "end_week": 5,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Push-up session",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 3
+              },
+              "quantity": {
+                "amount": 4,
+                "unit": "sets",
+                "direction": "at_least"
+              },
+              "details": "4 sets of push-ups with 90 seconds rest. Go to near-failure each set but stop one rep short. If a set hits 12 clean reps, add the next session's goal by 2.",
+              "week_progression": "Week 3: 4 sets of 8-10. Week 4: 4 sets of 10-12. Week 5: 4 sets of 12-14."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Slow negative set",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 2
+              },
+              "quantity": {
+                "amount": 8,
+                "unit": "reps",
+                "direction": "at_least"
+              },
+              "details": "After your regular sets, do one set where you lower yourself as slowly as you can — about 3 seconds down, then push back up. 8 reps. This builds the strength that failing push-ups actually needs.",
+              "week_progression": "Week 3: 6 reps. Week 4: 8 reps. Week 5: 10 reps."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "Max test",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 1
+              },
+              "quantity": {
+                "amount": 1,
+                "unit": "max attempt",
+                "direction": "at_least"
+              },
+              "details": "Fresh max test on a non-training day. Whatever you get is the new baseline — the numbers climb from here.",
+              "week_progression": "Same every week: one fresh max test."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Push toward 30",
+          "focus": "Chase the milestone, refine form, protect the streak",
+          "start_week": 6,
+          "end_week": 8,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Push-up session",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 3
+              },
+              "quantity": {
+                "amount": 4,
+                "unit": "sets",
+                "direction": "at_least"
+              },
+              "details": "4 sets, 90 seconds rest. Now push to near-failure on every set. When your first set hits 20, you're in striking range of 30.",
+              "week_progression": "Week 6: 4 sets of 14-16. Week 7: 4 sets of 16-18. Week 8: 4 sets of 18-20."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Slow negative set",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 2
+              },
+              "quantity": {
+                "amount": 10,
+                "unit": "reps",
+                "direction": "at_least"
+              },
+              "details": "Same slow-lower set, 3 seconds down each rep. Keep it after your main sets.",
+              "week_progression": "Week 6: 10 reps. Week 7: 12 reps. Week 8: 12 reps."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Max test",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 1
+              },
+              "quantity": {
+                "amount": 1,
+                "unit": "max attempt",
+                "direction": "at_least"
+              },
+              "details": "Fresh max test on a non-training day. This is the number we're driving toward — 30.",
+              "week_progression": "Same every week: one fresh max test. By week 8 you're aiming for 30."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 2,
+          "title": "The habit is real",
+          "criteria": "Completed 6 training sessions across two weeks without skipping two in a row."
+        },
+        {
+          "id": "m2",
+          "week": 5,
+          "title": "Double-digit max",
+          "criteria": "Fresh max test hits at least 15 push-ups."
+        },
+        {
+          "id": "m3",
+          "week": 8,
+          "title": "The 30",
+          "criteria": "Fresh max test hits 30 push-ups in a row."
+        }
+      ],
+      "coach_notes": "We kept your training days — three sessions a week stays, because the habit is the thing we're protecting right now. But for the next two weeks (weeks 4 and 5) we're taking the load way down so your shoulder gets a gentler runway: fewer sets, fewer reps, and the slow-negative work pauses entirely. This isn't a setback, it's smart — easing off for two weeks is exactly how you come back without missing twice. Weeks 6-8 re-ramp back toward the 30, and the target still stands. Listen to your body, keep form clean, and when a rep feels sharp or wrong, stop that set early — no guilt, just adjust. One easy week beats two missed ones."
+    }
+  },
+  {
+    "id": "sleep-11pm",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Get to bed by 11pm on weeknights for a month, using a wind-down ritual and phone-away habit to break the 1am scroll.",
+      "duration_weeks": 4,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Build the wind-down",
+          "focus": "Set up the environment and start the ritual — week one is about making it easy, not perfect.",
+          "start_week": 1,
+          "end_week": 1,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Move charger across the room",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 1
+              },
+              "details": "One-time setup: move your phone charger to the far side of the bedroom (or into the bathroom/hallway) so the phone is not within arm's reach of the bed. This is the single most important step of the whole month — do it today, not tonight."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Park the phone by 10:20pm",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "details": "At 10:20pm, put the phone on its charger across the room and leave it there. No more picking it up until morning. If you're mid-scroll, set a 10:15 alarm so the 10:20 cutoff catches you before you sink in."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "Do the 15-minute wind-down",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 15,
+              "details": "Right after parking the phone, do the same shutdown ritual each night: brush teeth, wash face, change into sleep clothes, dim the lights. Same order, same time, every weeknight. Keep it simple — the repetition is the point, not the polish."
+            },
+            {
+              "id": "ph1-s4",
+              "title": "Lights out by 11pm",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "details": "Set a 10:55pm 'lights out' alarm. When it goes off, lights go off and you're in bed. The wind-down should have you ready by now — if it doesn't, just get in bed anyway. Being in bed at 11 beats 'perfectly ready' at 11:30."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Make it stick",
+          "focus": "Hold the routine steady and smooth out the rough nights.",
+          "start_week": 2,
+          "end_week": 2,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Park the phone by 10:20pm",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "details": "Same cutoff as last week. By now the 10:15 alarm should feel like an old friend. If you slipped a night, don't double down — just make tonight's 10:20 count."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Do the 15-minute wind-down",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 15,
+              "details": "Same ritual, same order, same time. If it's feeling mechanical, that's a good sign — it means the loop is forming. Keep it boring on purpose."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "Lights out by 11pm",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "details": "The 10:55 alarm is your hard stop. In bed, lights off, by 11. If you're not sleepy yet, that's fine — lying in the dark with no phone is still a win over the 1am scroll."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Own the weeknights",
+          "focus": "The routine is built — now it's about consistency through the middle stretch.",
+          "start_week": 3,
+          "end_week": 3,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Park the phone by 10:20pm",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "details": "The cutoff is now a reflex. Keep the 10:15 alarm as your safety net — it's the guard that stops the spiral before it starts."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Do the 15-minute wind-down",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 15,
+              "details": "Same 15 minutes, same order. If you find yourself rushing it, slow down — the point is to let your body register that the day is over."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Lights out by 11pm",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "details": "In bed, lights off, by 11. At this point you should be hitting most nights without even thinking about it. That's the goal."
+            }
+          ]
+        },
+        {
+          "id": "ph4",
+          "title": "Lock it in",
+          "focus": "Finish the month strong and leave the habit in place for after.",
+          "start_week": 4,
+          "end_week": 4,
+          "steps": [
+            {
+              "id": "ph4-s1",
+              "title": "Park the phone by 10:20pm",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "details": "Final week of the cutoff. By now it should feel strange to have the phone in reach at bedtime. Keep the charger across the room — that's the setup that makes it work."
+            },
+            {
+              "id": "ph4-s2",
+              "title": "Do the 15-minute wind-down",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "duration_minutes": 15,
+              "details": "Same ritual. This is the week where it stops being a 'month project' and starts being just how you end your day."
+            },
+            {
+              "id": "ph4-s3",
+              "title": "Lights out by 11pm",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 5,
+                "days": [
+                  "mon",
+                  "tue",
+                  "wed",
+                  "thu",
+                  "fri"
+                ]
+              },
+              "details": "Finish the month with a full week of 11pm lights-out. When the month ends, keep the charger where it is and the ritual in place — that's the whole trick."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 1,
+          "title": "First full week of 11pm lights-out",
+          "criteria": "Phone parked by 10:20 and lights out by 11 on all five weeknights."
+        },
+        {
+          "id": "m2",
+          "week": 2,
+          "title": "Two weeks in, routine feels routine",
+          "criteria": "Wind-down and lights-out held steady for ten weeknights total."
+        },
+        {
+          "id": "m3",
+          "week": 3,
+          "title": "Halfway to a habit",
+          "criteria": "Fifteen weeknights of the ritual — the cutoff is starting to feel automatic."
+        },
+        {
+          "id": "m4",
+          "week": 4,
+          "title": "A month of 11pm bedtimes",
+          "criteria": "All twenty weeknights completed with phone parked and lights out by 11."
+        }
+      ],
+      "coach_notes": "The whole game is the phone on the far side of the room by 10:20 — every other step is just backup. You'll miss a night or two; that's noise, not a verdict. The night after a miss is the one that decides the month, so make that one count and keep going."
+    }
+  },
+  {
+    "id": "gain-muscle",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Add ~5 lbs of lean muscle over the next 16-20 weeks by progressively overloading your current 3-day lifting routine and eating in a consistent surplus.",
+      "duration_weeks": 18,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Build the Surplus Foundation",
+          "focus": "Lock in the eating and training baseline before pushing intensity",
+          "start_week": 1,
+          "end_week": 4,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Eat a protein-rich meal at every main meal",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "That's roughly 25-35g of protein per meal — a palm-sized portion of chicken, beef, fish, eggs, Greek yogurt, or tofu at breakfast, lunch, and dinner. At your weight that lands you around 130-150g a day, which is the floor for muscle growth. If a meal has no obvious protein source, it doesn't count.",
+              "week_progression": "Same every week — this is the constant that everything else builds on."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Add one extra snack to your day",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 300,
+                "unit": "calories",
+                "direction": "at_least"
+              },
+              "details": "One daily snack of roughly 300 kcal on top of your normal eating — a protein shake with milk, a peanut-butter sandwich, a handful of nuts plus a banana. This is your surplus: modest, steady, and it doesn't require you to overhaul your whole diet. Keep it in the kitchen or pantry so it's the easy choice.",
+              "week_progression": "Holds steady all 18 weeks. If your weight stalls for two weeks, bump the snack to 400 kcal."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "Lift all 3 of your sessions",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 3
+              },
+              "days": [
+                "mon",
+                "wed",
+                "fri"
+              ],
+              "details": "Your three days are the non-negotiables. Every session: pick your main lift (squat, bench, deadlift, or row), do 3-4 working sets, and finish the last set with 2-3 reps left in the tank. Write down the weight and reps for that main lift right after the set — that number is what you beat next week.",
+              "week_progression": "Same 3 sessions every week. The weight on the page is the point."
+            },
+            {
+              "id": "ph1-s4",
+              "title": "Weigh in twice a week",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 2
+              },
+              "days": [
+                "wed",
+                "sun"
+              ],
+              "quantity": {
+                "amount": 1,
+                "unit": "weigh-in",
+                "direction": "at_least"
+              },
+              "details": "Same time of day, right after waking and using the bathroom, before drinking anything. Record it on your phone. You're looking at the weekly average trend, not the daily number — water swings will bounce around a pound either way. This tells you if the surplus is working.",
+              "week_progression": "Steady all 18 weeks. The trend line, not the single number, is what matters."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Push Progressive Overload",
+          "focus": "Make every week measurably stronger while the surplus keeps fueling it",
+          "start_week": 5,
+          "end_week": 10,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Beat last week's main-lift number",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 3
+              },
+              "days": [
+                "mon",
+                "wed",
+                "fri"
+              ],
+              "quantity": {
+                "amount": 1,
+                "unit": "rep or 5 lb on a main lift",
+                "direction": "at_least"
+              },
+              "details": "Each session, your main lift must beat what you did last week: either one more clean rep at the same weight, or 5 lb more for the same reps. If you hit it, that's the week's win. If you don't, repeat the same weight and reps — no shame, just don't go backward.",
+              "week_progression": "Same rule each week. The bar keeps creeping up, or you hold and try again next session."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Eat a protein-rich meal at every main meal",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Still the floor: a palm-sized protein portion at breakfast, lunch, and dinner, landing you around 130-150g a day. Now that training intensity is climbing, this matters more, not less — the muscle only gets built if the raw material is there daily.",
+              "week_progression": "Unchanged. This is the constant."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "Keep the daily snack surplus",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 300,
+                "unit": "calories",
+                "direction": "at_least"
+              },
+              "details": "Same ~300 kcal snack on top of normal meals. If the weekly weigh-in trend has been flat for two weeks, bump it to 400 kcal. If it's climbing faster than about 0.5 lb a week, trim it back to 250. The scale trend steers the snack.",
+              "week_progression": "Adjusts based on the weigh-in trend: 300 kcal baseline, 400 if stalled, 250 if gaining too fast."
+            },
+            {
+              "id": "ph2-s4",
+              "title": "Weigh in twice a week",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 2
+              },
+              "days": [
+                "wed",
+                "sun"
+              ],
+              "quantity": {
+                "amount": 1,
+                "unit": "weigh-in",
+                "direction": "at_least"
+              },
+              "details": "Same morning routine, same time, record it. The weekly average should be creeping up about 0.25-0.5 lb. That's the surplus working — anything faster is excess fat, anything flat means the snack needs to grow.",
+              "week_progression": "Steady. This is the steering wheel for the surplus."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Sustain and Fine-Tune",
+          "focus": "Keep the gains coming without the process falling apart",
+          "start_week": 11,
+          "end_week": 18,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Beat last week's main-lift number",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 3
+              },
+              "days": [
+                "mon",
+                "wed",
+                "fri"
+              ],
+              "quantity": {
+                "amount": 1,
+                "unit": "rep or 5 lb on a main lift",
+                "direction": "at_least"
+              },
+              "details": "The same rule, still in force: one more clean rep or 5 lb more on a main lift each session. By now you may hit a real plateau — two sessions in a row failing to beat the number is the signal to drop 10% and climb back up over a few weeks. That's normal, and it's still progress.",
+              "week_progression": "Same rule. If you stall for two sessions, deload 10% and rebuild — that's the plan, not a failure."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Eat a protein-rich meal at every main meal",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "The constant holds: palm-sized protein at breakfast, lunch, and dinner, ~130-150g a day. This is what turns your training into actual muscle, and it doesn't get skipped just because the finish line is near.",
+              "week_progression": "Unchanged."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Keep the daily snack surplus",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 300,
+                "unit": "calories",
+                "direction": "at_least"
+              },
+              "details": "Same ~300 kcal snack, still steered by the weigh-in trend. If the scale has been climbing too fast, dial it to 250; if it's flat, go to 400. The surplus is what carries you across the finish line, so don't let it slip in the home stretch.",
+              "week_progression": "Continues to steer by the scale trend."
+            },
+            {
+              "id": "ph3-s4",
+              "title": "Weigh in twice a week",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 2
+              },
+              "days": [
+                "wed",
+                "sun"
+              ],
+              "quantity": {
+                "amount": 1,
+                "unit": "weigh-in",
+                "direction": "at_least"
+              },
+              "details": "Same morning routine. You're aiming for a slow, steady climb to roughly 175 lb by the end of these 18 weeks. The scale trend tells you whether the surplus is still doing its job.",
+              "week_progression": "Steady. Watch for the ~5 lb total gain by the end."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 4,
+          "title": "Surplus is running on autopilot",
+          "criteria": "Hit the daily snack and protein-at-every-meal for 4 straight weeks, and your weigh-in trend is creeping up."
+        },
+        {
+          "id": "m2",
+          "week": 10,
+          "title": "The bar is moving",
+          "criteria": "You've beaten last week's main-lift number in most sessions for 6 weeks running — measurable strength is up."
+        },
+        {
+          "id": "m3",
+          "week": 18,
+          "title": "Five pounds of lean mass",
+          "criteria": "You're up roughly 5 lb on the scale trend with your lifts still climbing, and the protein floor never slipped."
+        }
+      ],
+      "coach_notes": "Five pounds of real muscle on an 18-week clock is a slow, patient grind — and that's exactly why it works. One missed training day is noise; the session after it is the one that decides the habit, so never miss two in a row. The weigh-in trend is your steering wheel, not a daily verdict — trust the weekly average, not the water swings. You've got the training base; the surplus and the creeping weights are what carry you home."
+    }
+  },
+  {
+    "id": "lose-weight-moderate",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Lose 8 kg over the next 4 months (about 0.5 kg per week) through a steady calorie deficit and consistent movement.",
+      "duration_weeks": 16,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Build the Baseline",
+          "focus": "Get honest about what's going in and start moving daily — at a pace that feels almost too easy.",
+          "start_week": 1,
+          "end_week": 4,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Daily weigh-in, first thing",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Step on the scale right after you wake up and use the bathroom, before eating or drinking. Same routine every morning — the number is data, not a verdict. Watch the weekly trend, not the day-to-day wobble."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Log everything you eat and drink",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 1,
+                "unit": "full day logged",
+                "direction": "at_least"
+              },
+              "details": "Use a calorie-tracking app. Log every meal, snack, and drink the same day. Don't judge or edit — just record. This week is about seeing the real picture, not fixing it yet. Aim for a rough daily target around 2,200 kcal to start the deficit."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "20-minute walk",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5
+              },
+              "duration_minutes": 20,
+              "details": "A brisk walk after lunch or dinner — whichever fits your day. Keep it easy; you should be able to hold a conversation. This is the movement floor that everything else builds on. Put your shoes by the door the night before so there's zero friction."
+            },
+            {
+              "id": "ph1-s4",
+              "title": "Protein at every meal",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "At each of your three main meals, make sure a palm-sized portion of protein is on the plate — eggs, chicken, fish, Greek yogurt, beans, or tofu. Protein keeps you full and protects muscle while the deficit does its work. Aim for roughly 150 g of protein a day."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Dial In the Deficit",
+          "focus": "Tighten the calorie picture and add structure to movement so the weekly drop becomes predictable.",
+          "start_week": 5,
+          "end_week": 8,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Daily weigh-in, first thing",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Same morning routine. Now that you have four weeks of data, look at the seven-day average — that's your true trend. If it's moving down about 0.5 kg a week, you're exactly on pace."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Hit your calorie target",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 2100,
+                "unit": "kcal",
+                "direction": "at_most"
+              },
+              "details": "Now that logging is automatic, tighten up: stay at or under roughly 2,100 kcal a day. If your weekly average is dropping faster than 0.7 kg, add 100-200 kcal back. If it's flat, trim 100-200 kcal. Adjust weekly, not daily."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "30-minute walk or light cardio",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5
+              },
+              "duration_minutes": 30,
+              "details": "Bump the walk to 30 minutes. Same easy pace, same shoes-by-the-door trick. This is still about consistency, not intensity — a 30-minute daily walk burns real calories over a month."
+            },
+            {
+              "id": "ph2-s4",
+              "title": "Two strength sessions",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 2
+              },
+              "duration_minutes": 30,
+              "details": "Twice a week, do a simple full-body session — bodyweight squats, push-ups, rows, and planks. Two sets of each, nothing fancy. Strength work tells your body to hold onto muscle while the deficit sheds fat. Same two days each week (e.g., Tuesday and Thursday) so it becomes routine."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Build Momentum",
+          "focus": "Push movement slightly and sharpen the deficit now that the habits are solid.",
+          "start_week": 9,
+          "end_week": 12,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Daily weigh-in, first thing",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Keep the morning routine. At this point you're roughly halfway — around 4 kg down if you're on pace. Check the seven-day average and adjust your calorie target if the trend has stalled for two weeks straight."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Hit your calorie target",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 2000,
+                "unit": "kcal",
+                "direction": "at_most"
+              },
+              "details": "As you lose weight, your body needs slightly less. Step the daily target down to about 2,000 kcal. Keep the same rule: if the weekly average drops faster than 0.7 kg, add a bit back; if it's flat for two weeks, trim a little more."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "45-minute walk or cardio",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5
+              },
+              "duration_minutes": 45,
+              "details": "Extend the daily movement to 45 minutes. You can split it — 20 in the morning and 25 after dinner counts. The habit is locked in; this is just turning up the volume slightly."
+            },
+            {
+              "id": "ph3-s4",
+              "title": "Three strength sessions",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 3
+              },
+              "duration_minutes": 30,
+              "details": "Add a third strength session. Same full-body template — squats, push-ups, rows, planks. Try to add one rep or a few extra seconds on planks each week. Pick three fixed days that stick."
+            }
+          ]
+        },
+        {
+          "id": "ph4",
+          "title": "Finish Strong",
+          "focus": "Hold the line through the final month and land the target without backsliding.",
+          "start_week": 13,
+          "end_week": 16,
+          "steps": [
+            {
+              "id": "ph4-s1",
+              "title": "Daily weigh-in, first thing",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Same morning routine through the finish line. You're in the final stretch — roughly 2 kg from the target if you're on pace. Keep watching the seven-day average, and don't let one heavy day rattle you."
+            },
+            {
+              "id": "ph4-s2",
+              "title": "Hit your calorie target",
+              "kind": "quantity",
+              "frequency": {
+                "per_week": 7
+              },
+              "quantity": {
+                "amount": 1950,
+                "unit": "kcal",
+                "direction": "at_most"
+              },
+              "details": "Hold steady around 1,950 kcal a day. No dramatic cuts now — the last few kilos come off the same way the first ones did: a steady, honest deficit. If you're ahead of pace, you can even add a maintenance day once a week."
+            },
+            {
+              "id": "ph4-s3",
+              "title": "45-minute walk or cardio",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 5
+              },
+              "duration_minutes": 45,
+              "details": "Keep the 45-minute daily movement going. It's not the time to add new workouts or push intensity — just maintain what's working. Consistency in these last weeks is what closes the gap."
+            },
+            {
+              "id": "ph4-s4",
+              "title": "Three strength sessions",
+              "kind": "duration",
+              "frequency": {
+                "per_week": 3
+              },
+              "duration_minutes": 30,
+              "details": "Continue the three weekly strength sessions. Keep progressing by one rep or a few seconds per week. This is what makes sure the weight you've lost is fat, not the muscle you've been building."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 4,
+          "title": "Baseline locked in",
+          "criteria": "Logged food every day for a full week and completed at least 5 walks a week for two consecutive weeks. You now know your real daily intake and have movement as a daily habit."
+        },
+        {
+          "id": "m2",
+          "week": 8,
+          "title": "First 4 kg down",
+          "criteria": "Seven-day average weight is about 4 kg below your starting weight. The deficit is working and the weekly trend is predictable."
+        },
+        {
+          "id": "m3",
+          "week": 12,
+          "title": "Halfway to the finish",
+          "criteria": "Seven-day average weight is about 6 kg down, with strength sessions three times a week as a locked-in routine. You're in the final stretch."
+        },
+        {
+          "id": "m4",
+          "week": 16,
+          "title": "8 kg lighter",
+          "criteria": "Seven-day average weight is 8 kg below your starting weight. You've landed the target at a sustainable pace — and you know exactly how you did it, which means you can keep it off."
+        }
+      ],
+      "coach_notes": "The math was on your side from day one — 0.5 kg a week is the pace that actually sticks. You'll have weeks where the scale barely moves and weeks it drops a kilo overnight; trust the seven-day average, not the daily wobble. And remember the golden rule: one missed day is noise, the day after a miss is what decides this. Miss a walk or blow past your calories? Just get back on it the next day — never twice in a row. You've got the plan, the pace, and sixteen weeks. Now go be boringly consistent."
+    }
+  },
+  {
+    "id": "lose-10-lbs-range",
+    "protocol": {
+      "schema_version": 1,
+      "goal_statement": "Lose 10 lbs (about 4.5 kg) over the next 10-12 weeks through a daily walking habit and two gym sessions a week.",
+      "duration_weeks": 12,
+      "phases": [
+        {
+          "id": "ph1",
+          "title": "Build the walking habit",
+          "focus": "Get the daily walk locked in as a non-negotiable and make one small food change stick.",
+          "start_week": 1,
+          "end_week": 3,
+          "steps": [
+            {
+              "id": "ph1-s1",
+              "title": "Walk 20 minutes",
+              "kind": "duration",
+              "duration_minutes": 20,
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Right after lunch or right after work — whichever slot is non-negotiable for you. Shoes by the door the night before so there's nothing between you and the walk. Walk brisk enough that you could talk but not sing.",
+              "week_progression": "Keep this at 20 minutes for all three weeks — the point is making it automatic, not fast."
+            },
+            {
+              "id": "ph1-s2",
+              "title": "Two gym sessions",
+              "kind": "duration",
+              "duration_minutes": 40,
+              "frequency": {
+                "per_week": 2,
+                "days": [
+                  "mon",
+                  "thu"
+                ]
+              },
+              "details": "Schedule these at the start of each week. Full-body work: squat, push, pull, and a carry. Keep it simple — you're here to preserve muscle while you drop fat, not to chase PRs.",
+              "week_progression": "Same two days every week so they become a standing appointment."
+            },
+            {
+              "id": "ph1-s3",
+              "title": "Protein at every meal",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "At each meal, put a palm-sized serving of protein on the plate first — eggs, chicken, fish, Greek yogurt, beans. This one change does the heavy lifting on keeping you full while you eat a little less overall.",
+              "week_progression": "If a meal slips, don't double up later — just get the next meal right."
+            },
+            {
+              "id": "ph1-s4",
+              "title": "Weekly weigh-in",
+              "kind": "quantity",
+              "quantity": {
+                "amount": 1,
+                "unit": "weigh-in"
+              },
+              "frequency": {
+                "per_week": 1,
+                "days": [
+                  "fri"
+                ]
+              },
+              "details": "Same scale, same time of day (right after waking, before food or water), every Friday. Write the number where you can see the trend — weekly, not daily. One week's wobble is noise; the trend is the signal.",
+              "week_progression": "Steady for all three weeks."
+            }
+          ]
+        },
+        {
+          "id": "ph2",
+          "title": "Turn up the dial",
+          "focus": "Lengthen the walk, sharpen the food choices, and let the scale trend show.",
+          "start_week": 4,
+          "end_week": 7,
+          "steps": [
+            {
+              "id": "ph2-s1",
+              "title": "Walk 30 minutes",
+              "kind": "duration",
+              "duration_minutes": 30,
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Bump the daily walk from 20 to 30 minutes. Pick a route that takes you further from home so turning back early isn't the easy option. This is your calorie engine — protect it like a meeting.",
+              "week_progression": "Hold 30 minutes for the full phase."
+            },
+            {
+              "id": "ph2-s2",
+              "title": "Two gym sessions",
+              "kind": "duration",
+              "duration_minutes": 40,
+              "frequency": {
+                "per_week": 2,
+                "days": [
+                  "mon",
+                  "thu"
+                ]
+              },
+              "details": "Same days, same simple full-body template. If the weights feel easy, add a little — but the goal is showing up, not grinding.",
+              "week_progression": "Try adding one rep or a small weight increment from your last session when it feels easy."
+            },
+            {
+              "id": "ph2-s3",
+              "title": "Swap one drink or snack",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Pick the one liquid or snack you reach for most — soda, juice, chips, dessert — and swap it for water, fruit, or nothing. One daily swap is worth more than a full diet overhaul you won't keep.",
+              "week_progression": "If you've already have no obvious swap, trade the biggest evening snack for a protein one or just skip it."
+            },
+            {
+              "id": "ph2-s4",
+              "title": "Weekly weigh-in",
+              "kind": "quantity",
+              "quantity": {
+                "amount": 1,
+                "unit": "weigh-in"
+              },
+              "frequency": {
+                "per_week": 1,
+                "days": [
+                  "fri"
+                ]
+              },
+              "details": "Same scale, same time, every Friday morning. Look at the four-week trend, not any single number.",
+              "week_progression": "Steady every week."
+            }
+          ]
+        },
+        {
+          "id": "ph3",
+          "title": "Sustain and lock it in",
+          "focus": "Reach the target with steady habits, then settle into maintenance so it stays off.",
+          "start_week": 8,
+          "end_week": 12,
+          "steps": [
+            {
+              "id": "ph3-s1",
+              "title": "Walk 30-40 minutes",
+              "kind": "duration",
+              "duration_minutes": 35,
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Keep the daily walk going. On days you have more time, stretch it toward 40; on busy days 30 still counts. The habit — not the distance — is what keeps the weight off.",
+              "week_progression": "Let the length flex between 30 and 40 based on your day."
+            },
+            {
+              "id": "ph3-s2",
+              "title": "Two gym sessions",
+              "kind": "duration",
+              "duration_minutes": 40,
+              "frequency": {
+                "per_week": 2,
+                "days": [
+                  "mon",
+                  "thu"
+                ]
+              },
+              "details": "Same two days, same full-body template. As you near your goal, keeping this consistent is what protects muscle while the scale drops.",
+              "week_progression": "Keep the same load or add a little — consistency beats intensity here."
+            },
+            {
+              "id": "ph3-s3",
+              "title": "Protein at every meal + one swap",
+              "kind": "binary",
+              "frequency": {
+                "per_week": 7
+              },
+              "details": "Both food habits now: protein first at each meal, and the one daily drink/snack swap. These two are the eating engine — they should feel almost boring by now, which is exactly the point.",
+              "week_progression": "If you've hit your goal early, keep these habits going — they're what prevent the bounce-back."
+            },
+            {
+              "id": "ph3-s4",
+              "title": "Weekly weigh-in",
+              "kind": "quantity",
+              "quantity": {
+                "amount": 1,
+                "unit": "weigh-in"
+              },
+              "frequency": {
+                "per_week": 1,
+                "days": [
+                  "fri"
+                ]
+              },
+              "details": "Same scale, same time, every Friday. When you cross the 10 lb line, keep the weigh-in for two more weeks to confirm it holds before you loosen anything.",
+              "week_progression": "Steady every week."
+            }
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "m1",
+          "week": 3,
+          "title": "Three straight weeks of daily walks",
+          "criteria": "Walked 20 minutes every day for 3 weeks and completed all 6 gym sessions."
+        },
+        {
+          "id": "m2",
+          "week": 7,
+          "title": "Halfway there",
+          "criteria": "Scale is down roughly 5 lbs from where you started, and the 30-minute walk feels routine."
+        },
+        {
+          "id": "m3",
+          "week": 12,
+          "title": "10 lbs down and held",
+          "criteria": "Scale is down 10 lbs from start and stays there for two consecutive Friday weigh-ins."
+        }
+      ],
+      "coach_notes": "A pound a week is the sweet spot — slow enough that it's sustainable, fast enough that you'll see it on the scale. The walking is doing the real work; the gym is there to keep your muscle and your mood. And remember the golden rule: miss a day and it's noise, miss two and it's a trend — the walk after a miss is the one that decides whether this sticks."
+    }
+  }
+]

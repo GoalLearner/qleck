@@ -30,13 +30,13 @@ interface Burst {
 }
 
 // Canvas physics verbatim: gravity .3/frame, drag .988, spin, flutter → spin.
-function makeParticle(x: number, y: number, a0: number, a1: number, sp: number): Particle {
+function makeParticle(x: number, y: number, a0: number, a1: number, sp: number, color?: string, ttlScale = 1): Particle {
   const a = a0 + Math.random() * (a1 - a0);
   let vx = Math.cos(a) * sp * (0.55 + Math.random() * 0.75);
   let vy = Math.sin(a) * sp * (0.55 + Math.random() * 0.75);
   let rot = Math.random() * Math.PI;
   const vr = (Math.random() - 0.5) * 0.3;
-  const ttl = 140 + Math.random() * 60;
+  const ttl = (140 + Math.random() * 60) * ttlScale;
   const xs: number[] = [], ys: number[] = [], rots: string[] = [];
   for (let f = 0; f <= FRAMES; f++) {
     if (f % SAMPLE_EVERY === 0) {
@@ -52,7 +52,7 @@ function makeParticle(x: number, y: number, a0: number, a1: number, sp: number):
     rot += vr;
   }
   return {
-    color: COLORS[(Math.random() * COLORS.length) | 0],
+    color: color ?? COLORS[(Math.random() * COLORS.length) | 0],
     w: 5 + Math.random() * 6,
     h: 8 + Math.random() * 8,
     round: Math.random() < 0.25,
@@ -73,7 +73,11 @@ function makeBurst(width: number, height: number): Particle[] {
 }
 
 export interface ConfettiHandle {
+  /** The full day-done salute: two corner cannons + a center pop. */
   fire: () => void;
+  /** A small localized pop in one goal's color — the goal-complete tier.
+   * x/y are in the overlay's own coordinates. */
+  fireMini: (x: number, y: number, color: string) => void;
 }
 
 /** Absolute-fill, touch-transparent overlay. Call `.fire()` on the ref. */
@@ -82,6 +86,14 @@ const Confetti = forwardRef<ConfettiHandle>(function Confetti(_props, ref) {
   const size = useRef({ width: 0, height: 0 });
   const nextId = useRef(1);
 
+  const launch = (particles: Particle[]) => {
+    const burst: Burst = { id: nextId.current++, particles, progress: new Animated.Value(0) };
+    setBursts(prev => [...prev, burst]);
+    Animated.timing(burst.progress, {
+      toValue: 1, duration: DURATION_MS, easing: Easing.linear, useNativeDriver: true,
+    }).start(() => setBursts(prev => prev.filter(b => b.id !== burst.id)));
+  };
+
   useImperativeHandle(ref, () => ({
     fire: () => {
       // onLayout can lag (or not re-fire across hot reloads); the overlay is
@@ -89,15 +101,14 @@ const Confetti = forwardRef<ConfettiHandle>(function Confetti(_props, ref) {
       let { width, height } = size.current;
       if (width < 40 || height < 40) ({ width, height } = Dimensions.get('window'));
       if (width < 40 || height < 40) return;
-      const burst: Burst = {
-        id: nextId.current++,
-        particles: makeBurst(width, height),
-        progress: new Animated.Value(0),
-      };
-      setBursts(prev => [...prev, burst]);
-      Animated.timing(burst.progress, {
-        toValue: 1, duration: DURATION_MS, easing: Easing.linear, useNativeDriver: true,
-      }).start(() => setBursts(prev => prev.filter(b => b.id !== burst.id)));
+      launch(makeBurst(width, height));
+    },
+    fireMini: (x: number, y: number, color: string) => {
+      // 14 particles, one color, gentle radial pop — sized so four of these a
+      // morning never compete with the day-done salute.
+      const parts: Particle[] = [];
+      for (let i = 0; i < 14; i++) parts.push(makeParticle(x, y, 0, Math.PI * 2, 6.5, color, 0.55));
+      launch(parts);
     },
   }), []);
 

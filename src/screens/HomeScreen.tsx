@@ -15,7 +15,7 @@
 // celebration moment (the canvas' "ease this week" card ships then, when the
 // revise flow gets a client).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,6 +26,7 @@ import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
 import type { ProtocolPhase } from '../api/coachTypes';
 import { localDate } from '../api/device';
+import { celebrateDay, celebrateGoal, hapticCheck } from '../lib/celebrate';
 import {
   allCheckIns, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip,
   phaseForWeek, repsForDate, streakDays, weekdayName, weekOf,
@@ -237,6 +238,36 @@ function useCelebrateOnDone(allDone: boolean, celebrate: () => void) {
   }, [allDone, celebrate]);
 }
 
+/** The middle tier of the reward ladder: when one goal's last rep of the day
+ * lands (and it isn't also the day's last — the full salute owns that), pop a
+ * mini burst in the goal's color from its group header. Transition-only:
+ * hydration arriving with goals already complete stays silent. */
+function useGoalCelebrations(
+  m: { perGoal: GoalToday[]; allDone: boolean },
+  headerRefs: React.MutableRefObject<Record<string, View | null>>,
+  onGoal: (x: number, y: number, color: string) => void,
+) {
+  const prev = useRef<Record<string, boolean>>({});
+  const key = m.perGoal.map(g => `${g.goal.id}:${g.done}/${g.reps.length}`).join('|');
+  useEffect(() => {
+    const now: Record<string, boolean> = {};
+    for (const g of m.perGoal) now[g.goal.id] = g.reps.length > 0 && g.done === g.reps.length;
+    for (const g of m.perGoal) {
+      const id = g.goal.id;
+      if (now[id] && prev.current[id] === false && !m.allDone) {
+        const el = headerRefs.current[id];
+        if (el) {
+          el.measureInWindow((x, y, w, h) => onGoal(x + w - 36, y + h / 2, g.dot));
+        } else {
+          onGoal(Dimensions.get('window').width / 2, 200, g.dot);
+        }
+      }
+    }
+    prev.current = now;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, m.allDone]);
+}
+
 function RestDay({ preview }: { preview: string | null }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 30, paddingHorizontal: 24 }}>
@@ -327,9 +358,12 @@ function nextMilestoneOf(g: GoalToday) {
 
 // Just the goal name and the count — no phase, no method detail (owner call
 // 2026-08-24: less information, keep it simple; the Goals tab holds the rest).
-function GroupHeader({ g, open, onToggle }: { g: GoalToday; open: boolean; onToggle: () => void }) {
+function GroupHeader({ g, open, onToggle, headerRef }: {
+  g: GoalToday; open: boolean; onToggle: () => void; headerRef?: (el: View | null) => void;
+}) {
   return (
     <Pressable
+      ref={headerRef}
       onPress={onToggle}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingTop: 8 }}
     >
@@ -346,14 +380,19 @@ function GroupHeader({ g, open, onToggle }: { g: GoalToday; open: boolean; onTog
 
 /* ── the phone loop (canvas §1, grouped when goals run concurrently) ────── */
 
-function TodayLoop({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>; celebrate: () => void }) {
+function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
+  goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>;
+  celebrate: () => void; miniBurst: (x: number, y: number, color: string) => void;
+}) {
   const { checkInStep, uncheckStep, profile } = useRally();
   const m = useTodayModel(goals, byGoal);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const headerRefs = useRef<Record<string, View | null>>({});
   const multi = m.perGoal.length > 1;
   const milestoneOwner = m.perGoal.find(g => nextMilestoneOf(g));
   const nextMilestone = milestoneOwner ? nextMilestoneOf(milestoneOwner) : null;
   useCelebrateOnDone(m.allDone, celebrate);
+  useGoalCelebrations(m, headerRefs, miniBurst);
 
   return (
     <>
@@ -384,6 +423,7 @@ function TodayLoop({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoal: 
                 {multi && (
                   <GroupHeader
                     g={g}
+                    headerRef={el => { headerRefs.current[g.goal.id] = el; }}
                     open={!closed[g.goal.id]}
                     onToggle={() => setClosed(prev => ({ ...prev, [g.goal.id]: !prev[g.goal.id] }))}
                   />
@@ -393,7 +433,7 @@ function TodayLoop({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoal: 
                     key={rep.step.id}
                     rep={rep}
                     loggedValue={loggedValueFor(byGoal[g.goal.id] ?? [], rep.step.id, m.today)}
-                    onCheck={() => checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : rep.step.kind === 'quantity' ? rep.step.quantity?.amount ?? null : null)}
+                    onCheck={() => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : rep.step.kind === 'quantity' ? rep.step.quantity?.amount ?? null : null); }}
                     onUncheck={() => uncheckStep(g.goal.id, rep.step.id)}
                   />
                 ))}
@@ -474,13 +514,18 @@ function ProgressRingCard({ done, total }: { done: number; total: number }) {
   );
 }
 
-function DesktopToday({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>; celebrate: () => void }) {
+function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
+  goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>;
+  celebrate: () => void; miniBurst: (x: number, y: number, color: string) => void;
+}) {
   const { checkInStep, uncheckStep, profile } = useRally();
   const navigation = useNavigation<any>();
   const m = useTodayModel(goals, byGoal);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [qtyVals, setQtyVals] = useState<Record<string, number>>({});
+  const headerRefs = useRef<Record<string, View | null>>({});
   useCelebrateOnDone(m.allDone, celebrate);
+  useGoalCelebrations(m, headerRefs, miniBurst);
 
   const milestoneRows = m.perGoal
     .map(g => ({ g, mi: nextMilestoneOf(g) }))
@@ -499,7 +544,7 @@ function DesktopToday({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoa
       value, unit: q.unit,
       inc: () => set(Math.min(999, value + stepSize)),
       dec: () => set(Math.max(stepSize === 5 ? 5 : 0, value - stepSize)),
-      log: () => checkInStep(g.goal.id, rep.step.id, value),
+      log: () => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, value); },
     };
   };
 
@@ -546,6 +591,7 @@ function DesktopToday({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoa
                 <React.Fragment key={g.goal.id}>
                   <GroupHeader
                     g={g}
+                    headerRef={el => { headerRefs.current[g.goal.id] = el; }}
                     open={!closed[g.goal.id]}
                     onToggle={() => setClosed(prev => ({ ...prev, [g.goal.id]: !prev[g.goal.id] }))}
                   />
@@ -555,7 +601,7 @@ function DesktopToday({ goals, byGoal, celebrate }: { goals: ActiveGoal[]; byGoa
                       rep={rep}
                       loggedValue={loggedValueFor(byGoal[g.goal.id] ?? [], rep.step.id, m.today)}
                       qty={qtyFor(g, rep)}
-                      onCheck={() => checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : null)}
+                      onCheck={() => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : null); }}
                       onUncheck={() => uncheckStep(g.goal.id, rep.step.id)}
                     />
                   ))}
@@ -647,7 +693,14 @@ export default function HomeScreen() {
   const { profile, goals, checkInsByGoal } = useRally();
   const wide = Platform.OS === 'web' && width >= 980;
   const confettiRef = useRef<ConfettiHandle>(null);
-  const celebrate = useCallback(() => confettiRef.current?.fire(), []);
+  const celebrate = useCallback(() => {
+    confettiRef.current?.fire();
+    celebrateDay();
+  }, []);
+  const miniBurst = useCallback((x: number, y: number, color: string) => {
+    confettiRef.current?.fireMini(x, y, color);
+    celebrateGoal();
+  }, []);
 
   return (
     <FadeInUp style={{ flex: 1 }}>
@@ -658,8 +711,8 @@ export default function HomeScreen() {
       >
         {goals.length > 0 ? (
           wide
-            ? <DesktopToday goals={goals} byGoal={checkInsByGoal} celebrate={celebrate} />
-            : <TodayLoop goals={goals} byGoal={checkInsByGoal} celebrate={celebrate} />
+            ? <DesktopToday goals={goals} byGoal={checkInsByGoal} celebrate={celebrate} miniBurst={miniBurst} />
+            : <TodayLoop goals={goals} byGoal={checkInsByGoal} celebrate={celebrate} miniBurst={miniBurst} />
         ) : (
           <View style={wide ? { width: '100%', maxWidth: 560, alignSelf: 'center', paddingTop: 40 } : undefined}>
             <Header title={greeting(false, profile.firstName)} sub="Nothing on the clock yet" />

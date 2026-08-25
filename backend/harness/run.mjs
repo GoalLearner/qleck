@@ -200,6 +200,11 @@ console.log('\n── exit bars ──');
 for (const [bar, ok] of Object.entries(bars)) console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${bar}`);
 console.log(`\n${allPass ? 'ALL BARS CLEAR' : 'BARS FAILED'} · wall ${(Date.now() - started) / 1000 | 0}s`);
 
+// Full generated protocols, for offline design review (framework fidelity,
+// copy audits) — not part of the bars.
+writeFileSync(new URL('./last-protocols.json', import.meta.url), JSON.stringify(
+  goalResults.filter(r => r._protocol).map(r => ({ id: r.id, protocol: r._protocol })), null, 2));
+
 writeFileSync(new URL('./last-report.json', import.meta.url), JSON.stringify({
   base: BASE, provider: health.provider,
   goals: goalResults.map(({ _sessionId, _protocol, ...r }) => r),

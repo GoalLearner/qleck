@@ -21,7 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Confetti, { type ConfettiHandle } from '../components/Confetti';
 import FadeInUp from '../components/FadeInUp';
-import { shortGoalName } from '../components/protocolViews';
+import { GOAL_DOTS, shortGoalName } from '../components/protocolViews';
 import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
 import type { ProtocolPhase } from '../api/coachTypes';
@@ -37,9 +37,6 @@ import { colors, fonts } from '../theme';
 const INK = colors.ink;
 const FADED = colors.sectionLabel;
 const GREEN = '#47694f';
-
-// One dot color per goal, by position — stable while the goal list is stable.
-const GOAL_DOTS = [GREEN, '#4d5680', '#8a5f38', '#4f8fc9', '#c96f5f'];
 
 function greeting(restDay: boolean, name: string): string {
   if (restDay) return `Easy, ${name}.`;

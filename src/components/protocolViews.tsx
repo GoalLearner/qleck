@@ -6,6 +6,10 @@ import { Text, View } from 'react-native';
 import type { Protocol, ProtocolStep } from '../api/coachTypes';
 import { CATS, colors, fonts, radii } from '../theme';
 
+// One dot color per goal, by position — Today's groups and the Goals shelf
+// must agree on which goal is which color.
+export const GOAL_DOTS = ['#47694f', '#4d5680', '#8a5f38', '#4f8fc9', '#c96f5f'];
+
 /**
  * The goal as a label, not a sentence (owner call 2026-08-24: "just the goal
  * name, not all the extra stuff"). Full statements stay on the Goals tab;

@@ -1,15 +1,200 @@
-// Goals tab — every active goal's full protocol, phase by phase: the
-// structured systems the user monitors themselves against. Goals run
-// concurrently (owner call 2026-08-24); dropping one is the only way it ends,
-// and it's an explicit, two-tap act — never a side effect of adding another.
-import React, { useEffect, useState } from 'react';
+// Goals — "the plan, without the wall", ported from the Claude Design canvas
+// `Qleck Goals.dc.html`. Two levels: a calm shelf (one card per system with
+// where you are and what today costs) → a detail view (the goal in its own
+// words, the week track, and the phases as an accordion — only the phase
+// you're living in opens with full reps; the rest fold to one row each).
+// One readable column serves phone and desktop alike.
+//
+// Dropping a goal stays an explicit, two-tap act — never a side effect of
+// adding another. "Tweak it with Qoach" wires to the P4 revise client; for
+// now it answers honestly with a toast.
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
-import SectionLabel from '../components/SectionLabel';
-import { CreamCard, GoalHero, MilestoneStrip, StepRow } from '../components/protocolViews';
+import YouAvatar from '../components/YouAvatar';
+import { GOAL_DOTS, kindLook, shortGoalName } from '../components/protocolViews';
+import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
+import { localDate } from '../api/device';
+import { phaseForWeek, repsForDate, weekOf } from '../lib/protocolTime';
+import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
+
+const INK = colors.ink;
+const FADED = colors.sectionLabel;
+
+const COUNT_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five'];
+
+function wkLabel(p: ProtocolPhase): string {
+  return p.start_week === p.end_week ? `WEEK ${p.start_week}` : `WK ${p.start_week}–${p.end_week}`;
+}
+
+// The rep's cost as a quiet chip: "20 min · 3/wk", "45 min · daily", "weekly".
+function freqChip(step: ProtocolStep): string {
+  const parts: string[] = [];
+  if (step.kind === 'duration' && step.duration_minutes) parts.push(`${step.duration_minutes} min`);
+  if (step.kind === 'quantity' && step.quantity) parts.push(`${step.quantity.amount} ${step.quantity.unit}`);
+  const pw = step.frequency.per_week;
+  parts.push(pw >= 7 ? 'daily' : pw === 1 ? 'weekly' : `${pw}/wk`);
+  return parts.join(' · ');
+}
+
+/* ── the week track: one cell per plan week ─────────────────────────────── */
+
+function WeekTrack({ weeks, week, filled }: { weeks: number; week: number; filled: boolean }) {
+  return (
+    <View style={{ flex: 1, flexDirection: 'row', gap: filled ? 4 : 5 }}>
+      {Array.from({ length: weeks }, (_, i) => {
+        const past = i < week - 1;
+        const now = i === week - 1;
+        return (
+          <View
+            key={i}
+            style={{
+              flex: 1, height: filled ? 5 : 6, borderRadius: 3, borderWidth: 1,
+              backgroundColor: past ? '#47694f' : filled && now ? INK : 'transparent',
+              borderColor: past
+                ? '#47694f'
+                : filled
+                  ? 'rgba(38,43,51,0.08)'
+                  : now ? INK : 'rgba(38,43,51,0.18)',
+              ...(filled && !past && !now ? { backgroundColor: 'rgba(38,43,51,0.08)' } : null),
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+/* ── level one: the shelf ───────────────────────────────────────────────── */
+
+interface GoalModel {
+  goal: ActiveGoal;
+  dot: string;
+  week: number;
+  nowIdx: number;
+  phase: ProtocolPhase;
+  repsToday: number;
+}
+
+function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
+  return (
+    <Pressable
+      onPress={onOpen}
+      style={{
+        backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+        borderRadius: 26, paddingVertical: 20, paddingHorizontal: 22,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot }} />
+        <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: INK }}>
+          {shortGoalName(m.goal.statement).toUpperCase()}
+        </Text>
+        <View style={{ flex: 1 }} />
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.2, color: FADED }}>
+          WEEK {m.week} OF {m.goal.protocol.duration_weeks}
+        </Text>
+        <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: FADED }}>›</Text>
+      </View>
+      <Text style={{ fontFamily: fonts.serif, fontSize: 17, lineHeight: 23.8, color: INK, marginTop: 10 }}>
+        {m.goal.statement}
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 }}>
+        <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: '#dcecdf' }}>
+          <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: '#47694f' }}>Now: {m.phase.title}</Text>
+        </View>
+        <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(38,43,51,0.05)' }}>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.muted }}>
+            {m.repsToday} {m.repsToday === 1 ? 'rep' : 'reps'} today
+          </Text>
+        </View>
+        <View style={{ flex: 1 }} />
+        <View style={{ width: 90 }}>
+          <WeekTrack weeks={m.goal.protocol.duration_weeks} week={m.week} filled />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+/* ── level two: the detail with the phase accordion ─────────────────────── */
+
+function RepRow({ step }: { step: ProtocolStep }) {
+  const look = kindLook(step.kind);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 11, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: 'rgba(38,43,51,0.05)' }}>
+      <View style={{ width: 28, height: 28, borderRadius: 10, backgroundColor: look.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: look.fg }}>{look.glyph}</Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 14, lineHeight: 18.2, color: INK }}>{step.title}</Text>
+        {!!step.details && (
+          <Text style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 3 }}>
+            {step.details}
+          </Text>
+        )}
+      </View>
+      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(38,43,51,0.05)', marginTop: 4 }}>
+        <Text style={{ fontFamily: fonts.bold, fontSize: 10.5, color: colors.muted }}>{freqChip(step)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function PhaseCard({ goal, phase, now, open, onToggle }: {
+  goal: ActiveGoal; phase: ProtocolPhase; now: boolean; open: boolean; onToggle: () => void;
+}) {
+  const milestones = goal.protocol.milestones
+    .filter(mi => mi.week >= phase.start_week && mi.week <= phase.end_week)
+    .sort((a, b) => a.week - b.week);
+  return (
+    <View
+      style={{
+        backgroundColor: colors.card, borderWidth: 1, borderRadius: 26, overflow: 'hidden',
+        borderColor: now ? 'rgba(71,105,79,0.35)' : colors.border,
+      }}
+    >
+      <Pressable onPress={onToggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16, paddingHorizontal: 20 }}>
+        <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: now ? '#dcecdf' : 'rgba(38,43,51,0.05)' }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1, color: now ? '#47694f' : FADED }}>{wkLabel(phase)}</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontFamily: fonts.serif, fontSize: 16.5, lineHeight: 20.6, color: now ? INK : 'rgba(38,43,51,0.75)' }}>{phase.title}</Text>
+          <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: FADED, marginTop: 2 }}>{phase.focus}</Text>
+        </View>
+        {now ? (
+          <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dcecdf' }}>
+            <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1, color: '#47694f' }}>NOW</Text>
+          </View>
+        ) : (
+          <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: FADED }}>{phase.steps.length} reps</Text>
+        )}
+        <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: FADED, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
+      </Pressable>
+      {open && phase.steps.map(step => <RepRow key={step.id} step={step} />)}
+      {open && milestones.map(mi => (
+        <View
+          key={mi.id}
+          style={{
+            marginHorizontal: 14, marginBottom: 14, marginTop: 10,
+            flexDirection: 'row', alignItems: 'baseline', gap: 9,
+            backgroundColor: colors.inviteBg, borderWidth: 1, borderColor: colors.inviteBorder,
+            borderRadius: 16, paddingVertical: 11, paddingHorizontal: 15,
+          }}
+        >
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: colors.inviteAccent }}>⚑</Text>
+          <Text style={{ flexShrink: 1, fontFamily: fonts.serif, fontSize: 14, lineHeight: 18.2, color: INK }}>{mi.title}</Text>
+          <View style={{ flex: 1 }} />
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 11, color: colors.inviteAccent }}>week {mi.week}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 function DropGoalButton({ onDrop }: { onDrop: () => void }) {
   const [armed, setArmed] = useState(false);
@@ -22,7 +207,7 @@ function DropGoalButton({ onDrop }: { onDrop: () => void }) {
     <Pressable
       onPress={() => (armed ? onDrop() : setArmed(true))}
       style={{
-        alignSelf: 'center', marginTop: 16, paddingVertical: 9, paddingHorizontal: 20,
+        alignSelf: 'center', marginTop: 22, paddingVertical: 9, paddingHorizontal: 20,
         borderRadius: 999, borderWidth: 1.5,
         borderColor: armed ? colors.danger : 'rgba(160,90,90,0.35)',
       }}
@@ -34,52 +219,97 @@ function DropGoalButton({ onDrop }: { onDrop: () => void }) {
   );
 }
 
-function GoalSystem({ goal, onDrop }: { goal: ActiveGoal; onDrop: () => void }) {
-  const protocol = goal.protocol;
+function DetailView({ m, onBack, onDrop, onTweak }: {
+  m: GoalModel; onBack: () => void; onDrop: () => void; onTweak: () => void;
+}) {
+  const [open, setOpen] = useState<number>(m.nowIdx);
+  const protocol = m.goal.protocol;
   return (
-    <>
-      <GoalHero protocol={protocol} />
+    <FadeInUp>
+      <Pressable onPress={onBack} style={{ alignSelf: 'flex-start', paddingVertical: 2 }}>
+        <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.muted }}>‹ Your systems</Text>
+      </Pressable>
 
-      {protocol.phases.map(phase => {
-        const milestones = protocol.milestones
-          .filter(m => m.week >= phase.start_week && m.week <= phase.end_week)
-          .sort((a, b) => a.week - b.week);
-        return (
-          <React.Fragment key={phase.id}>
-            <SectionLabel style={{ marginTop: 22 }}>
-              {`WEEKS ${phase.start_week}–${phase.end_week} · ${phase.title.toUpperCase()}`}
-            </SectionLabel>
-            <Text style={{ paddingHorizontal: 22, marginTop: -4, marginBottom: 10, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18, color: colors.muted }}>
-              {phase.focus}
-            </Text>
-            <CreamCard>
-              {phase.steps.map((step, i) => (
-                <StepRow key={step.id} step={step} last={i === phase.steps.length - 1} />
-              ))}
-            </CreamCard>
-            {milestones.map(m => (
-              <MilestoneStrip key={m.id} week={m.week} title={m.title} />
-            ))}
-          </React.Fragment>
-        );
-      })}
+      <View style={{ marginTop: 14, backgroundColor: colors.navy, borderRadius: 26, paddingVertical: 22, paddingHorizontal: 24 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot }} />
+          <Text numberOfLines={1} style={{ fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: 'rgba(242,239,231,0.85)' }}>
+            {shortGoalName(m.goal.statement).toUpperCase()}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 20, lineHeight: 28, color: colors.creamText, marginTop: 10 }}>
+          {m.goal.statement}
+        </Text>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: 'rgba(242,239,231,0.55)', marginTop: 10 }}>
+          {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
+        </Text>
+      </View>
 
-      <Text
-        style={{
-          marginTop: 20, marginHorizontal: 30, fontFamily: fonts.regular, fontStyle: 'italic',
-          fontSize: 13, lineHeight: 20, color: colors.faintText, textAlign: 'center',
-        }}
-      >
-        “{protocol.coach_notes}”
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 16, marginBottom: 20, marginHorizontal: 4 }}>
+        <WeekTrack weeks={protocol.duration_weeks} week={m.week} filled={false} />
+        <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.muted }}>
+          week {m.week} of {protocol.duration_weeks} · phase {m.nowIdx + 1} of {protocol.phases.length}
+        </Text>
+      </View>
+
+      <View style={{ gap: 10 }}>
+        {protocol.phases.map((phase, pi) => (
+          <PhaseCard
+            key={phase.id}
+            goal={m.goal}
+            phase={phase}
+            now={pi === m.nowIdx}
+            open={pi === open}
+            onToggle={() => setOpen(prev => (prev === pi ? -1 : pi))}
+          />
+        ))}
+      </View>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', marginTop: 14, paddingHorizontal: 4 }}>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: FADED }}>Plan feels off? </Text>
+        <Pressable onPress={onTweak}>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: colors.accentLink, textDecorationLine: 'underline' }}>
+            Tweak it with Qoach
+          </Text>
+        </Pressable>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: FADED }}> — nothing here is sacred.</Text>
+      </View>
+
       <DropGoalButton onDrop={onDrop} />
-    </>
+    </FadeInUp>
   );
 }
 
+/* ── the screen ─────────────────────────────────────────────────────────── */
+
 export default function GoalsScreen() {
   const insets = useSafeAreaInsets();
-  const { goals, dropGoal } = useRally();
+  const navigation = useNavigation<any>();
+  const { goals, checkInsByGoal, dropGoal } = useRally();
+  const [selId, setSelId] = useState<string | null>(null);
+  const [toast, setToast] = useState('');
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const showToast = (msg: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(msg);
+    toastTimer.current = setTimeout(() => setToast(''), 2400);
+  };
+
+  const today = localDate();
+  const models: GoalModel[] = goals.map((goal, i) => {
+    const week = weekOf(goal.startedOn, today, goal.protocol.duration_weeks);
+    const phase = phaseForWeek(goal.protocol, week);
+    return {
+      goal, week, phase,
+      dot: GOAL_DOTS[i % GOAL_DOTS.length],
+      nowIdx: Math.max(0, goal.protocol.phases.findIndex(p => p.id === phase.id)),
+      repsToday: repsForDate(goal.protocol, goal.startedOn, today, checkInsByGoal[goal.id] ?? []).length,
+    };
+  });
+  const sel = models.find(m => m.goal.id === selId) ?? null;
+  const liveCount = COUNT_WORDS[goals.length] ?? String(goals.length);
 
   return (
     <FadeInUp style={{ flex: 1 }}>
@@ -88,29 +318,70 @@ export default function GoalsScreen() {
         contentContainerStyle={{ paddingTop: Math.max(insets.top, 58) + 12, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={{ fontFamily: fonts.serif, fontSize: 26, letterSpacing: -0.3, color: colors.ink, paddingHorizontal: 20, paddingTop: 8 }}>
-          {goals.length > 1 ? 'Your systems' : 'Your system'}
-        </Text>
+        <View style={{ width: '100%', maxWidth: 680, alignSelf: 'center', paddingHorizontal: 20 }}>
+          {sel ? (
+            <DetailView
+              key={sel.goal.id}
+              m={sel}
+              onBack={() => setSelId(null)}
+              onDrop={() => { dropGoal(sel.goal.id); setSelId(null); }}
+              onTweak={() => showToast('Mid-plan tweaks with Qoach land soon — nothing here is sacred.')}
+            />
+          ) : (
+            <FadeInUp>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: fonts.serif, fontSize: 30, lineHeight: 34.5, color: INK }}>Your systems</Text>
+                  <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 6 }}>
+                    {goals.length === 0 ? 'Nothing on the clock yet' : `${liveCount} live · built with Qoach`}
+                  </Text>
+                </View>
+                <Pressable onPress={() => navigation.navigate('You')}>
+                  <YouAvatar size={42} fontSize={13} />
+                </Pressable>
+              </View>
 
-        {goals.length === 0 ? (
-          <View style={{ marginTop: 16, marginHorizontal: 14, backgroundColor: colors.navy, borderRadius: 28, padding: 24 }}>
-            <Text style={{ fontFamily: fonts.serif, fontSize: 20, lineHeight: 26, color: colors.creamText }}>
-              No goal locked yet.
-            </Text>
-            <Text style={{ fontSize: 13, lineHeight: 20, fontFamily: fonts.regular, color: 'rgba(245,242,234,0.65)', marginTop: 8 }}>
-              Tap + and tell Qoach what you want to pull off — it turns any realistic goal into a
-              week-by-week protocol you can hold yourself to.
-            </Text>
-          </View>
-        ) : (
-          goals.map((goal, i) => (
-            <React.Fragment key={goal.id}>
-              {i > 0 && <View style={{ height: 1, backgroundColor: colors.hairline, marginHorizontal: 24, marginTop: 28 }} />}
-              <GoalSystem goal={goal} onDrop={() => dropGoal(goal.id)} />
-            </React.Fragment>
-          ))
-        )}
+              <View style={{ gap: 12, marginTop: 24 }}>
+                {goals.length === 0 && (
+                  <View style={{ backgroundColor: colors.navy, borderRadius: 26, padding: 24 }}>
+                    <Text style={{ fontFamily: fonts.serif, fontSize: 20, lineHeight: 26, color: colors.creamText }}>
+                      No goal locked yet.
+                    </Text>
+                    <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: 'rgba(245,242,234,0.65)', marginTop: 8 }}>
+                      Tap + and tell Qoach what you want to pull off — it turns any realistic goal
+                      into a week-by-week protocol you can hold yourself to.
+                    </Text>
+                  </View>
+                )}
+                {models.map(m => (
+                  <GoalCard key={m.goal.id} m={m} onOpen={() => setSelId(m.goal.id)} />
+                ))}
+                <Pressable
+                  onPress={() => navigation.navigate('NewGoal')}
+                  style={{
+                    borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(38,43,51,0.18)',
+                    borderRadius: 26, padding: 16, alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.muted }}>
+                    ＋ Start another system with Qoach
+                  </Text>
+                </Pressable>
+              </View>
+            </FadeInUp>
+          )}
+        </View>
       </ScrollView>
+
+      {toast !== '' && (
+        <View pointerEvents="none" style={{ position: 'absolute', top: Math.max(insets.top, 24), left: 0, right: 0, alignItems: 'center', zIndex: 40 }}>
+          <Pop>
+            <View style={{ backgroundColor: colors.navy, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 18, maxWidth: 420 }}>
+              <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.creamText }}>{toast}</Text>
+            </View>
+          </Pop>
+        </View>
+      )}
     </FadeInUp>
   );
 }

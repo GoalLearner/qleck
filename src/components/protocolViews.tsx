@@ -29,6 +29,30 @@ export function shortGoalName(statement: string): string {
   return s.trim() || statement;
 }
 
+/**
+ * The statement as a title: goal + measurable target + duration, nothing
+ * else (owner call 2026-08-25). Unlike [[shortGoalName]] (a caps label),
+ * this keeps the destination ("to under 1 hour/day") and the timeframe —
+ * re-appending "in N weeks" when the duration only lived inside a dropped
+ * method clause.
+ *   "Cut doomscrolling from ~4+ hrs/day down to under 1 hour/day, through
+ *    deliberate replacement habits" → "Cut doomscrolling to under 1 hour/day"
+ *   "Quit smoking (currently half a pack a day) using a structured
+ *    taper-and-quit plan over the next 4 weeks." → "Quit smoking in 4 weeks"
+ */
+export function goalTitle(statement: string): string {
+  let s = statement.replace(/\s*\([^)]*\)/g, '');
+  const dur = s.match(/(?:over the next|over|in|within)\s+\d+\s+(?:weeks?|months?|days?)/i)?.[0] ?? null;
+  s = s.replace(/\s+from\s+.*?\s+(?:down\s+|up\s+)?to\s+/i, ' to ');
+  s = s.split(/,?\s+(?:through|using|with|via|by)\s+/i)[0];
+  s = s.replace(/,\s.*$/, '');
+  s = s.replace(/\s*[.!]\s*$/, '').trim();
+  if (dur && !s.toLowerCase().includes(dur.toLowerCase())) {
+    s += ` in ${dur.match(/\d+\s+(?:weeks?|months?|days?)/i)![0]}`;
+  }
+  return s || statement;
+}
+
 export function kindLook(kind: ProtocolStep['kind']) {
   if (kind === 'duration') return { glyph: 'D', bg: colors.openBg, fg: colors.accentLink };
   if (kind === 'quantity') return { glyph: '#', bg: CATS.lav.bg, fg: CATS.lav.fg };

@@ -14,7 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import YouAvatar from '../components/YouAvatar';
-import { GOAL_DOTS, kindLook, shortGoalName } from '../components/protocolViews';
+import { GOAL_DOTS, goalTitle, kindLook, shortGoalName } from '../components/protocolViews';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { phaseForWeek, repsForDate, weekOf } from '../lib/protocolTime';
@@ -101,7 +101,7 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
         <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: FADED }}>›</Text>
       </View>
       <Text style={{ fontFamily: fonts.serif, fontSize: 17, lineHeight: 23.8, color: INK, marginTop: 10 }}>
-        {m.goal.statement}
+        {goalTitle(m.goal.statement)}
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 }}>
         <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: '#dcecdf' }}>
@@ -238,7 +238,7 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
           </Text>
         </View>
         <Text style={{ fontFamily: fonts.serif, fontSize: 20, lineHeight: 28, color: colors.creamText, marginTop: 10 }}>
-          {m.goal.statement}
+          {goalTitle(m.goal.statement)}
         </Text>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: 'rgba(242,239,231,0.55)', marginTop: 10 }}>
           {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach

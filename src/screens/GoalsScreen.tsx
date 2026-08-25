@@ -14,7 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import YouAvatar from '../components/YouAvatar';
-import { GOAL_DOTS, goalTitle, kindLook, shortGoalName } from '../components/protocolViews';
+import { GOAL_DOTS, goalTitle, kindLook } from '../components/protocolViews';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { phaseForWeek, repsForDate, weekOf } from '../lib/protocolTime';
@@ -89,20 +89,20 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
         borderRadius: 26, paddingVertical: 20, paddingHorizontal: 22,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot }} />
-        <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: INK }}>
-          {shortGoalName(m.goal.statement).toUpperCase()}
+      {/* one title, once: the serif line carries the goal; the dot is its
+          color key (owner call 2026-08-25 — the caps name was redundant) */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot, marginTop: 8 }} />
+        <Text style={{ flex: 1, fontFamily: fonts.serif, fontSize: 17, lineHeight: 23.8, color: INK }}>
+          {goalTitle(m.goal.statement)}
         </Text>
-        <View style={{ flex: 1 }} />
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.2, color: FADED }}>
-          WEEK {m.week} OF {m.goal.protocol.duration_weeks}
-        </Text>
-        <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: FADED }}>›</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.2, color: FADED }}>
+            WEEK {m.week} OF {m.goal.protocol.duration_weeks}
+          </Text>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: FADED }}>›</Text>
+        </View>
       </View>
-      <Text style={{ fontFamily: fonts.serif, fontSize: 17, lineHeight: 23.8, color: INK, marginTop: 10 }}>
-        {goalTitle(m.goal.statement)}
-      </Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 }}>
         <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: '#dcecdf' }}>
           <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: '#47694f' }}>Now: {m.phase.title}</Text>
@@ -231,15 +231,12 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
       </Pressable>
 
       <View style={{ marginTop: 14, backgroundColor: colors.navy, borderRadius: 26, paddingVertical: 22, paddingHorizontal: 24 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot }} />
-          <Text numberOfLines={1} style={{ fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: 'rgba(242,239,231,0.85)' }}>
-            {shortGoalName(m.goal.statement).toUpperCase()}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot, marginTop: 10 }} />
+          <Text style={{ flex: 1, fontFamily: fonts.serif, fontSize: 20, lineHeight: 28, color: colors.creamText }}>
+            {goalTitle(m.goal.statement)}
           </Text>
         </View>
-        <Text style={{ fontFamily: fonts.serif, fontSize: 20, lineHeight: 28, color: colors.creamText, marginTop: 10 }}>
-          {goalTitle(m.goal.statement)}
-        </Text>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: 'rgba(242,239,231,0.55)', marginTop: 10 }}>
           {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
         </Text>

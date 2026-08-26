@@ -11,40 +11,36 @@ import { CATS, colors, fonts, radii } from '../theme';
 export const GOAL_DOTS = ['#47694f', '#4d5680', '#8a5f38', '#4f8fc9', '#c96f5f'];
 
 /**
- * The goal as a label, not a sentence (owner call 2026-08-24: "just the goal
- * name, not all the extra stuff"). Full statements stay on the Goals tab;
- * lists get this: parentheticals, method clauses ("using…", "by…") and
- * from/to detail dropped, "over the next N weeks" tightened to "in N weeks".
- *   "Quit smoking (currently half a pack a day) using a structured taper"
- *     → "Quit smoking"
- *   "Lose 10 lbs (about 4.5 kg) over the next 12 weeks"
- *     → "Lose 10 lbs in 12 weeks"
- */
-export function shortGoalName(statement: string): string {
-  let s = statement.replace(/\s*\([^)]*\)/g, '');
-  s = s.split(/\s+(?:using|with|via|through|by)\s+/i)[0];
-  s = s.split(/\s+from\s+/i)[0];
-  s = s.replace(/\s+over the next\s+/i, ' in ');
-  s = s.replace(/,\s.*$/, '');
-  return s.trim() || statement;
-}
-
-/**
- * The statement as a title: goal + measurable target + duration, nothing
- * else (owner call 2026-08-25). Unlike [[shortGoalName]] (a caps label),
- * this keeps the destination ("to under 1 hour/day") and the timeframe —
- * re-appending "in N weeks" when the duration only lived inside a dropped
- * method clause.
+ * The goal as a title: goal + measurable target + duration, nothing else.
+ *
+ * Prefers the coach's own `short_title` (prompt v12+) — only the coach knows
+ * which words are the goal and which are method, and deriving that from prose
+ * was a losing game of pattern-matching (each new phrasing shape (an em-dash
+ * aside, "in manageable stages") slipped through untouched). The derivation
+ * below stays as the fallback for goals locked before v12.
  *   "Cut doomscrolling from ~4+ hrs/day down to under 1 hour/day, through
  *    deliberate replacement habits" → "Cut doomscrolling to under 1 hour/day"
- *   "Quit smoking (currently half a pack a day) using a structured
- *    taper-and-quit plan over the next 4 weeks." → "Quit smoking in 4 weeks"
+ *   "Step your bedtime down to 11pm in manageable stages — first to 1am"
+ *    → "Step your bedtime down to 11pm"
  */
-export function goalTitle(statement: string): string {
+export function goalTitle(statement: string, protocol?: { short_title?: string } | null): string {
+  const named = protocol?.short_title?.trim();
+  // Guard against a title that grew into a sentence anyway — derive instead.
+  if (named && named.split(/\s+/).length <= 9) return named;
+  return deriveGoalTitle(statement);
+}
+
+export function deriveGoalTitle(statement: string): string {
   let s = statement.replace(/\s*\([^)]*\)/g, '');
   const dur = s.match(/(?:over the next|over|in|within)\s+\d+\s+(?:weeks?|months?|days?)/i)?.[0] ?? null;
   s = s.replace(/\s+from\s+.*?\s+(?:down\s+|up\s+)?to\s+/i, ' to ');
-  s = s.split(/,?\s+(?:through|using|with|via|by)\s+/i)[0];
+  // Trailing aside after an em/en dash or colon: "— first to 1am".
+  s = s.split(/\s+[—–:]\s+/)[0];
+  // Method clauses, including the bare-preposition kind ("in manageable
+  // stages", "with a structured taper").
+  s = s.split(/,?\s+(?:through|using|via|by)\s+/i)[0];
+  s = s.replace(/\s+(?:in|with|through)\s+(?:small|manageable|gradual|deliberate|structured|realistic)\s+\w+.*$/i, '');
+  s = s.split(/,?\s+with\s+(?!\d)/i)[0];
   s = s.replace(/,\s.*$/, '');
   s = s.replace(/\s*[.!]\s*$/, '').trim();
   if (dur && !s.toLowerCase().includes(dur.toLowerCase())) {

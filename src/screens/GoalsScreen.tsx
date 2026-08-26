@@ -94,7 +94,7 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot, marginTop: 8 }} />
         <Text style={{ flex: 1, fontFamily: fonts.serif, fontSize: 17, lineHeight: 23.8, color: INK }}>
-          {goalTitle(m.goal.statement)}
+          {goalTitle(m.goal.statement, m.goal.protocol)}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.2, color: FADED }}>
@@ -234,7 +234,7 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot, marginTop: 10 }} />
           <Text style={{ flex: 1, fontFamily: fonts.serif, fontSize: 20, lineHeight: 28, color: colors.creamText }}>
-            {goalTitle(m.goal.statement)}
+            {goalTitle(m.goal.statement, m.goal.protocol)}
           </Text>
         </View>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: 'rgba(242,239,231,0.55)', marginTop: 10 }}>

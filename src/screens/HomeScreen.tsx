@@ -21,7 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Confetti, { type ConfettiHandle } from '../components/Confetti';
 import FadeInUp from '../components/FadeInUp';
-import { GOAL_DOTS, shortGoalName } from '../components/protocolViews';
+import { GOAL_DOTS, goalTitle } from '../components/protocolViews';
 import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
 import type { ProtocolPhase } from '../api/coachTypes';
@@ -369,7 +369,7 @@ function GroupHeader({ g, open, onToggle, headerRef }: {
     >
       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: g.dot }} />
       <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: INK }}>
-        {shortGoalName(g.goal.statement).toUpperCase()}
+        {goalTitle(g.goal.statement, g.goal.protocol).toUpperCase()}
       </Text>
       <View style={{ flex: 1 }} />
       <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: g.dot }}>{g.done}/{g.reps.length}</Text>

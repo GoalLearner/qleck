@@ -46,6 +46,12 @@ export interface ProtocolMilestone {
 export interface Protocol {
   schema_version: number;
   goal_statement: string; // the accepted (possibly counter-offered) statement
+  // The goal as a NAME, for lists and headers (owner call 2026-08-25). Written
+  // by the coach because only it knows which words are the goal and which are
+  // method; deriving it from goal_statement with regex was whack-a-mole across
+  // phrasings. Optional in the type: protocols locked before prompt v12 don't
+  // carry one, and the client falls back to deriving it.
+  short_title?: string;
   duration_weeks: number;
   phases: ProtocolPhase[];
   milestones: ProtocolMilestone[];
@@ -56,10 +62,14 @@ export interface Protocol {
 export const PROTOCOL_TOOL_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['schema_version', 'goal_statement', 'duration_weeks', 'phases', 'milestones', 'coach_notes'],
+  required: ['schema_version', 'goal_statement', 'short_title', 'duration_weeks', 'phases', 'milestones', 'coach_notes'],
   properties: {
     schema_version: { type: 'number', enum: [PROTOCOL_SCHEMA_VERSION] },
     goal_statement: { type: 'string' },
+    short_title: {
+      type: 'string',
+      description: 'The goal as a NAME for lists: the action + its target and/or timeframe, 3-7 words, no method, no clauses. "Quit smoking in 4 weeks", "Cut doomscrolling to under 1 hour/day", "In bed by 11pm".',
+    },
     duration_weeks: { type: 'number' },
     phases: {
       type: 'array',

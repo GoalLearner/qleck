@@ -18,7 +18,8 @@
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { registerDevice, touchUser, verifyToken } from './auth';
 import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type SessionRow, type Verdict } from './coach';
-import { abandonGoal, createGoal, deleteCheckIn, getCurrentGoal, listActiveGoals, listCheckIns, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
+import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
+import { graduate, type GraduateBody } from './graduation';
 import type { Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
@@ -77,6 +78,11 @@ export default {
       if (!userId) return json({ error: 'unauthorized' }, 401, cors);
       await touchUser(env, userId);
 
+      // Wrapped so a D1 constraint (a raced protocol version, say) comes back
+      // as a readable JSON error WITH cors headers — an unhandled throw here
+      // returns a bare 500 the browser can only see as a network failure.
+      try {
+
       if (url.pathname === '/goals' && request.method === 'POST') {
         const parsed = parseCreateGoal((await request.json().catch(() => ({}))) as CreateGoalBody);
         if (!parsed.ok) return json({ error: parsed.error }, 400, cors);
@@ -85,16 +91,45 @@ export default {
         return json({ goal }, 200, cors);
       }
       if (url.pathname === '/goals' && request.method === 'GET') {
-        return json({ goals: await listActiveGoals(env, userId) }, 200, cors);
+        // ?scope=finished is the archive; default stays active so existing
+        // clients are unaffected.
+        const raw = url.searchParams.get('scope');
+        const scope = raw === 'finished' || raw === 'all' ? raw : 'active';
+        return json({ goals: await listGoals(env, userId, scope) }, 200, cors);
       }
       if (url.pathname === '/goals/current' && request.method === 'GET') {
         const goal = await getCurrentGoal(env, userId);
         return json({ goal }, 200, cors);
       }
-      const abandonMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/abandon$/);
-      if (abandonMatch && request.method === 'POST') {
-        await abandonGoal(env, userId, abandonMatch[1]);
+      const lifecycleMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/(abandon|complete)$/);
+      if (lifecycleMatch && request.method === 'POST') {
+        const [, goalId, action] = lifecycleMatch;
+        await (action === 'complete' ? completeGoal : abandonGoal)(env, userId, goalId);
         return json({ ok: true }, 200, cors);
+      }
+      const graduateMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/graduate$/);
+      if (graduateMatch && request.method === 'POST') {
+        // The first AI call made from a Bearer route — it has to pick up the
+        // same rails /coach/* has, or the kill-switch and the quota would
+        // simply not apply to it. Close-out never comes through here, so a
+        // disabled provider still lets a finished goal end.
+        if (env.AI_ENABLED !== 'true') return json({ error: 'ai_disabled' }, 503, cors);
+        if (!providerReady(env)) return json({ error: 'ai_unconfigured', provider: provider(env) }, 503, cors);
+        const gradIp = request.headers.get('CF-Connecting-IP') ?? 'local';
+        const gradHarness = !!env.HARNESS_SECRET && request.headers.get('X-Qleck-Harness') === env.HARNESS_SECRET;
+        if (!gradHarness) {
+          // Keyed on the authenticated user, not a spoofable device header —
+          // this is the device→user quota switch the roadmap plans for P3.
+          const quotaError = await checkQuota(env, userId, gradIp);
+          if (quotaError) return json({ error: quotaError, message: 'Daily coach limit reached — back tomorrow.' }, 429, cors);
+        }
+        const result = await graduate(
+          env, userId, graduateMatch[1],
+          (await request.json().catch(() => ({}))) as GraduateBody,
+          { deviceId: userId, ip: gradIp, synthetic: gradHarness },
+        );
+        if (!result.ok) return json({ error: result.error, details: result.details }, result.status, cors);
+        return json({ goal: result.goal, replayed: result.replayed ?? false }, 200, cors);
       }
       if (url.pathname === '/check-ins' && request.method === 'POST') {
         const result = await recordCheckIn(env, userId, (await request.json().catch(() => ({}))) as Record<string, unknown>);
@@ -121,6 +156,10 @@ export default {
         return json({ checkIns: await listCheckIns(env, userId, goalId, from, to) }, 200, cors);
       }
       return json({ error: 'not_found' }, 404, cors);
+      } catch (err) {
+        console.error('goals route failed:', err);
+        return json({ error: 'goal_unavailable' }, 502, cors);
+      }
     }
 
     if (url.pathname === '/health' && request.method === 'GET') {

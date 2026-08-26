@@ -70,10 +70,51 @@ export async function fetchGoals(): Promise<RemoteGoal[]> {
   return ((await res.json()) as { goals: RemoteGoal[] }).goals;
 }
 
+/** The archive: goals that ended, completed or dropped, newest first. */
+export async function fetchFinishedGoals(): Promise<RemoteGoal[]> {
+  const res = await authed('/goals?scope=finished');
+  if (!res.ok) throw new Error(`fetchFinishedGoals failed (${res.status})`);
+  return ((await res.json()) as { goals: RemoteGoal[] }).goals;
+}
+
 /** Explicitly drop a goal (history kept server-side). */
 export async function abandonGoal(id: string): Promise<void> {
   const res = await authed(`/goals/${id}/abandon`, { method: 'POST' });
   if (!res.ok) throw new Error(`abandonGoal failed (${res.status})`);
+}
+
+/** The plan ran its course. Distinct from abandoning it. */
+export async function completeGoal(id: string): Promise<void> {
+  const res = await authed(`/goals/${id}/complete`, { method: 'POST' });
+  if (!res.ok) throw new Error(`completeGoal failed (${res.status})`);
+}
+
+export interface RunSummaryPayload {
+  banked: number;
+  expected: number;
+  bestStreak: number;
+  weeks: { week: number; expected: number; banked: number }[];
+}
+
+/**
+ * Carry a finished goal forward. 'extend' keeps the same goal and appends a
+ * protocol version; 'maintain' returns a NEW, lighter goal and completes this
+ * one. Ids are minted here so a retry replays instead of duplicating.
+ */
+export async function graduateGoal(
+  id: string,
+  mode: 'extend' | 'maintain',
+  today: string,
+  run: RunSummaryPayload,
+  weeks?: number,
+): Promise<RemoteGoal> {
+  const body = mode === 'extend'
+    ? { mode, today, run, weeks, protocolId: mintId() }
+    : { mode, today, run, newGoalId: mintId() };
+  const res = await authed(`/goals/${id}/graduate`, { method: 'POST', body: JSON.stringify(body) });
+  const data = (await res.json().catch(() => ({}))) as { goal?: RemoteGoal; error?: string };
+  if (!res.ok || !data.goal) throw new Error(data.error ?? `graduateGoal failed (${res.status})`);
+  return data.goal;
 }
 
 export { mintId as mintGoalId };

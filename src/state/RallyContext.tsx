@@ -1,9 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { abandonGoal, fetchGoals, mintGoalId, saveGoal } from '../api/goals';
+import {
+  abandonGoal, completeGoal, fetchFinishedGoals, fetchGoals, graduateGoal, mintGoalId, saveGoal,
+  type RemoteGoal,
+} from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
 import { localDate } from '../api/device';
-import type { CheckIn } from '../lib/protocolTime';
+import { planIsOver, planStats, type CheckIn } from '../lib/protocolTime';
 import {
   DAYMAP, DAY_OPTIONS, DUMPLING, FRIENDS, INITIAL_ACHIEVEMENTS, INITIAL_CHALLENGES,
   INITIAL_EVENTS, INITIAL_POLLS, JOG, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS,
@@ -75,12 +78,24 @@ interface RallyState {
   // Every active goal plus its monitoring record (P2a). Check-ins are
   // optimistic + outbox-backed, keyed per goal.
   goals: ActiveGoal[];
+  /** Goals still inside their run — what Today schedules reps from. */
+  liveGoals: ActiveGoal[];
+  /** Goals whose plan ran out but which haven't been graduated yet. These are
+   *  still 'active' server-side: the ceremony waits for the user rather than a
+   *  cron deciding on their behalf. */
+  endedGoals: ActiveGoal[];
+  /** The archive — completed or dropped, newest first. */
+  finishedGoals: ActiveGoal[];
   checkInsByGoal: Record<string, CheckIn[]>;
   checkInStep: (goalId: string, stepId: string, value?: number | null) => void;
   // Un-check (the canvas' toggling check): today only, mirrored to the server.
   uncheckStep: (goalId: string, stepId: string) => void;
   // Explicit drop — the only way a goal ends now that creation never replaces.
   dropGoal: (goalId: string) => void;
+  /** Close out a finished plan: it moves to the archive and goes quiet. */
+  completeGoalById: (goalId: string) => Promise<void>;
+  /** Carry a finished plan forward — longer, or as a lighter maintenance goal. */
+  graduate: (goalId: string, mode: 'extend' | 'maintain', weeks?: number) => Promise<void>;
   events: RallyEvent[];
   challenges: Challenge[];
   polls: Poll[];
@@ -114,8 +129,26 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const [lastSent, setLastSent] = useState<RallyState['lastSent']>(null);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [goals, setGoals] = useState<ActiveGoal[]>([]);
+  const [finishedGoals, setFinishedGoals] = useState<ActiveGoal[]>([]);
   const [checkInsByGoal, setCheckInsByGoal] = useState<Record<string, CheckIn[]>>({});
   const hydratedRef = useRef(false);
+
+  const toActive = (g: RemoteGoal): ActiveGoal => ({
+    id: g.id, startedOn: g.started_on, statement: g.statement,
+    durationWeeks: g.duration_weeks, protocol: g.protocol,
+  });
+
+  /** Re-read goals + their check-ins from the server. Called on launch and
+   *  after anything that changes the goal set (graduation, close-out). */
+  const refresh = useCallback(async () => {
+    const [remote, archived] = await Promise.all([fetchGoals(), fetchFinishedGoals().catch(() => [])]);
+    const active = remote.map(toActive);
+    setGoals(active);
+    setFinishedGoals(archived.map(toActive));
+    const today = localDate();
+    const rows = await Promise.all(active.map(g => fetchCheckIns(g.id, g.startedOn, today)));
+    setCheckInsByGoal(Object.fromEntries(active.map((g, i) => [g.id, rows[i]])));
+  }, []);
 
   // P2a hydration: cached profile + goals first (instant, offline-friendly),
   // then the server's active-goal list wins. Persist changes thereafter.
@@ -133,17 +166,10 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
       } catch { hydratedRef.current = true; }
       try {
         await flushOutbox();
-        const remote = await fetchGoals();
-        const active = remote.map(g => ({
-          id: g.id, startedOn: g.started_on, statement: g.statement,
-          durationWeeks: g.duration_weeks, protocol: g.protocol,
-        }));
-        setGoals(active);
-        const today = localDate();
-        const rows = await Promise.all(active.map(g => fetchCheckIns(g.id, g.startedOn, today)));
-        setCheckInsByGoal(Object.fromEntries(active.map((g, i) => [g.id, rows[i]])));
+        await refresh();
       } catch { /* offline: cache already applied */ }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -207,6 +233,43 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     }));
     void removeCheckIn(goalId, stepId, today);
   }, []);
+
+  /**
+   * Split by whether the plan still has days left in it. A goal past its end
+   * stays 'active' server-side — the graduation moment belongs to the user, so
+   * nothing auto-completes behind their back — but Today must stop scheduling
+   * reps from it, or an ended plan reads as a permanent rest day.
+   */
+  const today = localDate();
+  const liveGoals = useMemo(
+    () => goals.filter(g => !planIsOver(g.startedOn, g.protocol.duration_weeks, today)),
+    [goals, today],
+  );
+  const endedGoals = useMemo(
+    () => goals.filter(g => planIsOver(g.startedOn, g.protocol.duration_weeks, today)),
+    [goals, today],
+  );
+
+  const completeGoalById = useCallback(async (goalId: string) => {
+    setGoals(prev => prev.filter(g => g.id !== goalId));
+    await completeGoal(goalId);
+    await refresh().catch(() => {});
+  }, [refresh]);
+
+  const graduate = useCallback(async (
+    goalId: string, mode: 'extend' | 'maintain', weeks?: number,
+  ) => {
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return;
+    const stats = planStats(goal.protocol, goal.startedOn, checkInsByGoal[goalId] ?? []);
+    await graduateGoal(goalId, mode, localDate(), {
+      banked: stats.banked, expected: stats.expected, bestStreak: stats.bestStreak,
+      weeks: stats.weeks,
+    }, weeks);
+    // Server owns the outcome (a new goal for maintain, a new version for
+    // extend) — re-read rather than guessing at the local shape.
+    await refresh();
+  }, [goals, checkInsByGoal, refresh]);
 
   const dropGoal = useCallback((goalId: string) => {
     setGoals(prev => prev.filter(g => g.id !== goalId));
@@ -332,11 +395,13 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<RallyState>(() => ({
     profile, people, applyOnboarding, setGoalPlan,
-    goals, checkInsByGoal, checkInStep, uncheckStep, dropGoal,
+    goals, liveGoals, endedGoals, finishedGoals,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
   }), [profile, people, applyOnboarding, setGoalPlan,
-    goals, checkInsByGoal, checkInStep, uncheckStep, dropGoal,
+    goals, liveGoals, endedGoals, finishedGoals,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 

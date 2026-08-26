@@ -17,7 +17,7 @@ import YouAvatar from '../components/YouAvatar';
 import { goalDot, goalTitle, kindLook } from '../components/protocolViews';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
-import { phaseForWeek, repsForDate, weekOf } from '../lib/protocolTime';
+import { phaseForWeek, planEndDate, repsForDate, weekOf } from '../lib/protocolTime';
 import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -41,12 +41,16 @@ function freqChip(step: ProtocolStep): string {
 
 /* ── the week track: one cell per plan week ─────────────────────────────── */
 
-function WeekTrack({ weeks, week, filled }: { weeks: number; week: number; filled: boolean }) {
+function WeekTrack({ weeks, week, filled, done = false }: {
+  weeks: number; week: number; filled: boolean; done?: boolean;
+}) {
   return (
     <View style={{ flex: 1, flexDirection: 'row', gap: filled ? 4 : 5 }}>
       {Array.from({ length: weeks }, (_, i) => {
-        const past = i < week - 1;
-        const now = i === week - 1;
+        // weekOf clamps at the duration, so the final cell would otherwise sit
+        // on "current" forever and the track could never fill.
+        const past = done || i < week - 1;
+        const now = !done && i === week - 1;
         return (
           <View
             key={i}
@@ -280,7 +284,7 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
 export default function GoalsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { goals, checkInsByGoal, dropGoal } = useRally();
+  const { goals, finishedGoals, checkInsByGoal, dropGoal } = useRally();
   const [selId, setSelId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -362,6 +366,41 @@ export default function GoalsScreen() {
                     ＋ Start another system with Qoach
                   </Text>
                 </Pressable>
+
+                {/* The archive: plans that ended, completed or dropped. Before
+                    this they simply disappeared, taking their history with
+                    them. */}
+                {finishedGoals.length > 0 && (
+                  <View style={{ marginTop: 18 }}>
+                    <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel, marginBottom: 10 }}>
+                      FINISHED
+                    </Text>
+                    <View style={{ gap: 8 }}>
+                      {finishedGoals.map(g => (
+                        <View
+                          key={g.id}
+                          style={{
+                            flexDirection: 'row', alignItems: 'center', gap: 12,
+                            backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+                            borderRadius: 20, paddingVertical: 14, paddingHorizontal: 18,
+                          }}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text numberOfLines={1} style={{ fontFamily: fonts.serif, fontSize: 15.5, lineHeight: 21, color: colors.inkSoft }}>
+                              {goalTitle(g.statement, g.protocol)}
+                            </Text>
+                            <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.sectionLabel, marginTop: 2 }}>
+                              {g.protocol.duration_weeks} weeks · {g.startedOn} to {planEndDate(g.startedOn, g.protocol.duration_weeks)}
+                            </Text>
+                          </View>
+                          <View style={{ width: 70 }}>
+                            <WeekTrack weeks={g.protocol.duration_weeks} week={g.protocol.duration_weeks} filled done />
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
               </View>
             </FadeInUp>
           )}

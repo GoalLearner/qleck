@@ -52,6 +52,23 @@ export function celebrateGoal(): void {
   play('goal');
 }
 
+/** Tier 4 — a whole PLAN finished. The rarest moment the app has: weeks of
+ * work, not a day of it. Same salute, held longer. */
+export function celebratePlan(): void {
+  if (Platform.OS === 'web') vibrate([30, 70, 30, 70, 30, 90, 60]);
+  else {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    [140, 280, 430, 600].forEach((delay, i) => {
+      setTimeout(() => {
+        Haptics.impactAsync(
+          i >= 2 ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Medium,
+        ).catch(() => {});
+      }, delay);
+    });
+  }
+  play('day');
+}
+
 /** Tier 3 — the whole day is banked: the salute. */
 export function celebrateDay(): void {
   if (Platform.OS === 'web') vibrate([24, 60, 24, 60, 40]);

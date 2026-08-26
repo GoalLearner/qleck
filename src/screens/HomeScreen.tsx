@@ -701,10 +701,44 @@ function Header({ title, sub }: { title: string; sub: string }) {
   );
 }
 
+/**
+ * A plan that reached its end. Today stops scheduling reps from it (there are
+ * none left), so without this card it would simply vanish from the day — or,
+ * if it were the only goal, read as a permanent rest day. The ceremony waits
+ * here until the user opens it.
+ */
+function FinishedGoalCard({ goal, onOpen }: { goal: ActiveGoal; onOpen: () => void }) {
+  return (
+    <Pressable
+      onPress={onOpen}
+      style={{
+        backgroundColor: colors.doneBg, borderWidth: 1, borderColor: colors.doneBorder,
+        borderRadius: 26, paddingVertical: 18, paddingHorizontal: 20,
+        flexDirection: 'row', alignItems: 'center', gap: 14,
+      }}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.success }}>
+          PLAN COMPLETE
+        </Text>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 19, lineHeight: 25, color: colors.ink, marginTop: 6 }}>
+          {goalTitle(goal.statement, goal.protocol)}
+        </Text>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 18, color: colors.muted, marginTop: 4 }}>
+          {goal.protocol.duration_weeks} weeks, done. See how it went and pick what's next.
+        </Text>
+      </View>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 18, color: colors.success }}>›</Text>
+    </Pressable>
+  );
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { profile, goals, checkInsByGoal } = useRally();
+  const navigation = useNavigation<any>();
+  const { profile, liveGoals, endedGoals, checkInsByGoal } = useRally();
+  const goals = liveGoals;
   const wide = Platform.OS === 'web' && width >= 980;
   const confettiRef = useRef<ConfettiHandle>(null);
   const celebrate = useCallback(() => {
@@ -723,16 +757,36 @@ export default function HomeScreen() {
         contentContainerStyle={{ flexGrow: 1, paddingTop: wide ? 26 : Math.max(insets.top, 58) + 16 }}
         showsVerticalScrollIndicator={false}
       >
+        {endedGoals.length > 0 && (
+          <View
+            style={{
+              width: '100%', maxWidth: wide ? 1060 : undefined, alignSelf: 'center',
+              paddingHorizontal: wide ? 40 : 24,
+              paddingTop: goals.length > 0 ? 0 : Math.max(insets.top, 8),
+              paddingBottom: goals.length > 0 ? 18 : 0,
+              gap: 10,
+            }}
+          >
+            {endedGoals.map(g => (
+              <FinishedGoalCard
+                key={g.id}
+                goal={g}
+                onOpen={() => navigation.navigate('Graduation', { goalId: g.id })}
+              />
+            ))}
+          </View>
+        )}
+
         {goals.length > 0 ? (
           wide
             ? <DesktopToday goals={goals} byGoal={checkInsByGoal} celebrate={celebrate} miniBurst={miniBurst} />
             : <TodayLoop goals={goals} byGoal={checkInsByGoal} celebrate={celebrate} miniBurst={miniBurst} />
-        ) : (
+        ) : endedGoals.length === 0 ? (
           <View style={wide ? { width: '100%', maxWidth: 560, alignSelf: 'center', paddingTop: 40 } : undefined}>
             <Header title={greeting(false, profile.firstName)} sub="Nothing on the clock yet" />
             <NoGoalYet />
           </View>
-        )}
+        ) : null}
       </ScrollView>
       {/* the salute lives outside the scroll so the cannons anchor to the
           viewport corners, exactly like the canvas' fixed overlay */}

@@ -150,6 +150,30 @@ export const PROTOCOL_TOOL_SCHEMA = {
 } as const;
 
 /**
+ * Repair the one inconsistency models reliably produce: phases that tile
+ * correctly but disagree with the declared duration_weeks ("phases end at week
+ * 8 but duration_weeks is 6"). The phases ARE the plan — duration_weeks is a
+ * summary of them — so snapping the summary to the content is a deterministic
+ * fix, and much better than burning a resample and then 502-ing.
+ *
+ * Deliberately narrow: it only acts when the phases already tile contiguously
+ * from week 1, so a genuinely malformed protocol still fails validation.
+ */
+export function reconcileDuration(p: unknown): unknown {
+  const proto = p as Protocol;
+  if (!proto || typeof proto !== 'object' || !Array.isArray(proto.phases) || proto.phases.length === 0) return p;
+  let prevEnd = 0;
+  for (const ph of proto.phases) {
+    if (ph.start_week !== prevEnd + 1 || ph.end_week < ph.start_week) return p; // not tiled — leave it
+    prevEnd = ph.end_week;
+  }
+  if (prevEnd >= 1 && prevEnd <= 52 && proto.duration_weeks !== prevEnd) {
+    return { ...proto, duration_weeks: prevEnd };
+  }
+  return p;
+}
+
+/**
  * Server-side validation beyond what JSON Schema can express. Returns a list
  * of problems; empty list = valid. Never trust model output that hasn't
  * passed this.

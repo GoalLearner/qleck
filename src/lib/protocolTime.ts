@@ -8,7 +8,7 @@
 //   * a step without days is a flexible weekly quota: it appears every day
 //     until it has per_week check-ins in the current week;
 //   * "rest day" = nothing scheduled today under those rules.
-import type { Protocol, ProtocolPhase, ProtocolStep } from '../api/coachTypes';
+import type { Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 
 export interface CheckIn {
   id: string;
@@ -51,8 +51,35 @@ export function weekdayName(local: string): string {
 
 /** 1-based plan week for a date; clamps to [1, duration]. */
 export function weekOf(startedOn: string, local: string, durationWeeks: number): number {
-  const wk = Math.floor(daysBetween(startedOn, local) / 7) + 1;
-  return Math.min(Math.max(wk, 1), durationWeeks);
+  return Math.min(Math.max(weekOfUncapped(startedOn, local), 1), durationWeeks);
+}
+
+/**
+ * The true plan week, past the end. [[weekOf]] saturates at the duration so
+ * phase lookup always resolves — which also makes "week 4 of 4, still running"
+ * indistinguishable from "finished three weeks ago". Use this for display and
+ * for anything that has to know the plan is over.
+ */
+export function weekOfUncapped(startedOn: string, local: string): number {
+  return Math.floor(daysBetween(startedOn, local) / 7) + 1;
+}
+
+/**
+ * The plan's last active day. A 4-week plan starting Monday the 24th runs
+ * through day 27 and is over on day 28.
+ */
+export function planEndDate(startedOn: string, durationWeeks: number): string {
+  return addDays(startedOn, durationWeeks * 7 - 1);
+}
+
+/**
+ * Has this plan run out? The single source of truth for the end of a goal —
+ * previously an inline expression duplicated across repsForDate and
+ * mergedWeekStrip, and missing entirely from missedYesterday (which is why a
+ * finished plan kept reporting slipped days forever).
+ */
+export function planIsOver(startedOn: string, durationWeeks: number, today: string): boolean {
+  return daysBetween(startedOn, today) >= durationWeeks * 7;
 }
 
 export function phaseForWeek(protocol: Protocol, week: number): ProtocolPhase {
@@ -91,8 +118,8 @@ export function repsForDate(
   protocol: Protocol, startedOn: string, local: string, checkIns: CheckIn[],
 ): DayRep[] {
   if (local < startedOn) return [];
+  if (planIsOver(startedOn, protocol.duration_weeks, local)) return [];
   const week = weekOf(startedOn, local, protocol.duration_weeks);
-  if (daysBetween(startedOn, local) >= protocol.duration_weeks * 7) return [];
   const phase = phaseForWeek(protocol, week);
   const reps: DayRep[] = [];
   for (const step of phase.steps) {
@@ -167,6 +194,10 @@ export function missedYesterday(
 ): boolean {
   const y = addDays(today, -1);
   if (y < startedOn) return false;
+  // A finished plan cannot slip. Without this, weekOf clamps to the last week
+  // and phaseForWeek keeps returning the final phase, so every weekday that
+  // phase pins reported a miss forever after the plan ended.
+  if (planIsOver(startedOn, protocol.duration_weeks, y)) return false;
   if (checkIns.some(c => c.local_date === y)) return false;
   const phase = phaseForWeek(protocol, weekOf(startedOn, y, protocol.duration_weeks));
   return phase.steps.some(s => stepPinnedOn(s, y));
@@ -203,7 +234,7 @@ export function mergedWeekStrip(
     else {
       const hadPinned = goals.some(g => {
         if (date < g.startedOn) return false;
-        if (daysBetween(g.startedOn, date) >= g.protocol.duration_weeks * 7) return false;
+        if (planIsOver(g.startedOn, g.protocol.duration_weeks, date)) return false;
         const phase = phaseForWeek(g.protocol, weekOf(g.startedOn, date, g.protocol.duration_weeks));
         return phase.steps.some(s => stepPinnedOn(s, date));
       });
@@ -212,6 +243,99 @@ export function mergedWeekStrip(
     days.push({ letter: DAY_LETTERS[i], date, kind, isToday });
   }
   return days;
+}
+
+/* ── the run in review (goal completion, 2026-08-25) ────────────────────── */
+
+export interface WeekTally {
+  week: number;
+  expected: number;
+  banked: number;
+}
+
+export interface MilestoneOutcome {
+  milestone: ProtocolMilestone;
+  reached: boolean;
+  /** Adherence in that milestone's week, 0..1 — what "reached" was judged on. */
+  adherence: number;
+}
+
+export interface PlanStats {
+  weeks: WeekTally[];
+  expected: number;
+  banked: number;
+  /** 0..1 across the whole plan; 0 when nothing was ever scheduled. */
+  adherence: number;
+  /** Longest run of consecutive days with any check-in for this goal. */
+  bestStreak: number;
+  /** Days with at least one rep banked. */
+  activeDays: number;
+  milestones: MilestoneOutcome[];
+}
+
+/** A milestone counts as reached at this week-adherence or better. */
+const MILESTONE_BAR = 0.8;
+
+/**
+ * How the run actually went, derived from check-ins at read time (the schema's
+ * binding invariant: streaks and milestone completion are never stored).
+ *
+ * Tallied per plan-week rather than by replaying repsForDate day by day: that
+ * function decides a flexible step's presence from the quota already banked
+ * *this* week, so replaying it over history would judge past days by today's
+ * state. A week's expectation is simply the sum of per_week across the steps
+ * of the phase that owned that week.
+ *
+ * Milestone criteria are free prose ("held at 10 or fewer every day of week 1"),
+ * so attainment is judged on that week's adherence — an approximation the
+ * screen states plainly by showing the criteria alongside it.
+ */
+export function planStats(protocol: Protocol, startedOn: string, checkIns: CheckIn[]): PlanStats {
+  const weeks: WeekTally[] = [];
+  for (let week = 1; week <= protocol.duration_weeks; week++) {
+    const from = addDays(startedOn, (week - 1) * 7);
+    const to = addDays(from, 6);
+    const phase = phaseForWeek(protocol, week);
+    const stepIds = new Set(phase.steps.map(s => s.id));
+    const expected = phase.steps.reduce((n, s) => n + s.frequency.per_week, 0);
+    const banked = checkIns.filter(
+      c => c.local_date >= from && c.local_date <= to && stepIds.has(c.step_id),
+    ).length;
+    // Banking more than asked (a flexible step logged twice in a day) must not
+    // push a week over 100% and skew the plan total.
+    weeks.push({ week, expected, banked: Math.min(banked, expected) });
+  }
+
+  const expected = weeks.reduce((n, w) => n + w.expected, 0);
+  const banked = weeks.reduce((n, w) => n + w.banked, 0);
+
+  // Bounded to the run: check-ins recorded after the plan ended (a late outbox
+  // replay, say) are not part of how this plan went.
+  const firstDay = startedOn;
+  const lastDay = planEndDate(startedOn, protocol.duration_weeks);
+  const dates = [...new Set(
+    checkIns.filter(c => c.local_date >= firstDay && c.local_date <= lastDay).map(c => c.local_date),
+  )].sort();
+  let bestStreak = 0;
+  let run = 0;
+  for (let i = 0; i < dates.length; i++) {
+    run = i > 0 && daysBetween(dates[i - 1], dates[i]) === 1 ? run + 1 : 1;
+    if (run > bestStreak) bestStreak = run;
+  }
+
+  const milestones: MilestoneOutcome[] = protocol.milestones.map(milestone => {
+    const w = weeks.find(x => x.week === milestone.week);
+    const adherence = w && w.expected > 0 ? w.banked / w.expected : 0;
+    return { milestone, reached: adherence >= MILESTONE_BAR, adherence };
+  });
+
+  return {
+    weeks, expected, banked,
+    adherence: expected > 0 ? banked / expected : 0,
+    bestStreak,
+    activeDays: dates.length,
+    milestones,
+  };
 }
 
 /** Any goal slipped a pinned rep yesterday with nothing logged for it. */

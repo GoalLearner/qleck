@@ -52,7 +52,12 @@ export function parseCreateGoal(body: CreateGoalBody):
 }
 
 /** Rebuild the normalized latest-version step rows for a goal. */
-async function writeSteps(env: Env, goalId: string, version: number, protocol: Protocol): Promise<void> {
+/**
+ * Statements that rebuild a goal's step index — returned rather than executed
+ * so callers can compose ONE D1 batch (a batch is a transaction). Graduation
+ * has to move status, protocol and steps together or not at all.
+ */
+export function stepStatements(env: Env, goalId: string, version: number, protocol: Protocol) {
   const stmts = [env.DB.prepare(`DELETE FROM protocol_steps WHERE goal_id = ?`).bind(goalId)];
   for (const phase of protocol.phases) {
     for (const step of phase.steps) {
@@ -72,7 +77,11 @@ async function writeSteps(env: Env, goalId: string, version: number, protocol: P
       ));
     }
   }
-  await env.DB.batch(stmts);
+  return stmts;
+}
+
+async function writeSteps(env: Env, goalId: string, version: number, protocol: Protocol): Promise<void> {
+  await env.DB.batch(stepStatements(env, goalId, version, protocol));
 }
 
 // Concurrent active goals per user (owner call 2026-08-24 — "why can I only
@@ -150,8 +159,24 @@ export async function getCurrentGoal(env: Env, userId: string): Promise<GoalReco
 
 /** Every active goal, oldest first — the Today tab renders these as groups. */
 export async function listActiveGoals(env: Env, userId: string): Promise<GoalRecord[]> {
+  return listGoals(env, userId, 'active');
+}
+
+/**
+ * Goals by lifecycle state. 'active' is what Today and Goals run on; 'finished'
+ * is the archive (completed + abandoned), newest first because the last thing
+ * you finished is the one you want to see.
+ */
+export async function listGoals(
+  env: Env, userId: string, scope: 'active' | 'finished' | 'all',
+): Promise<GoalRecord[]> {
+  const sql = scope === 'active'
+    ? `SELECT * FROM goals WHERE user_id = ? AND status = 'active' ORDER BY created_at`
+    : scope === 'finished'
+      ? `SELECT * FROM goals WHERE user_id = ? AND status IN ('completed', 'abandoned') ORDER BY updated_at DESC`
+      : `SELECT * FROM goals WHERE user_id = ? ORDER BY created_at`;
   const rows = await env.DB
-    .prepare(`SELECT * FROM goals WHERE user_id = ? AND status = 'active' ORDER BY created_at`)
+    .prepare(sql)
     .bind(userId)
     .all<Omit<GoalRecord, 'protocol' | 'protocol_version'>>();
   const goals: GoalRecord[] = [];
@@ -164,13 +189,81 @@ export async function listActiveGoals(env: Env, userId: string): Promise<GoalRec
 
 /** Explicitly drop a goal. Idempotent; the rows stay (history, not deletion). */
 export async function abandonGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean }> {
+  return setStatus(env, userId, goalId, 'abandoned');
+}
+
+/**
+ * The plan ran its course. Distinct from abandoned: this is the goal ENDING,
+ * not being dropped — the archive and the graduation moment tell them apart.
+ * Idempotent, and deliberately not gated on the plan actually being over:
+ * the client owns that judgement (see planIsOver in src/lib/protocolTime.ts).
+ */
+export async function completeGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean }> {
+  return setStatus(env, userId, goalId, 'completed');
+}
+
+/**
+ * Only an ACTIVE goal can end. Without the status guard an abandoned goal
+ * could be flipped to completed by a stale request, rewriting a decision the
+ * user already made.
+ */
+async function setStatus(
+  env: Env, userId: string, goalId: string, status: 'completed' | 'abandoned',
+): Promise<{ ok: boolean }> {
   if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false };
   await env.DB
-    .prepare(`UPDATE goals SET status = 'abandoned', updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
-    .bind(goalId, userId)
+    .prepare(
+      `UPDATE goals SET status = ?, updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status = 'active'`,
+    )
+    .bind(status, goalId, userId)
     .run();
   return { ok: true };
 }
+
+/** Statements appending a protocol version. The version is computed IN SQL —
+ * a read-then-write would let two concurrent taps both pick N+1 and collide on
+ * UNIQUE(goal_id, version). `protocolId` is client-minted so a retry is a
+ * no-op rather than a second version. */
+export function appendProtocolStatements(
+  env: Env, userId: string, goalId: string, protocolId: string, protocol: Protocol,
+) {
+  return [
+    env.DB
+      .prepare(
+        `INSERT OR IGNORE INTO protocols (id, goal_id, version, schema_version, json)
+         SELECT ?, ?, COALESCE(MAX(version), 0) + 1, ?, ? FROM protocols WHERE goal_id = ?`,
+      )
+      .bind(protocolId, goalId, protocol.schema_version, JSON.stringify(protocol), goalId),
+    env.DB
+      .prepare(
+        `UPDATE goals SET duration_weeks = ?, statement = ?, updated_at = datetime('now')
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(protocol.duration_weeks, protocol.goal_statement, goalId, userId),
+  ];
+}
+
+/** Does this protocol id already exist? Lets graduation short-circuit a replay
+ * BEFORE spending an AI call, not just after. */
+export async function protocolExists(env: Env, protocolId: string): Promise<boolean> {
+  const row = await env.DB
+    .prepare(`SELECT 1 AS n FROM protocols WHERE id = ?`)
+    .bind(protocolId)
+    .first<{ n: number }>();
+  return !!row;
+}
+
+/** Active goals excluding one — graduating must stay cap-neutral. */
+export async function activeGoalCount(env: Env, userId: string, exceptId: string): Promise<number> {
+  const row = await env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM goals WHERE user_id = ? AND status = 'active' AND id != ?`)
+    .bind(userId, exceptId)
+    .first<{ n: number }>();
+  return Number(row?.n ?? 0);
+}
+
+export { MAX_ACTIVE_GOALS };
 
 /* ── check-ins (P2a): the monitoring record ─────────────────────────────── */
 

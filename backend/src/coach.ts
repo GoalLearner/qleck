@@ -3,10 +3,10 @@
 // session id and the newest message.
 import { callModel, modelsFor, reclassifyRequest, type ChatMessage, type Env } from './ai';
 import {
-  ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, PROTOCOL_SYSTEM, REFUSAL_COPY,
-  REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
+  ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PROTOCOL_SYSTEM,
+  REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
 
 // Server-enforced negotiation cap: at most 4 clarifying questions, then the
 // coach must issue a verdict (the ask tool is simply withheld). Four because
@@ -306,9 +306,10 @@ export async function generateProtocol(
       maxTokens: 8192,
     });
     if (result.refused) return { errors: ['api_refusal'] };
-    const errors = validateProtocol(result.toolInput);
+    const repaired = reconcileDuration(result.toolInput);
+    const errors = validateProtocol(repaired);
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
-    if (errors.length === 0) return { protocol: result.toolInput as Protocol };
+    if (errors.length === 0) return { protocol: repaired as Protocol };
     lastErrors = errors;
     lastOutput = result.toolInput;
   }
@@ -369,8 +370,9 @@ ${goalAsData(feedback)}
       maxTokens: 8192,
     });
     if (result.refused) return { errors: ['api_refusal'] };
-    const errors = validateProtocol(result.toolInput);
-    const revised = result.toolInput as Protocol;
+    const repaired = reconcileDuration(result.toolInput);
+    const errors = validateProtocol(repaired);
+    const revised = repaired as Protocol;
     // Revision-specific invariants beyond the base schema:
     if (errors.length === 0) {
       if (revised.duration_weeks < currentWeek) errors.push('duration_weeks shrank below current_week');
@@ -382,6 +384,79 @@ ${goalAsData(feedback)}
     }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: revised };
+    lastErrors = errors;
+    lastOutput = result.toolInput;
+  }
+  return { errors: lastErrors };
+}
+
+/** How the finished run went, as a line the coach can read. */
+export interface RunSummary {
+  banked: number;
+  expected: number;
+  bestStreak: number;
+  weeks: { week: number; expected: number; banked: number }[];
+}
+
+function runSummaryText(run: RunSummary): string {
+  const pct = run.expected > 0 ? Math.round((run.banked / run.expected) * 100) : 0;
+  const weeks = run.weeks.map(w => `week ${w.week}: ${w.banked}/${w.expected}`).join(', ');
+  return `Reps banked ${run.banked} of ${run.expected} (${pct}%). Longest streak ${run.bestStreak} days. By week — ${weeks}.`;
+}
+
+/**
+ * Step 5 — the plan after the plan. A finished protocol becomes a lighter
+ * maintenance one: anchors kept, ramp and one-time setup dropped.
+ *
+ * This is a NEW protocol, not a revision — ids restart, phases tile from week
+ * 1 — so it deliberately does NOT carry the revision invariants (which exist
+ * to protect a plan still being lived).
+ */
+export async function maintenanceProtocol(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  completed: Protocol,
+  run: RunSummary,
+): Promise<{ protocol?: Protocol; errors?: string[] }> {
+  const baseMessages: ChatMessage[] = [
+    {
+      role: 'user',
+      content:
+        `Completed protocol JSON:\n${JSON.stringify(completed)}\n\n` +
+        `How the run went:\n${runSummaryText(run)}\n\n` +
+        `Write the maintenance protocol.`,
+    },
+  ];
+
+  let lastErrors: string[] = [];
+  let lastOutput: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const messages: ChatMessage[] =
+      attempt === 0
+        ? baseMessages
+        : [
+            ...baseMessages,
+            {
+              role: 'user',
+              content:
+                `Your previous emission (below) failed validation:\n- ${lastErrors.join('\n- ')}\n\n` +
+                `Previous emission:\n${JSON.stringify(lastOutput)}\n\n` +
+                `Emit a minimally-corrected protocol that fixes exactly these problems.`,
+            },
+          ];
+    const result = await callModel(env, { ...meta, kind: 'protocol' }, {
+      model: modelsFor(env).coach,
+      system: MAINTENANCE_SYSTEM,
+      messages,
+      tools: [protocolTool(PROTOCOL_TOOL_SCHEMA)],
+      toolChoice: { type: 'tool', name: 'emit_protocol' },
+      maxTokens: 8192,
+    });
+    if (result.refused) return { errors: ['api_refusal'] };
+    const repaired = reconcileDuration(result.toolInput);
+    const errors = validateProtocol(repaired);
+    await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
+    if (errors.length === 0) return { protocol: repaired as Protocol };
     lastErrors = errors;
     lastOutput = result.toolInput;
   }

@@ -13,20 +13,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
 import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, TextButton, Title } from '../ui';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
+import { suggestionsFor } from '../goalSuggestions';
+import { useRally } from '../../state/RallyContext';
 import type { Protocol, ProtocolStep } from '../../api/coachTypes';
 
 const BLUE = '#5BC4F5';
 const MONO = nightFonts.mono;
 
 // Canvas section 3 ("first-page glow-up"): goal chips carry a rep-kind glyph.
-const SUGGESTIONS = [
-  { g: 'D', c: BLUE, bg: 'rgba(14,159,232,0.14)', bd: 'rgba(14,159,232,0.5)', label: 'Run a 5k' },
-  { g: '#', c: '#B69CFF', bg: 'rgba(139,92,246,0.14)', bd: 'rgba(139,92,246,0.5)', label: 'Lose 10 lbs' },
-  { g: '✓', c: '#2BE380', bg: 'rgba(43,227,128,0.12)', bd: 'rgba(43,227,128,0.5)', label: 'Quit smoking' },
-  { g: '#', c: '#B69CFF', bg: 'rgba(139,92,246,0.14)', bd: 'rgba(139,92,246,0.5)', label: 'Save $5,000' },
-  { g: 'D', c: BLUE, bg: 'rgba(14,159,232,0.14)', bd: 'rgba(14,159,232,0.5)', label: 'Read 12 books this year' },
-  { g: '✓', c: '#2BE380', bg: 'rgba(43,227,128,0.12)', bd: 'rgba(43,227,128,0.5)', label: 'Gym 3 mornings a week' },
-];
+// The set is picked at render time (src/onboarding/goalSuggestions.ts) so a
+// chip is never offered for something the user already has in flight.
 
 // Cycling ghost prompt inside the empty ask-box.
 const GHOSTS = [
@@ -467,6 +463,13 @@ export default function FirstGoalScreen({
   demoHints?: boolean;
 }) {
   const coach = useCoachFlow();
+  const { goals } = useRally();
+  // Recomputed only when the active goal set changes — locking a goal here
+  // retires its whole domain (smoking ⊃ vaping ⊃ cigarettes) next time.
+  const suggestions = React.useMemo(
+    () => suggestionsFor(goals.map(g => `${g.statement} ${g.protocol.goal_statement ?? ''}`)),
+    [goals],
+  );
   const [draft, setDraft] = useState('');
   const [answer, setAnswer] = useState('');
   const [adjustHint, setAdjustHint] = useState(false);
@@ -548,7 +551,7 @@ export default function FirstGoalScreen({
             OR STEAL ONE
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 9 }}>
-            {SUGGESTIONS.map(sg => (
+            {suggestions.map(sg => (
               <Pressable
                 key={sg.label}
                 onPress={() => setDraft(sg.label)}

@@ -234,9 +234,34 @@ async function callAnthropic(env: Env, params: CallParams): Promise<RawResult> {
 /* ── the one entry point ────────────────────────────────────────────────── */
 
 export async function callModel(env: Env, meta: CallMeta, params: CallParams): Promise<ModelCallResult> {
-  const raw = provider(env) === 'deepseek'
-    ? await callDeepseek(env, params)
-    : await callAnthropic(env, params);
+  let raw: RawResult;
+  try {
+    raw = provider(env) === 'deepseek'
+      ? await callDeepseek(env, params)
+      : await callAnthropic(env, params);
+  } catch (err) {
+    // A provider failure used to vanish: the ledger is written only on the
+    // success path, so an outage left ZERO trace while users saw "the coach
+    // hit a snag". Record it — cost 0, tokens 0, the reason in verdict_class —
+    // so the next incident is diagnosable instead of guesswork.
+    const reason = err instanceof Error ? err.message : String(err);
+    await logAiRequest(env.DB, {
+      id: crypto.randomUUID(),
+      sessionId: meta.sessionId ?? null,
+      deviceId: meta.deviceId ?? null,
+      ip: meta.ip ?? null,
+      kind: meta.kind,
+      model: `${provider(env)}:failed`,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      verdictClass: `error: ${reason.slice(0, 180)}`,
+      synthetic: meta.synthetic ? 1 : 0,
+      prompt: '',
+      response: reason.slice(0, 2000),
+    }).catch(() => {});
+    throw err;
+  }
 
   const requestId = crypto.randomUUID();
   await logAiRequest(env.DB, {

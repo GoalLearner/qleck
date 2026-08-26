@@ -1,18 +1,18 @@
 // The app's first API client: the qleck-api coach surface (ROADMAP.md P1).
 import { Platform } from 'react-native';
+import { apiBase } from './device';
 import {
   CoachApiError, type CoachTurnResponse, type ProtocolResponse,
 } from './coachTypes';
 
-const PROD_URL = 'https://qleck-api.richmondcampano93.workers.dev';
-
-// Web preview stays on the local Worker (fast iteration, local D1, and prod
-// CORS only admits localhost anyway); phones via Expo Go hit production so
-// the coach works from anywhere with no LAN setup.
-function baseUrl(): string {
-  if (Platform.OS === 'web') return 'http://localhost:8787';
-  return PROD_URL;
-}
+// One host rule for every client in the app: apiBase() sends the localhost
+// dev preview to the local Worker and any deployed host to production. This
+// file used to carry its OWN copy that returned localhost for ALL web builds
+// — which meant the deployed tester build asked the VISITOR's machine for the
+// coach. It worked on the developer's laptop (a worker really is listening
+// there) and failed for everyone else, leaving no server-side trace at all.
+// Never reintroduce a second base-url rule.
+const baseUrl = apiBase;
 
 /**
  * Pre-auth device identity: a client-minted UUID (the same id P2a's anonymous

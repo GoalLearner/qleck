@@ -4,6 +4,7 @@
 // ROADMAP P6 on a real backend.
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import SectionLabel from '../components/SectionLabel';
@@ -13,7 +14,9 @@ import { useRally } from '../state/RallyContext';
 import { useTheme, type ThemePref } from '../state/ThemeContext';
 import { colors, fonts, radii } from '../theme';
 
-const SETTINGS = ['Notifications', 'Help & feedback'];
+// "Notifications" used to live here as a chevron that did nothing. It comes
+// back with the feature (ROADMAP P4: local nudges, quiet hours, per-goal mute)
+// — a control over something that doesn't exist is worse than no control.
 
 const APPEARANCE: { key: ThemePref; label: string }[] = [
   { key: 'light', label: 'Light' },
@@ -76,6 +79,7 @@ function Card({ children }: { children: React.ReactNode }) {
 
 export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
   const { profile, goals } = useRally();
 
   return (
@@ -127,18 +131,18 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
         <Card>
           <AppearanceRow />
           <View style={{ height: 1, backgroundColor: colors.hairline }} />
-          {SETTINGS.map((label, i) => (
-            <View
-              key={label}
-              style={{
-                flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 16,
-                borderBottomWidth: i < SETTINGS.length - 1 ? 1 : 0, borderBottomColor: colors.hairline,
-              }}
-            >
-              <Text style={{ flex: 1, fontSize: 14, fontFamily: fonts.semibold, color: colors.ink }}>{label}</Text>
-              <Text style={{ fontSize: 16, color: colors.chevron }}>›</Text>
-            </View>
-          ))}
+          <Pressable
+            onPress={() => navigation.navigate('Help')}
+            style={({ pressed }) => ({
+              flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 16,
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <Text style={{ flex: 1, fontSize: 14, fontFamily: fonts.semibold, color: colors.ink }}>
+              Help &amp; about
+            </Text>
+            <Text style={{ fontSize: 16, color: colors.chevron }}>›</Text>
+          </Pressable>
         </Card>
 
         <Pressable

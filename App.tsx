@@ -22,6 +22,7 @@ import RallyTabBar from './src/components/RallyTabBar';
 import GoalsScreen from './src/screens/GoalsScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import GraduationScreen from './src/screens/GraduationScreen';
+import HelpScreen from './src/screens/HelpScreen';
 import NewGoalScreen from './src/screens/NewGoalScreen';
 import OnboardingFlow from './src/onboarding/OnboardingFlow';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -115,6 +116,7 @@ function AppShell() {
                 </RootStack.Screen>
                 <RootStack.Screen name="NewGoal" component={NewGoalScreen} options={{ presentation: 'modal' }} />
                 <RootStack.Screen name="Graduation" component={GraduationScreen} options={{ presentation: 'modal' }} />
+                <RootStack.Screen name="Help" component={HelpScreen} options={{ presentation: 'modal' }} />
               </>
             )}
           </RootStack.Navigator>

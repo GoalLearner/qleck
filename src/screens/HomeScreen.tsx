@@ -105,12 +105,60 @@ interface QtyControls {
   log: () => void;
 }
 
-function RepCard({ rep, onCheck, onUncheck, loggedValue, qty }: {
+/** −/value/+ and Log it. `stacked` lays it out full-width on its own row, which
+ *  is the only way it fits a phone card; the desktop keeps it inline. */
+function Stepper({ qty, stacked }: { qty: QtyControls; stacked: boolean }) {
+  const round = (
+    <>
+      <Pressable
+        onPress={qty.dec}
+        hitSlop={6}
+        style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outlineStrong, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: colors.ink }}>−</Text>
+      </Pressable>
+      <Text
+        style={{
+          minWidth: stacked ? 0 : 58, flex: stacked ? 1 : undefined, textAlign: 'center',
+          fontFamily: fonts.extrabold, fontSize: 15, color: colors.ink,
+        }}
+      >
+        {qty.value} {qty.unit}
+      </Text>
+      <Pressable
+        onPress={qty.inc}
+        hitSlop={6}
+        style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outlineStrong, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: colors.ink }}>+</Text>
+      </Pressable>
+    </>
+  );
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: stacked ? 1 : undefined }}>
+      {round}
+      <Pressable
+        onPress={qty.log}
+        style={{
+          height: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: colors.navy,
+          alignItems: 'center', justifyContent: 'center', marginLeft: 4,
+        }}
+      >
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 13.5, color: colors.creamText }}>Log it</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false }: {
   rep: DayRep;
   onCheck: () => void;
   onUncheck: () => void;
   loggedValue?: number | null;
   qty?: QtyControls;
+  /** Phone layout: the stepper gets its own row under the title. */
+  stacked?: boolean;
 }) {
   const chip = kindChip(rep);
   const scale = useRef(new Animated.Value(1)).current;
@@ -126,66 +174,53 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty }: {
   }, [rep.checked, scale]);
 
   const showStepper = !!qty && !rep.checked;
+  const stackStepper = showStepper && stacked;
+
+  const check = (
+    <Pressable onPress={rep.checked ? onUncheck : onCheck} hitSlop={6}>
+      <Animated.View
+        style={{
+          width: 46, height: 46, borderRadius: 23,
+          backgroundColor: rep.checked ? colors.success : 'transparent',
+          borderWidth: 2, borderColor: rep.checked ? colors.success : colors.outline,
+          alignItems: 'center', justifyContent: 'center',
+          transform: [{ scale }],
+        }}
+      >
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 20, color: rep.checked ? colors.creamText : 'transparent' }}>✓</Text>
+      </Animated.View>
+    </Pressable>
+  );
 
   return (
     <View
       style={{
-        flexDirection: 'row', alignItems: 'center', gap: 14,
         backgroundColor: rep.checked ? colors.doneBg : colors.card,
         borderWidth: 1, borderColor: rep.checked ? colors.doneBorder : colors.border,
         borderRadius: 26, padding: rep.checked ? 14 : 18,
       }}
     >
-      <View style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: chip.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: chip.fg }}>{chip.glyph}</Text>
-      </View>
-      <View style={{ flex: 1, minWidth: 0, opacity: rep.checked ? 0.55 : 1 }}>
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, lineHeight: 19.5, color: colors.ink }}>{rep.step.title}</Text>
-        <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: chip.fg, marginTop: 2 }}>{repMetric(rep, loggedValue)}</Text>
-        {!rep.checked && !!rep.step.details && (
-          <Text numberOfLines={2} style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 4 }}>
-            {rep.step.details}
-          </Text>
-        )}
-      </View>
-      {showStepper ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pressable
-            onPress={qty!.dec}
-            style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outlineStrong, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: colors.ink }}>−</Text>
-          </Pressable>
-          <Text style={{ minWidth: 58, textAlign: 'center', fontFamily: fonts.extrabold, fontSize: 15, color: colors.ink }}>
-            {qty!.value} {qty!.unit}
-          </Text>
-          <Pressable
-            onPress={qty!.inc}
-            style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outlineStrong, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: colors.ink }}>+</Text>
-          </Pressable>
-          <Pressable
-            onPress={qty!.log}
-            style={{ height: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center', marginLeft: 4 }}
-          >
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 13.5, color: colors.creamText }}>Log it</Text>
-          </Pressable>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        <View style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: chip.bg, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: chip.fg }}>{chip.glyph}</Text>
         </View>
-      ) : (
-        <Pressable onPress={rep.checked ? onUncheck : onCheck} hitSlop={6}>
-          <Animated.View
-            style={{
-              width: 46, height: 46, borderRadius: 23,
-              backgroundColor: rep.checked ? colors.success : 'transparent',
-              borderWidth: 2, borderColor: rep.checked ? colors.success : colors.outline,
-              alignItems: 'center', justifyContent: 'center',
-              transform: [{ scale }],
-            }}
-          >
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 20, color: rep.checked ? colors.creamText : 'transparent' }}>✓</Text>
-          </Animated.View>
-        </Pressable>
+        <View style={{ flex: 1, minWidth: 0, opacity: rep.checked ? 0.55 : 1 }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, lineHeight: 19.5, color: colors.ink }}>{rep.step.title}</Text>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: chip.fg, marginTop: 2 }}>{repMetric(rep, loggedValue)}</Text>
+          {!rep.checked && !!rep.step.details && (
+            <Text numberOfLines={2} style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 4 }}>
+              {rep.step.details}
+            </Text>
+          )}
+        </View>
+        {showStepper
+          ? (stacked ? null : <Stepper qty={qty!} stacked={false} />)
+          : check}
+      </View>
+      {stackStepper && (
+        <View style={{ flexDirection: 'row', marginTop: 14 }}>
+          <Stepper qty={qty!} stacked />
+        </View>
       )}
     </View>
   );
@@ -392,6 +427,31 @@ function GroupHeader({ g, open, onToggle, headerRef }: {
   );
 }
 
+/**
+ * Per-rep stepper state, shared by both layouts. The value seeds from the
+ * step's own target, so "just do what the plan says" is one tap on Log it and
+ * the honest number is a few taps either side of it.
+ */
+function useQtyControls(checkInStep: (goalId: string, stepId: string, value?: number | null) => void) {
+  const [vals, setVals] = useState<Record<string, number>>({});
+  return (g: GoalToday, rep: DayRep): QtyControls | undefined => {
+    const q = rep.step.quantity;
+    if (rep.step.kind !== 'quantity' || !q) return undefined;
+    const stepSize = q.amount >= 20 ? 5 : 1;
+    const key = `${g.goal.id}:${rep.step.id}`;
+    const value = vals[key] ?? q.amount;
+    const set = (v: number) => setVals(prev => ({ ...prev, [key]: v }));
+    return {
+      value, unit: q.unit,
+      inc: () => set(Math.min(999, value + stepSize)),
+      // A cap step ("at most 10 cigarettes") can legitimately be zero — that's
+      // the win — so the floor is 0, not the step size.
+      dec: () => set(Math.max(0, value - stepSize)),
+      log: () => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, value); },
+    };
+  };
+}
+
 /* ── the phone loop (canvas §1, grouped when goals run concurrently) ────── */
 
 function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
@@ -407,6 +467,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
   const nextMilestone = milestoneOwner ? nextMilestoneOf(milestoneOwner) : null;
   useCelebrateOnDone(m.allDone, celebrate);
   useGoalCelebrations(m, headerRefs, miniBurst);
+  const qtyFor = useQtyControls(checkInStep);
 
   return (
     <>
@@ -446,8 +507,10 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
                   <RepCard
                     key={rep.step.id}
                     rep={rep}
+                    stacked
+                    qty={qtyFor(g, rep)}
                     loggedValue={loggedValueFor(byGoal[g.goal.id] ?? [], rep.step.id, m.today)}
-                    onCheck={() => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : rep.step.kind === 'quantity' ? rep.step.quantity?.amount ?? null : null); }}
+                    onCheck={() => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : null); }}
                     onUncheck={() => uncheckStep(g.goal.id, rep.step.id)}
                   />
                 ))}
@@ -536,7 +599,6 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
   const navigation = useNavigation<any>();
   const m = useTodayModel(goals, byGoal);
   const fold = useGroupFolding();
-  const [qtyVals, setQtyVals] = useState<Record<string, number>>({});
   const headerRefs = useRef<Record<string, View | null>>({});
   useCelebrateOnDone(m.allDone, celebrate);
   useGoalCelebrations(m, headerRefs, miniBurst);
@@ -547,20 +609,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
     .slice(0, 3);
   const nudge = nudgeLine(m.done, m.total);
 
-  const qtyFor = (g: GoalToday, rep: DayRep): QtyControls | undefined => {
-    const q = rep.step.quantity;
-    if (rep.step.kind !== 'quantity' || !q) return undefined;
-    const stepSize = q.amount >= 20 ? 5 : 1;
-    const key = `${g.goal.id}:${rep.step.id}`;
-    const value = qtyVals[key] ?? q.amount;
-    const set = (v: number) => setQtyVals(prev => ({ ...prev, [key]: v }));
-    return {
-      value, unit: q.unit,
-      inc: () => set(Math.min(999, value + stepSize)),
-      dec: () => set(Math.max(stepSize === 5 ? 5 : 0, value - stepSize)),
-      log: () => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, value); },
-    };
-  };
+  const qtyFor = useQtyControls(checkInStep);
 
   return (
     <View style={{ width: '100%', maxWidth: 1060, alignSelf: 'center' }}>

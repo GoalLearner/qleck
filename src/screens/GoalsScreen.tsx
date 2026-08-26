@@ -10,6 +10,7 @@
 // now it answers honestly with a toast.
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useAppearance } from '../state/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
@@ -41,9 +42,41 @@ function freqChip(step: ProtocolStep): string {
 
 /* ── the week track: one cell per plan week ─────────────────────────────── */
 
+/**
+ * Plan progress. One cell per week reads beautifully for a 4-week plan and
+ * breaks completely for a 52-week one: 52 cells plus their gaps need ~300px
+ * and the shelf gives it 90, so the row ran off the card. Past ~14 weeks the
+ * cells would be sub-pixel anyway, so long plans get a continuous bar instead
+ * — same information, honest at any length.
+ */
+const MAX_CELLS = 14;
+
 function WeekTrack({ weeks, week, filled, done = false }: {
   weeks: number; week: number; filled: boolean; done?: boolean;
 }) {
+  const height = filled ? 5 : 6;
+
+  if (weeks > MAX_CELLS) {
+    const frac = done ? 1 : Math.min(1, Math.max(0, (week - 1) / weeks));
+    return (
+      <View
+        style={{
+          flex: 1, height, borderRadius: 3, overflow: 'hidden',
+          backgroundColor: filled ? colors.borderStrong : 'transparent',
+          borderWidth: filled ? 0 : 1, borderColor: colors.outline,
+        }}
+      >
+        <View
+          style={{
+            width: `${Math.max(frac * 100, done ? 100 : 2)}%`,
+            height, borderRadius: 3,
+            backgroundColor: done ? colors.success : colors.ink,
+          }}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, flexDirection: 'row', gap: filled ? 4 : 5 }}>
       {Array.from({ length: weeks }, (_, i) => {
@@ -55,7 +88,7 @@ function WeekTrack({ weeks, week, filled, done = false }: {
           <View
             key={i}
             style={{
-              flex: 1, height: filled ? 5 : 6, borderRadius: 3, borderWidth: 1,
+              flex: 1, minWidth: 0, height, borderRadius: 3, borderWidth: 1,
               backgroundColor: past ? colors.success : filled && now ? colors.ink : 'transparent',
               borderColor: past
                 ? colors.success
@@ -115,7 +148,7 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
           </Text>
         </View>
         <View style={{ flex: 1 }} />
-        <View style={{ width: 90 }}>
+        <View style={{ width: 90, flexDirection: 'row' }}>
           <WeekTrack weeks={m.goal.protocol.duration_weeks} week={m.week} filled />
         </View>
       </View>
@@ -282,6 +315,7 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
 /* ── the screen ─────────────────────────────────────────────────────────── */
 
 export default function GoalsScreen() {
+  useAppearance();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { goals, finishedGoals, checkInsByGoal, dropGoal } = useRally();
@@ -393,7 +427,7 @@ export default function GoalsScreen() {
                               {g.protocol.duration_weeks} weeks · {g.startedOn} to {planEndDate(g.startedOn, g.protocol.duration_weeks)}
                             </Text>
                           </View>
-                          <View style={{ width: 70 }}>
+                          <View style={{ width: 70, flexDirection: 'row' }}>
                             <WeekTrack weeks={g.protocol.duration_weeks} week={g.protocol.duration_weeks} filled done />
                           </View>
                         </View>

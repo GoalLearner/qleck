@@ -16,6 +16,7 @@
 // revise flow gets a client).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { useAppearance } from '../state/ThemeContext';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -783,6 +784,7 @@ function FinishedGoalCard({ goal, onOpen }: { goal: ActiveGoal; onOpen: () => vo
 }
 
 export default function HomeScreen() {
+  useAppearance();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const navigation = useNavigation<any>();

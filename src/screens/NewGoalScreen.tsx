@@ -5,6 +5,7 @@
 // living-protocol phase.
 import React from 'react';
 import { View } from 'react-native';
+import { useAppearance } from '../state/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import FirstGoalScreen from '../onboarding/screens/FirstGoalScreen';
@@ -12,6 +13,7 @@ import { night } from '../onboarding/theme';
 import { useRally } from '../state/RallyContext';
 
 export default function NewGoalScreen() {
+  useAppearance();
   const navigation = useNavigation<any>();
   const { setGoalPlan } = useRally();
 

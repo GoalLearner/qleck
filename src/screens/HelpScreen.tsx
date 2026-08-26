@@ -6,6 +6,7 @@
 // coach prompts follow.
 import React from 'react';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import { useAppearance } from '../state/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
@@ -42,6 +43,7 @@ function Body({ children }: { children: React.ReactNode }) {
 }
 
 export default function HelpScreen() {
+  useAppearance();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const version = Constants.expoConfig?.version ?? '1.0.0';

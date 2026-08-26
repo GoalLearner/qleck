@@ -11,6 +11,7 @@
 // is replaced by a real hand-off into the app (`onAuthenticated`).
 import React, { useEffect } from 'react';
 import { BackHandler, Platform, Text, View } from 'react-native';
+import { useAppearance } from '../state/ThemeContext';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { night, nightFonts } from './theme';
@@ -77,6 +78,7 @@ export default function OnboardingFlow({
   startScreen?: OnbScreen;
   demoHints?: boolean;
 }) {
+  useAppearance();
   const flow = useOnboardingFlow({ startScreen, onAuthenticated });
   const { screen, nav } = flow;
 

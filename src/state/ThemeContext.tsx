@@ -59,6 +59,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/**
+ * Subscribe a SCREEN to the appearance setting.
+ *
+ * Screens read the live `colors` / `night` objects during render, which only
+ * works if they actually re-render when the mode flips. React Navigation
+ * memoizes screens it has already mounted, so a background tab will happily
+ * keep its old palette forever — which is exactly how Today stayed cream after
+ * switching to dark. Every screen mounted inside a navigator must call this.
+ */
+export function useAppearance(): ThemeMode {
+  return useTheme().mode;
+}
+
 export function useTheme(): ThemeState {
   const v = useContext(Ctx);
   if (!v) throw new Error('useTheme must be used inside ThemeProvider');

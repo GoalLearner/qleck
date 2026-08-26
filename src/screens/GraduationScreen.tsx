@@ -9,6 +9,7 @@
 // outcome claim, matching the rule the coach prompts follow.
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { useAppearance } from '../state/ThemeContext';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Confetti, { type ConfettiHandle } from '../components/Confetti';
@@ -82,6 +83,7 @@ function ChoiceCard({ title, blurb, tone, onPress, busy, disabled }: {
 }
 
 export default function GraduationScreen() {
+  useAppearance();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();

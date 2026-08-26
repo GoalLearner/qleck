@@ -7,27 +7,27 @@
 // No AI call: the pool is ours, so each entry carries its own synonym net.
 // Keywords stay specific — a generic word like "habit" would match half the
 // protocol statements in the app and silently eat the whole row.
+import { night } from './theme';
 
-const BLUE = '#5BC4F5';
-const GREEN = '#2BE380';
-const VIOLET = '#B69CFF';
-
-const KIND = {
-  duration: { g: 'D', c: BLUE, bg: 'rgba(14,159,232,0.14)', bd: 'rgba(14,159,232,0.5)' },
-  quantity: { g: '#', c: VIOLET, bg: 'rgba(139,92,246,0.14)', bd: 'rgba(139,92,246,0.5)' },
-  binary: { g: '✓', c: GREEN, bg: 'rgba(43,227,128,0.12)', bd: 'rgba(43,227,128,0.5)' },
-} as const;
+export type SuggestionKind = 'duration' | 'quantity' | 'binary';
 
 export interface Suggestion {
   label: string;
   domain: string;
-  g: string; c: string; bg: string; bd: string;
+  kind: SuggestionKind;
 }
 
-type Kind = keyof typeof KIND;
+// Colors are resolved at RENDER time from the live Qoach palette, never stored
+// on the suggestion — a module-level color freezes to whichever appearance
+// happened to load first.
+export function suggestionLook(kind: SuggestionKind) {
+  if (kind === 'duration') return { g: 'D', c: night.blue, bg: night.accentSoft, bd: night.border };
+  if (kind === 'quantity') return { g: '#', c: night.violetText, bg: night.accentSoft, bd: night.border };
+  return { g: '✓', c: night.accentText, bg: night.accentTint, bd: night.accentBorder };
+}
 
-function sg(kind: Kind, label: string, domain: string): Suggestion {
-  return { label, domain, ...KIND[kind] };
+function sg(kind: SuggestionKind, label: string, domain: string): Suggestion {
+  return { label, domain, kind };
 }
 
 /** The row's size — the canvas shows six. */

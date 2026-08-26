@@ -13,11 +13,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
 import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, TextButton, Title } from '../ui';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
-import { suggestionsFor } from '../goalSuggestions';
+import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
 import type { Protocol, ProtocolStep } from '../../api/coachTypes';
 
-const BLUE = '#5BC4F5';
+
 const MONO = nightFonts.mono;
 
 // Canvas section 3 ("first-page glow-up"): goal chips carry a rep-kind glyph.
@@ -93,9 +93,9 @@ function GhostPrompt() {
 
 function BigCircle({ glyph, tint }: { glyph: string; tint: 'violet' | 'warn' | 'blue' }) {
   const colors = {
-    violet: { bg: 'rgba(139,92,246,0.12)', bd: 'rgba(139,92,246,0.45)', fg: night.violetText },
+    violet: { bg: night.accentSoft, bd: night.border, fg: night.violetText },
     warn: { bg: 'rgba(247,179,43,0.13)', bd: 'rgba(247,179,43,0.55)', fg: night.warn },
-    blue: { bg: 'rgba(14,159,232,0.12)', bd: 'rgba(14,159,232,0.5)', fg: BLUE },
+    blue: { bg: night.accentSoft, bd: night.border, fg: night.blue },
   }[tint];
   return (
     <View
@@ -112,9 +112,9 @@ function BigCircle({ glyph, tint }: { glyph: string; tint: 'violet' | 'warn' | '
 /* ── protocol rendering ─────────────────────────────────────────────────── */
 
 function kindStyle(kind: ProtocolStep['kind']) {
-  if (kind === 'duration') return { glyph: 'D', fg: BLUE, bg: 'rgba(14,159,232,0.14)', bd: 'rgba(14,159,232,0.5)', pill: 'rgba(14,159,232,0.1)' };
-  if (kind === 'quantity') return { glyph: '#', fg: night.violetText, bg: 'rgba(139,92,246,0.14)', bd: 'rgba(139,92,246,0.5)', pill: 'rgba(139,92,246,0.1)' };
-  return { glyph: '✓', fg: night.accent, bg: 'rgba(43,227,128,0.12)', bd: night.accentBorder, pill: 'rgba(43,227,128,0.1)' };
+  if (kind === 'duration') return { glyph: 'D', fg: night.blue, bg: night.accentSoft, bd: night.border, pill: night.accentSofter };
+  if (kind === 'quantity') return { glyph: '#', fg: night.violetText, bg: night.accentSoft, bd: night.border, pill: night.accentSofter };
+  return { glyph: '✓', fg: night.accent, bg: night.accentSoft, bd: night.accentBorder, pill: night.accentSofter };
 }
 
 function stepMetric(step: ProtocolStep): string {
@@ -151,7 +151,7 @@ function MilestoneRow({ week, title }: { week: number; title: string }) {
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 6 }}>
       <Text style={{ fontFamily: nightFonts.display, fontSize: 12, color: night.accent }}>⚑</Text>
       <MonoLabel text={`WEEK ${week} — ${title.toUpperCase()}`} color={night.textDim} style={{ fontSize: 10.5 }} />
-      <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+      <View style={{ flex: 1, height: 1, backgroundColor: night.hairline }} />
     </View>
   );
 }
@@ -171,7 +171,7 @@ function ProtocolBody({ protocol }: { protocol: Protocol }) {
             <View
               style={{
                 alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
-                backgroundColor: night.accentSoft, borderWidth: 1, borderColor: 'rgba(43,227,128,0.45)',
+                backgroundColor: night.accentSoft, borderWidth: 1, borderColor: night.accentBorder,
               }}
             >
               <MonoLabel text={`WEEKS ${phase.start_week}–${phase.end_week}`} color={night.accent} />
@@ -190,10 +190,10 @@ function ProtocolBody({ protocol }: { protocol: Protocol }) {
       ))}
 
       <LinearGradient
-        colors={['rgba(43,227,128,0.1)', 'rgba(14,159,232,0.08)']}
+        colors={[night.accentSofter, 'rgba(14,159,232,0.08)']}
         start={DIAGONAL.start}
         end={DIAGONAL.end}
-        style={{ borderRadius: 16, borderWidth: 1, borderColor: 'rgba(43,227,128,0.35)', paddingHorizontal: 16, paddingVertical: 14 }}
+        style={{ borderRadius: 16, borderWidth: 1, borderColor: night.accentFaint, paddingHorizontal: 16, paddingVertical: 14 }}
       >
         <MonoLabel text="QOACH'S NOTE" color={night.accent} style={{ marginBottom: 5 }} />
         <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 20, color: night.text, fontStyle: 'italic' }}>
@@ -281,7 +281,7 @@ function Dot({ delay }: { delay: number }) {
 
 const QOACH_BUBBLE = {
   backgroundColor: night.surface,
-  borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  borderWidth: 1, borderColor: night.hairline,
   borderTopLeftRadius: 4, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 18,
 } as const;
 
@@ -300,8 +300,8 @@ function UserBubble({ text }: { text: string }) {
   return (
     <View
       style={{
-        maxWidth: 520, backgroundColor: 'rgba(43,227,128,0.1)',
-        borderWidth: 1, borderColor: 'rgba(43,227,128,0.35)',
+        maxWidth: 520, backgroundColor: night.accentSofter,
+        borderWidth: 1, borderColor: night.accentFaint,
         borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 4,
         paddingHorizontal: 18, paddingVertical: 13,
       }}
@@ -327,7 +327,7 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
         style={{
           flexDirection: 'row', alignItems: 'center', gap: 9,
           paddingHorizontal: 24, paddingBottom: 14,
-          borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)',
+          borderBottomWidth: 1, borderBottomColor: night.hairline,
         }}
       >
         <QoachMark />
@@ -389,7 +389,7 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
                           onPress={() => send(option)}
                           style={({ pressed }) => ({
                             paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999,
-                            backgroundColor: pressed ? 'rgba(43,227,128,0.12)' : night.surfaceDeep,
+                            backgroundColor: pressed ? night.accentSoft : night.surfaceDeep,
                             borderWidth: 1, borderColor: pressed ? night.accent : 'rgba(43,227,128,0.4)',
                           })}
                         >
@@ -439,7 +439,7 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
             <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>
               Tap a suggestion to send it {'\u2014'} or type your own
             </Text>
-            <Text style={{ fontFamily: MONO, fontSize: 10.5, color: 'rgba(242,245,244,0.35)' }}>
+            <Text style={{ fontFamily: MONO, fontSize: 10.5, color: night.textGhost }}>
               your answers shape the plan
             </Text>
           </View>
@@ -494,7 +494,7 @@ export default function FirstGoalScreen({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
           <QoachMark />
           <Text style={{ fontFamily: nightFonts.display, fontSize: 19, color: night.text, letterSpacing: 0.2 }}>Qoach</Text>
-          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(139,92,246,0.5)' }}>
+          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1, borderColor: night.border }}>
             <MonoLabel text="AI COACH" color={night.violetText} style={{ letterSpacing: 1 }} />
           </View>
         </View>
@@ -551,7 +551,9 @@ export default function FirstGoalScreen({
             OR STEAL ONE
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 9 }}>
-            {suggestions.map(sg => (
+            {suggestions.map(sg => {
+              const look = suggestionLook(sg.kind);
+              return (
               <Pressable
                 key={sg.label}
                 onPress={() => setDraft(sg.label)}
@@ -559,24 +561,25 @@ export default function FirstGoalScreen({
                   flexDirection: 'row', alignItems: 'center', gap: 9,
                   paddingVertical: 9, paddingLeft: 9, paddingRight: 15, borderRadius: 999,
                   backgroundColor: pressed ? night.surface : night.surfaceDeep,
-                  borderWidth: 1, borderColor: pressed ? 'rgba(43,227,128,0.65)' : night.border,
+                  borderWidth: 1, borderColor: pressed ? night.accentBorderStrong : night.border,
                 })}
               >
                 <View
                   style={{
-                    width: 24, height: 24, borderRadius: 8, backgroundColor: sg.bg,
-                    borderWidth: 1, borderColor: sg.bd, alignItems: 'center', justifyContent: 'center',
+                    width: 24, height: 24, borderRadius: 8, backgroundColor: look.bg,
+                    borderWidth: 1, borderColor: look.bd, alignItems: 'center', justifyContent: 'center',
                   }}
                 >
-                  <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: sg.c }}>{sg.g}</Text>
+                  <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: look.c }}>{look.g}</Text>
                 </View>
                 <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13, color: night.text }}>{sg.label}</Text>
               </Pressable>
-            ))}
+              );
+            })}
           </View>
 
           <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'baseline', gap: 16, marginTop: 22 }}>
-            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: 'rgba(242,245,244,0.35)' }}>
+            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>
               Your goal is sent to our AI coach to build your plan.
             </Text>
             <Pressable onPress={onDismiss} hitSlop={8}>
@@ -626,7 +629,7 @@ export default function FirstGoalScreen({
           </View>
         </Pop>
         <Title style={{ fontSize: 25, lineHeight: 30, marginTop: 18, marginBottom: 14 }}>{v.goal_statement}</Title>
-        <Text style={{ fontFamily: nightFonts.body, fontSize: 14, lineHeight: 22.4, color: 'rgba(242,245,244,0.65)', marginBottom: 20 }}>
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 14, lineHeight: 22.4, color: night.textMuted, marginBottom: 20 }}>
           {v.assessment}
         </Text>
         <MonoLabel
@@ -675,7 +678,7 @@ export default function FirstGoalScreen({
         <View
           style={{
             marginTop: 18, borderRadius: 16, backgroundColor: night.surfaceDeep,
-            borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 16, paddingVertical: 14,
+            borderWidth: 1, borderColor: night.hairline, paddingHorizontal: 16, paddingVertical: 14,
           }}
         >
           <MonoLabel text="YOUR ASK" style={{ marginBottom: 5 }} />
@@ -688,7 +691,7 @@ export default function FirstGoalScreen({
             {v.original_request ?? coach.goalText}
           </Text>
         </View>
-        <Text style={{ textAlign: 'center', fontFamily: nightFonts.display, fontSize: 16, color: 'rgba(242,245,244,0.35)', marginVertical: 8 }}>↓</Text>
+        <Text style={{ textAlign: 'center', fontFamily: nightFonts.display, fontSize: 16, color: night.textGhost, marginVertical: 8 }}>↓</Text>
         <View
           style={{
             borderRadius: 16, backgroundColor: 'rgba(43,227,128,0.09)',
@@ -704,7 +707,7 @@ export default function FirstGoalScreen({
           </Text>
         </View>
 
-        <Text style={{ marginTop: 18, fontFamily: nightFonts.body, fontSize: 14, lineHeight: 22.4, color: 'rgba(242,245,244,0.65)' }}>
+        <Text style={{ marginTop: 18, fontFamily: nightFonts.body, fontSize: 14, lineHeight: 22.4, color: night.textMuted }}>
           "{v.assessment}"
         </Text>
         <Spacer />
@@ -726,7 +729,7 @@ export default function FirstGoalScreen({
           <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textDim }}>
             {coach.protocol.duration_weeks} weeks · {coach.protocol.phases.length} phases  ·
           </Text>
-          <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: BLUE }}>D</Text>
+          <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: night.blue }}>D</Text>
           <Text style={{ fontFamily: nightFonts.body, fontSize: 12, color: night.textGhost }}>duration</Text>
           <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: night.violetText }}>#</Text>
           <Text style={{ fontFamily: nightFonts.body, fontSize: 12, color: night.textGhost }}>quantity</Text>
@@ -757,7 +760,7 @@ export default function FirstGoalScreen({
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
           <BigCircle glyph="♥" tint="violet" />
           <Title style={{ fontSize: 26, lineHeight: 30, textAlign: 'center' }}>You matter more than any goal</Title>
-          <Text style={{ fontFamily: nightFonts.body, fontSize: 14, lineHeight: 22.4, color: 'rgba(242,245,244,0.65)', textAlign: 'center', maxWidth: 290 }}>
+          <Text style={{ fontFamily: nightFonts.body, fontSize: 14, lineHeight: 22.4, color: night.textMuted, textAlign: 'center', maxWidth: 290 }}>
             This is beyond what a coaching app should touch — and you deserve real support from real people. Reaching out is the strongest move there is.
           </Text>
           <View
@@ -766,7 +769,7 @@ export default function FirstGoalScreen({
               borderWidth: 1, borderColor: night.hairline, paddingHorizontal: 18, paddingVertical: 4,
             }}
           >
-            <View style={{ paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' }}>
+            <View style={{ paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: night.hairline }}>
               <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: night.text }}>988 — Suicide & Crisis Lifeline</Text>
               <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, color: night.textDim }}>Call or text, free, 24/7 (US)</Text>
             </View>
@@ -788,7 +791,7 @@ export default function FirstGoalScreen({
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18 }}>
           <BigCircle glyph="+" tint="violet" />
           <Title style={{ fontSize: 27, lineHeight: 31, textAlign: 'center' }}>This one needs a pro in your corner</Title>
-          <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 23.2, color: 'rgba(242,245,244,0.65)', textAlign: 'center', maxWidth: 290 }}>
+          <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 23.2, color: night.textMuted, textAlign: 'center', maxWidth: 290 }}>
             {coach.refusal.message}
           </Text>
         </View>

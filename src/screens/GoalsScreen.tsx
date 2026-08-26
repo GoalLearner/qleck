@@ -14,7 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import YouAvatar from '../components/YouAvatar';
-import { GOAL_DOTS, goalTitle, kindLook } from '../components/protocolViews';
+import { goalDot, goalTitle, kindLook } from '../components/protocolViews';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { phaseForWeek, repsForDate, weekOf } from '../lib/protocolTime';
@@ -22,8 +22,6 @@ import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
 
-const INK = colors.ink;
-const FADED = colors.sectionLabel;
 
 const COUNT_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five'];
 
@@ -54,13 +52,13 @@ function WeekTrack({ weeks, week, filled }: { weeks: number; week: number; fille
             key={i}
             style={{
               flex: 1, height: filled ? 5 : 6, borderRadius: 3, borderWidth: 1,
-              backgroundColor: past ? '#47694f' : filled && now ? INK : 'transparent',
+              backgroundColor: past ? colors.success : filled && now ? colors.ink : 'transparent',
               borderColor: past
-                ? '#47694f'
+                ? colors.success
                 : filled
-                  ? 'rgba(38,43,51,0.08)'
-                  : now ? INK : 'rgba(38,43,51,0.18)',
-              ...(filled && !past && !now ? { backgroundColor: 'rgba(38,43,51,0.08)' } : null),
+                  ? colors.borderStrong
+                  : now ? colors.ink : colors.outline,
+              ...(filled && !past && !now ? { backgroundColor: colors.borderStrong } : null),
             }}
           />
         );
@@ -93,21 +91,21 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
           color key (owner call 2026-08-25 — the caps name was redundant) */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.dot, marginTop: 8 }} />
-        <Text style={{ flex: 1, fontFamily: fonts.serif, fontSize: 17, lineHeight: 23.8, color: INK }}>
+        <Text style={{ flex: 1, fontFamily: fonts.serif, fontSize: 17, lineHeight: 23.8, color: colors.ink }}>
           {goalTitle(m.goal.statement, m.goal.protocol)}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.2, color: FADED }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.2, color: colors.sectionLabel }}>
             WEEK {m.week} OF {m.goal.protocol.duration_weeks}
           </Text>
-          <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: FADED }}>›</Text>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.sectionLabel }}>›</Text>
         </View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 }}>
-        <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: '#dcecdf' }}>
-          <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: '#47694f' }}>Now: {m.phase.title}</Text>
+        <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.successBg }}>
+          <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.success }}>Now: {m.phase.title}</Text>
         </View>
-        <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(38,43,51,0.05)' }}>
+        <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.chipBg }}>
           <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.muted }}>
             {m.repsToday} {m.repsToday === 1 ? 'rep' : 'reps'} today
           </Text>
@@ -126,19 +124,19 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
 function RepRow({ step }: { step: ProtocolStep }) {
   const look = kindLook(step.kind);
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 11, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: 'rgba(38,43,51,0.05)' }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 11, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: colors.chipBg }}>
       <View style={{ width: 28, height: 28, borderRadius: 10, backgroundColor: look.bg, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: look.fg }}>{look.glyph}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 14, lineHeight: 18.2, color: INK }}>{step.title}</Text>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 14, lineHeight: 18.2, color: colors.ink }}>{step.title}</Text>
         {!!step.details && (
           <Text style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 3 }}>
             {step.details}
           </Text>
         )}
       </View>
-      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(38,43,51,0.05)', marginTop: 4 }}>
+      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.chipBg, marginTop: 4 }}>
         <Text style={{ fontFamily: fonts.bold, fontSize: 10.5, color: colors.muted }}>{freqChip(step)}</Text>
       </View>
     </View>
@@ -155,25 +153,25 @@ function PhaseCard({ goal, phase, now, open, onToggle }: {
     <View
       style={{
         backgroundColor: colors.card, borderWidth: 1, borderRadius: 26, overflow: 'hidden',
-        borderColor: now ? 'rgba(71,105,79,0.35)' : colors.border,
+        borderColor: now ? colors.successBorder : colors.border,
       }}
     >
       <Pressable onPress={onToggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16, paddingHorizontal: 20 }}>
-        <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: now ? '#dcecdf' : 'rgba(38,43,51,0.05)' }}>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1, color: now ? '#47694f' : FADED }}>{wkLabel(phase)}</Text>
+        <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: now ? colors.successBg : colors.chipBg }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1, color: now ? colors.success : colors.sectionLabel }}>{wkLabel(phase)}</Text>
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontFamily: fonts.serif, fontSize: 16.5, lineHeight: 20.6, color: now ? INK : 'rgba(38,43,51,0.75)' }}>{phase.title}</Text>
-          <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: FADED, marginTop: 2 }}>{phase.focus}</Text>
+          <Text style={{ fontFamily: fonts.serif, fontSize: 16.5, lineHeight: 20.6, color: now ? colors.ink : colors.inkSoft }}>{phase.title}</Text>
+          <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.sectionLabel, marginTop: 2 }}>{phase.focus}</Text>
         </View>
         {now ? (
-          <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dcecdf' }}>
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1, color: '#47694f' }}>NOW</Text>
+          <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.successBg }}>
+            <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1, color: colors.success }}>NOW</Text>
           </View>
         ) : (
-          <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: FADED }}>{phase.steps.length} reps</Text>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.sectionLabel }}>{phase.steps.length} reps</Text>
         )}
-        <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: FADED, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
+        <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.sectionLabel, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
       </Pressable>
       {open && phase.steps.map(step => <RepRow key={step.id} step={step} />)}
       {open && milestones.map(mi => (
@@ -187,7 +185,7 @@ function PhaseCard({ goal, phase, now, open, onToggle }: {
           }}
         >
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: colors.inviteAccent }}>⚑</Text>
-          <Text style={{ flexShrink: 1, fontFamily: fonts.serif, fontSize: 14, lineHeight: 18.2, color: INK }}>{mi.title}</Text>
+          <Text style={{ flexShrink: 1, fontFamily: fonts.serif, fontSize: 14, lineHeight: 18.2, color: colors.ink }}>{mi.title}</Text>
           <View style={{ flex: 1 }} />
           <Text style={{ fontFamily: fonts.semibold, fontSize: 11, color: colors.inviteAccent }}>week {mi.week}</Text>
         </View>
@@ -209,7 +207,7 @@ function DropGoalButton({ onDrop }: { onDrop: () => void }) {
       style={{
         alignSelf: 'center', marginTop: 22, paddingVertical: 9, paddingHorizontal: 20,
         borderRadius: 999, borderWidth: 1.5,
-        borderColor: armed ? colors.danger : 'rgba(160,90,90,0.35)',
+        borderColor: armed ? colors.danger : colors.dangerBorder,
       }}
     >
       <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.danger }}>
@@ -237,7 +235,7 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
             {goalTitle(m.goal.statement, m.goal.protocol)}
           </Text>
         </View>
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: 'rgba(242,239,231,0.55)', marginTop: 10 }}>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.onNavySoft, marginTop: 10 }}>
           {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
         </Text>
       </View>
@@ -263,13 +261,13 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
       </View>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', marginTop: 14, paddingHorizontal: 4 }}>
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: FADED }}>Plan feels off? </Text>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: colors.sectionLabel }}>Plan feels off? </Text>
         <Pressable onPress={onTweak}>
           <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: colors.accentLink, textDecorationLine: 'underline' }}>
             Tweak it with Qoach
           </Text>
         </Pressable>
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: FADED }}> — nothing here is sacred.</Text>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: colors.sectionLabel }}> — nothing here is sacred.</Text>
       </View>
 
       <DropGoalButton onDrop={onDrop} />
@@ -300,7 +298,7 @@ export default function GoalsScreen() {
     const phase = phaseForWeek(goal.protocol, week);
     return {
       goal, week, phase,
-      dot: GOAL_DOTS[i % GOAL_DOTS.length],
+      dot: goalDot(i),
       nowIdx: Math.max(0, goal.protocol.phases.findIndex(p => p.id === phase.id)),
       repsToday: repsForDate(goal.protocol, goal.startedOn, today, checkInsByGoal[goal.id] ?? []).length,
     };
@@ -328,7 +326,7 @@ export default function GoalsScreen() {
             <FadeInUp>
               <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: fonts.serif, fontSize: 30, lineHeight: 34.5, color: INK }}>Your systems</Text>
+                  <Text style={{ fontFamily: fonts.serif, fontSize: 30, lineHeight: 34.5, color: colors.ink }}>Your systems</Text>
                   <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 6 }}>
                     {goals.length === 0 ? 'Nothing on the clock yet' : `${liveCount} live · built with Qoach`}
                   </Text>
@@ -344,7 +342,7 @@ export default function GoalsScreen() {
                     <Text style={{ fontFamily: fonts.serif, fontSize: 20, lineHeight: 26, color: colors.creamText }}>
                       No goal locked yet.
                     </Text>
-                    <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: 'rgba(245,242,234,0.65)', marginTop: 8 }}>
+                    <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 20, color: colors.onNavyMuted, marginTop: 8 }}>
                       Tap + and tell Qoach what you want to pull off — it turns any realistic goal
                       into a week-by-week protocol you can hold yourself to.
                     </Text>
@@ -356,7 +354,7 @@ export default function GoalsScreen() {
                 <Pressable
                   onPress={() => navigation.navigate('NewGoal')}
                   style={{
-                    borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(38,43,51,0.18)',
+                    borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.outline,
                     borderRadius: 26, padding: 16, alignItems: 'center',
                   }}
                 >

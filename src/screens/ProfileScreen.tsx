@@ -10,9 +10,55 @@ import SectionLabel from '../components/SectionLabel';
 import YouAvatar from '../components/YouAvatar';
 import { goalTitle } from '../components/protocolViews';
 import { useRally } from '../state/RallyContext';
+import { useTheme, type ThemePref } from '../state/ThemeContext';
 import { colors, fonts, radii } from '../theme';
 
 const SETTINGS = ['Notifications', 'Help & feedback'];
+
+const APPEARANCE: { key: ThemePref; label: string }[] = [
+  { key: 'light', label: 'Light' },
+  { key: 'dark', label: 'Dark' },
+  { key: 'system', label: 'System' },
+];
+
+// One switch for the whole product: the tabs and the Qoach surfaces always
+// share a mode, so moving between them never changes the lighting.
+function AppearanceRow() {
+  const { pref, setPref } = useTheme();
+  return (
+    <View style={{ paddingVertical: 14, paddingHorizontal: 16 }}>
+      <Text style={{ fontSize: 14, fontFamily: fonts.semibold, color: colors.ink, marginBottom: 10 }}>
+        Appearance
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {APPEARANCE.map(opt => {
+          const on = pref === opt.key;
+          return (
+            <Pressable
+              key={opt.key}
+              onPress={() => setPref(opt.key)}
+              style={{
+                flex: 1, height: 40, borderRadius: radii.pill,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: on ? colors.ink : 'transparent',
+                borderWidth: 1.5, borderColor: on ? colors.ink : colors.inputBorder,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 13, fontFamily: fonts.bold,
+                  color: on ? colors.bg : colors.muted,
+                }}
+              >
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
@@ -20,7 +66,7 @@ function Card({ children }: { children: React.ReactNode }) {
       style={{
         marginHorizontal: 14, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
         borderRadius: radii.card, overflow: 'hidden',
-        shadowColor: '#232a38', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
+        shadowColor: colors.shadow, shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
       }}
     >
       {children}
@@ -79,6 +125,8 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
 
         <SectionLabel>SETTINGS</SectionLabel>
         <Card>
+          <AppearanceRow />
+          <View style={{ height: 1, backgroundColor: colors.hairline }} />
           {SETTINGS.map((label, i) => (
             <View
               key={label}
@@ -97,7 +145,7 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
           onPress={onLogout}
           style={{
             marginTop: 22, marginHorizontal: 14, height: 52, borderRadius: radii.pill,
-            borderWidth: 1.5, borderColor: 'rgba(160,90,90,0.35)',
+            borderWidth: 1.5, borderColor: colors.dangerBorder,
             alignItems: 'center', justifyContent: 'center',
           }}
         >

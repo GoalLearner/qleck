@@ -1,14 +1,15 @@
-// Cream-palette renderers for the Qoach protocol, shared by the Today and
-// Goals tabs. (The Qoach *conversation* stays Electric Night — the coach is
-// its own sub-brand; once a plan is locked it lives in the app's cream world.)
+// Renderers for a locked Qoach protocol, shared by the Today and Goals tabs.
+// Everything reads live palette tokens so the appearance switch reaches them
+// (see src/state/ThemeContext.tsx) — never capture a color in a module const.
 import React from 'react';
 import { Text, View } from 'react-native';
 import type { Protocol, ProtocolStep } from '../api/coachTypes';
-import { CATS, colors, fonts, radii } from '../theme';
+import { colors, fonts, radii } from '../theme';
 
 // One dot color per goal, by position — Today's groups and the Goals shelf
-// must agree on which goal is which color.
-export const GOAL_DOTS = ['#47694f', '#4d5680', '#8a5f38', '#4f8fc9', '#c96f5f'];
+// must agree on which goal is which color. Lives on the palette so each mode
+// gets dots that read against its own background.
+export const goalDot = (i: number): string => colors.goalDots[i % colors.goalDots.length];
 
 /**
  * The goal as a title: goal + measurable target + duration, nothing else.
@@ -51,8 +52,8 @@ export function deriveGoalTitle(statement: string): string {
 
 export function kindLook(kind: ProtocolStep['kind']) {
   if (kind === 'duration') return { glyph: 'D', bg: colors.openBg, fg: colors.accentLink };
-  if (kind === 'quantity') return { glyph: '#', bg: CATS.lav.bg, fg: CATS.lav.fg };
-  return { glyph: '✓', bg: CATS.mint.bg, fg: CATS.mint.fg };
+  if (kind === 'quantity') return { glyph: '#', bg: colors.quantityBg, fg: colors.quantityFg };
+  return { glyph: '✓', bg: colors.successBg, fg: colors.successFg };
 }
 
 export function stepMetric(step: ProtocolStep): string {
@@ -95,13 +96,13 @@ export function StepRow({ step, last, showDetails = true }: { step: ProtocolStep
 export function GoalHero({ protocol }: { protocol: Protocol }) {
   return (
     <View style={{ marginTop: 16, marginHorizontal: 14, backgroundColor: colors.navy, borderRadius: 28, padding: 20 }}>
-      <Text style={{ fontSize: 10.5, fontFamily: fonts.extrabold, letterSpacing: 1.4, color: 'rgba(245,242,234,0.5)' }}>
+      <Text style={{ fontSize: 10.5, fontFamily: fonts.extrabold, letterSpacing: 1.4, color: colors.onNavySoft }}>
         YOUR GOAL
       </Text>
       <Text style={{ fontFamily: fonts.serif, fontSize: 21, lineHeight: 27, color: colors.creamText, marginTop: 8 }}>
         {protocol.goal_statement}
       </Text>
-      <Text style={{ fontSize: 12.5, fontFamily: fonts.semibold, color: 'rgba(245,242,234,0.65)', marginTop: 10 }}>
+      <Text style={{ fontSize: 12.5, fontFamily: fonts.semibold, color: colors.onNavyMuted, marginTop: 10 }}>
         {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
       </Text>
     </View>
@@ -114,7 +115,7 @@ export function CreamCard({ children }: { children: React.ReactNode }) {
       style={{
         marginHorizontal: 14, backgroundColor: colors.card, borderRadius: radii.card,
         borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 4,
-        shadowColor: '#232a38', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
+        shadowColor: colors.shadow, shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
       }}
     >
       {children}

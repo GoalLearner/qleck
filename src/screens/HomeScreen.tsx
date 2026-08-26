@@ -21,7 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Confetti, { type ConfettiHandle } from '../components/Confetti';
 import FadeInUp from '../components/FadeInUp';
-import { GOAL_DOTS, goalTitle } from '../components/protocolViews';
+import { goalDot, goalTitle } from '../components/protocolViews';
 import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
 import type { ProtocolPhase } from '../api/coachTypes';
@@ -35,9 +35,6 @@ import {
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
 
-const INK = colors.ink;
-const FADED = colors.sectionLabel;
-const GREEN = '#47694f';
 
 function greeting(restDay: boolean, name: string): string {
   if (restDay) return `Easy, ${name}.`;
@@ -50,11 +47,11 @@ function greeting(restDay: boolean, name: string): string {
 
 function dotStyle(kind: WeekDay['kind']) {
   switch (kind) {
-    case 'done': return { backgroundColor: GREEN, borderColor: GREEN };
-    case 'today': return { backgroundColor: 'transparent', borderColor: INK };
-    case 'missed': return { backgroundColor: 'transparent', borderColor: '#c96f5f' };
-    case 'rest': return { backgroundColor: 'rgba(38,43,51,0.12)', borderColor: 'transparent' };
-    default: return { backgroundColor: 'transparent', borderColor: 'rgba(38,43,51,0.22)' };
+    case 'done': return { backgroundColor: colors.success, borderColor: colors.success };
+    case 'today': return { backgroundColor: 'transparent', borderColor: colors.ink };
+    case 'missed': return { backgroundColor: 'transparent', borderColor: colors.missed };
+    case 'rest': return { backgroundColor: colors.trackIdle, borderColor: 'transparent' };
+    default: return { backgroundColor: 'transparent', borderColor: colors.dotUpcoming };
   }
 }
 
@@ -63,7 +60,7 @@ function WeekDots({ days }: { days: WeekDay[] }) {
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2 }}>
       {days.map(d => (
         <View key={d.date} style={{ alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, color: d.isToday ? INK : FADED }}>{d.letter}</Text>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, color: d.isToday ? colors.ink : colors.sectionLabel }}>{d.letter}</Text>
           <View style={[{ width: 10, height: 10, borderRadius: 5, borderWidth: 2 }, dotStyle(d.kind)]} />
         </View>
       ))}
@@ -84,8 +81,8 @@ function WeekStrip({ days }: { days: WeekDay[] }) {
 function kindChip(rep: DayRep) {
   const k = rep.step.kind;
   if (k === 'duration') return { glyph: 'D', bg: colors.openBg, fg: colors.accentLink };
-  if (k === 'quantity') return { glyph: '#', bg: '#e4e6f4', fg: '#4d5680' };
-  return { glyph: '✓', bg: '#dcecdf', fg: GREEN };
+  if (k === 'quantity') return { glyph: '#', bg: colors.quantityBg, fg: colors.quantityFg };
+  return { glyph: '✓', bg: colors.successBg, fg: colors.successFg };
 }
 
 function repMetric(rep: DayRep, loggedValue?: number | null): string {
@@ -134,8 +131,8 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty }: {
     <View
       style={{
         flexDirection: 'row', alignItems: 'center', gap: 14,
-        backgroundColor: rep.checked ? '#eef4ec' : colors.card,
-        borderWidth: 1, borderColor: rep.checked ? '#dcecdf' : colors.border,
+        backgroundColor: rep.checked ? colors.doneBg : colors.card,
+        borderWidth: 1, borderColor: rep.checked ? colors.doneBorder : colors.border,
         borderRadius: 26, padding: rep.checked ? 14 : 18,
       }}
     >
@@ -143,7 +140,7 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty }: {
         <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: chip.fg }}>{chip.glyph}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0, opacity: rep.checked ? 0.55 : 1 }}>
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, lineHeight: 19.5, color: INK }}>{rep.step.title}</Text>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, lineHeight: 19.5, color: colors.ink }}>{rep.step.title}</Text>
         <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: chip.fg, marginTop: 2 }}>{repMetric(rep, loggedValue)}</Text>
         {!rep.checked && !!rep.step.details && (
           <Text numberOfLines={2} style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 4 }}>
@@ -155,18 +152,18 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty }: {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Pressable
             onPress={qty!.dec}
-            style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: 'rgba(38,43,51,0.15)', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outlineStrong, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: INK }}>−</Text>
+            <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: colors.ink }}>−</Text>
           </Pressable>
-          <Text style={{ minWidth: 58, textAlign: 'center', fontFamily: fonts.extrabold, fontSize: 15, color: INK }}>
+          <Text style={{ minWidth: 58, textAlign: 'center', fontFamily: fonts.extrabold, fontSize: 15, color: colors.ink }}>
             {qty!.value} {qty!.unit}
           </Text>
           <Pressable
             onPress={qty!.inc}
-            style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: 'rgba(38,43,51,0.15)', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outlineStrong, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: INK }}>+</Text>
+            <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: colors.ink }}>+</Text>
           </Pressable>
           <Pressable
             onPress={qty!.log}
@@ -180,8 +177,8 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty }: {
           <Animated.View
             style={{
               width: 46, height: 46, borderRadius: 23,
-              backgroundColor: rep.checked ? GREEN : 'transparent',
-              borderWidth: 2, borderColor: rep.checked ? GREEN : 'rgba(38,43,51,0.18)',
+              backgroundColor: rep.checked ? colors.success : 'transparent',
+              borderWidth: 2, borderColor: rep.checked ? colors.success : colors.outline,
               alignItems: 'center', justifyContent: 'center',
               transform: [{ scale }],
             }}
@@ -204,15 +201,15 @@ function DayDone({ streak, preview, onEncore }: { streak: number; preview: strin
     <Pressable
       onPress={onEncore}
       style={{
-        alignItems: 'center', gap: 12, backgroundColor: '#eef4ec',
-        borderWidth: 1, borderColor: '#dcecdf', borderRadius: 26,
+        alignItems: 'center', gap: 12, backgroundColor: colors.doneBg,
+        borderWidth: 1, borderColor: colors.doneBorder, borderRadius: 26,
         paddingVertical: 22, paddingHorizontal: 18,
       }}
     >
-      <Text style={{ fontFamily: fonts.serif, fontSize: 27, color: INK }}>That's today.</Text>
+      <Text style={{ fontFamily: fonts.serif, fontSize: 27, color: colors.ink }}>That's today.</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: '#dcecdf' }}>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: GREEN }}>{streak}-day streak</Text>
+        <View style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.successBg }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: colors.success }}>{streak}-day streak</Text>
         </View>
         <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.borderStrong }}>
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: colors.muted }}>+1</Text>
@@ -223,7 +220,7 @@ function DayDone({ streak, preview, onEncore }: { streak: number; preview: strin
           {preview}
         </Text>
       )}
-      <Text style={{ fontFamily: fonts.semibold, fontSize: 11, color: FADED }}>confetti's free — tap for an encore</Text>
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 11, color: colors.sectionLabel }}>confetti's free — tap for an encore</Text>
     </Pressable>
   );
 }
@@ -271,10 +268,10 @@ function useGoalCelebrations(
 function RestDay({ preview }: { preview: string | null }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 30, paddingHorizontal: 24 }}>
-      <Text style={{ fontFamily: fonts.serif, fontSize: 30, color: INK }}>Nothing scheduled.</Text>
+      <Text style={{ fontFamily: fonts.serif, fontSize: 30, color: colors.ink }}>Nothing scheduled.</Text>
       <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: colors.muted }}>Rest is part of the plan.</Text>
       {preview && (
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 20, color: FADED, marginTop: 10, textAlign: 'center' }}>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 20, color: colors.sectionLabel, marginTop: 10, textAlign: 'center' }}>
           {preview}
         </Text>
       )}
@@ -288,7 +285,7 @@ function NoGoalYet() {
       <Text style={{ fontFamily: fonts.serif, fontSize: 26, lineHeight: 31, color: colors.creamText, textAlign: 'center', marginBottom: 8 }}>
         No goal locked yet.
       </Text>
-      <Text style={{ fontFamily: fonts.semibold, fontSize: 13.5, lineHeight: 21.6, color: 'rgba(242,239,231,0.7)', textAlign: 'center' }}>
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 13.5, lineHeight: 21.6, color: colors.onNavyMuted, textAlign: 'center' }}>
         Tap + and tell Qoach what you want to pull off.
       </Text>
     </View>
@@ -322,7 +319,7 @@ function useTodayModel(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
     const week = weekOf(g.startedOn, today, g.protocol.duration_weeks);
     const phase = phaseForWeek(g.protocol, week);
     const reps = repsForDate(g.protocol, g.startedOn, today, byGoal[g.id] ?? []);
-    return { goal: g, week, phase, reps, done: reps.filter(r => r.checked).length, dot: GOAL_DOTS[i % GOAL_DOTS.length] };
+    return { goal: g, week, phase, reps, done: reps.filter(r => r.checked).length, dot: goalDot(i) };
   });
   const total = perGoal.reduce((n, g) => n + g.reps.length, 0);
   const done = perGoal.reduce((n, g) => n + g.done, 0);
@@ -368,12 +365,12 @@ function GroupHeader({ g, open, onToggle, headerRef }: {
       style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingTop: 8 }}
     >
       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: g.dot }} />
-      <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: INK }}>
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 11.5, letterSpacing: 1.2, color: colors.ink }}>
         {goalTitle(g.goal.statement, g.goal.protocol).toUpperCase()}
       </Text>
       <View style={{ flex: 1 }} />
       <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: g.dot }}>{g.done}/{g.reps.length}</Text>
-      <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: FADED, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.sectionLabel, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
     </Pressable>
   );
 }
@@ -413,8 +410,8 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
         ) : (
           <>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: FADED }}>TODAY'S REPS</Text>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: multi ? GREEN : FADED }}>
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel }}>TODAY'S REPS</Text>
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: multi ? colors.success : colors.sectionLabel }}>
                 {multi ? `${m.done} OF ${m.total} BANKED` : m.perGoal[0].phase.title.toUpperCase()}
               </Text>
             </View>
@@ -492,21 +489,21 @@ function ProgressRingCard({ done, total }: { done: number; total: number }) {
               react-native-svg's per-element rotation props don't map to
               valid DOM attributes on web */}
           <Svg width={84} height={84} viewBox="0 0 84 84" style={{ transform: [{ rotate: '-90deg' }] }}>
-            <Circle cx={42} cy={42} r={34} fill="none" stroke="rgba(38,43,51,0.08)" strokeWidth={8} />
+            <Circle cx={42} cy={42} r={34} fill="none" stroke={colors.ringTrack} strokeWidth={8} />
             <Circle
-              cx={42} cy={42} r={34} fill="none" stroke={GREEN} strokeWidth={8} strokeLinecap="round"
+              cx={42} cy={42} r={34} fill="none" stroke={colors.success} strokeWidth={8} strokeLinecap="round"
               strokeDasharray={`${RING_C}`} strokeDashoffset={RING_C * (1 - frac)}
             />
           </Svg>
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 16, color: INK }}>
+            <Text style={{ fontFamily: fonts.extrabold, fontSize: 16, color: colors.ink }}>
               {total > 0 ? `${done}/${total}` : '—'}
             </Text>
           </View>
         </View>
         <View>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: FADED }}>TODAY</Text>
-          <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: INK, marginTop: 3 }}>reps banked</Text>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel }}>TODAY</Text>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.ink, marginTop: 3 }}>reps banked</Text>
           <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.muted, marginTop: 2 }}>resets at midnight</Text>
         </View>
       </View>
@@ -553,7 +550,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
       {/* header */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 40 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: fonts.serif, fontSize: 34, lineHeight: 38, color: INK }}>
+          <Text style={{ fontFamily: fonts.serif, fontSize: 34, lineHeight: 38, color: colors.ink }}>
             {greeting(m.restDay && !m.allDone, profile.firstName)}
           </Text>
           <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 6 }}>
@@ -581,8 +578,8 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
           ) : (
             <>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: 4 }}>
-                <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: FADED }}>TODAY'S REPS</Text>
-                <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: GREEN }}>
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel }}>TODAY'S REPS</Text>
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.success }}>
                   {m.done} OF {m.total} BANKED
                 </Text>
               </View>
@@ -609,8 +606,8 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
               ))}
 
               {nudge && (
-                <Text style={{ paddingHorizontal: 4, paddingTop: 2, fontFamily: fonts.semibold, fontSize: 12.5, color: FADED }}>
-                  {nudge} <Text style={{ color: 'rgba(38,43,51,0.35)' }}>— Qoach</Text>
+                <Text style={{ paddingHorizontal: 4, paddingTop: 2, fontFamily: fonts.semibold, fontSize: 12.5, color: colors.sectionLabel }}>
+                  {nudge} <Text style={{ color: colors.inkFaint }}>— Qoach</Text>
                 </Text>
               )}
             </>
@@ -624,10 +621,10 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
           <SideCard>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
               <View style={{ minWidth: 44, alignItems: 'center' }}>
-                <Text style={{ fontFamily: fonts.serif, fontSize: 30, color: INK }}>{m.streak}</Text>
+                <Text style={{ fontFamily: fonts.serif, fontSize: 30, color: colors.ink }}>{m.streak}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: INK }}>day streak</Text>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.ink }}>day streak</Text>
                 <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, lineHeight: 16, color: colors.muted, marginTop: 2 }}>
                   {m.allDone ? 'banked today — see you tomorrow' : '+1 lands when today is banked'}
                 </Text>
@@ -636,7 +633,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
           </SideCard>
 
           <SideCard>
-            <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: FADED, marginBottom: 12 }}>THIS WEEK</Text>
+            <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel, marginBottom: 12 }}>THIS WEEK</Text>
             <WeekDots days={m.strip} />
             {m.perGoal.length === 1 && (
               <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.muted, marginTop: 12 }}>
@@ -654,7 +651,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
                   <View style={{ flexDirection: 'row', gap: 9, marginTop: i === 0 ? 12 : 0 }}>
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: g.dot, marginTop: 5 }} />
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: fonts.serif, fontSize: 14.5, lineHeight: 19, color: INK }}>{mi.title}</Text>
+                      <Text style={{ fontFamily: fonts.serif, fontSize: 14.5, lineHeight: 19, color: colors.ink }}>{mi.title}</Text>
                       <Text numberOfLines={2} style={{ fontFamily: fonts.semibold, fontSize: 11, lineHeight: 16.5, color: colors.inviteAccent, marginTop: 2 }}>
                         week {mi.week} — {mi.criteria}
                       </Text>
@@ -677,7 +674,7 @@ function Header({ title, sub }: { title: string; sub: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 24 }}>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontFamily: fonts.serif, fontSize: 30, lineHeight: 34.5, color: INK }}>{title}</Text>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 30, lineHeight: 34.5, color: colors.ink }}>{title}</Text>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 5 }}>{sub}</Text>
       </View>
       <Pressable onPress={() => navigation.navigate('You')}>

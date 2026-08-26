@@ -28,15 +28,18 @@ import ProfileScreen from './src/screens/ProfileScreen';
 // screens) are quarantined out of the shell per the owner's coach-first call
 // (2026-08-24); they return behind real backends per ROADMAP P6.
 import { RallyProvider, useRally } from './src/state/RallyContext';
+import { ThemeProvider, useTheme } from './src/state/ThemeContext';
 import { colors } from './src/theme';
 
 const Tab = createBottomTabNavigator();
 const RootStack = createNativeStackNavigator();
 
-const navTheme = {
+// Built per render: colors.bg changes with the appearance setting, so a
+// module-level constant would pin the navigator to whichever mode loaded first.
+const navThemeFor = () => ({
   ...DefaultTheme,
   colors: { ...DefaultTheme.colors, background: colors.bg },
-};
+});
 
 // Lives inside RallyProvider so the funnel's result can land in app state
 // before we flip to the tabs.
@@ -67,7 +70,8 @@ function Tabs({ onLogout }: { onLogout: () => void }) {
   );
 }
 
-export default function App() {
+function AppShell() {
+  const { mode } = useTheme();
   // null = still reading the stored session flag (interim until P3 sessions).
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   useEffect(() => {
@@ -89,14 +93,15 @@ export default function App() {
   });
 
   if (!fontsLoaded || loggedIn === null) {
-    return <View style={{ flex: 1, backgroundColor: '#0C0F14' }} />;
+    return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
   }
 
   return (
     <SafeAreaProvider>
       <RallyProvider>
-        <NavigationContainer theme={navTheme}>
-          <StatusBar style={loggedIn ? 'dark' : 'light'} />
+        <NavigationContainer theme={navThemeFor()}>
+          {/* one appearance for every surface — the coach and the tabs agree */}
+          <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
           <RootStack.Navigator screenOptions={{ headerShown: false }}>
             {!loggedIn ? (
               <RootStack.Screen name="Onboarding">
@@ -114,5 +119,15 @@ export default function App() {
         </NavigationContainer>
       </RallyProvider>
     </SafeAreaProvider>
+  );
+}
+
+export default function App() {
+  // ThemeProvider is outermost: it rewrites the live palettes before anything
+  // below it renders, so no surface ever paints a frame in the wrong mode.
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
   );
 }

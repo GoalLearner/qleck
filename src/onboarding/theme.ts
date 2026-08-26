@@ -1,12 +1,28 @@
-// "Electric Night" — onboarding design tokens, ported 1:1 from the Claude
-// Design canvas `Qleck Onboarding.dc.html` (project 7091d355).
+// Qoach surface tokens. "Electric Night" (dark) is ported 1:1 from the Claude
+// Design canvas `Qleck Onboarding.dc.html` (project 7091d355); the light twin
+// maps the same token names onto the Rally cream canvas.
 //
-// Deliberately separate from `src/theme.ts`: the in-app product uses the warm
-// cream Rally palette, the onboarding funnel uses this dark one. Keep the two
-// token sets apart so neither drifts into the other.
+// The coach used to be a permanent dark sub-brand while the app stayed cream.
+// That split is gone (owner call 2026-08-25): one appearance setting drives
+// BOTH, so the funnel and the tabs never disagree. Like `colors`, `night` is a
+// LIVE object — applyNight() rewrites it in place; never reassign it.
 import { Platform } from 'react-native';
+import type { ThemeMode } from '../theme';
 
-export const night = {
+export interface NightPalette {
+  bg: string; surface: string; surfaceDeep: string;
+  accent: string; accentInk: string; accentSoft: string; accentSofter: string;
+  accentTint: string; accentBorder: string; accentBorderStrong: string;
+  accentFaint: string; accentGlow: string; accentText: string;
+  text: string; textMuted: string; textSoft: string; textDim: string;
+  textFaint: string; textGhost: string;
+  hairline: string; border: string; borderMuted: string; borderStrong: string;
+  borderDashed: string;
+  danger: string; warn: string; violet: string; violetText: string; blue: string;
+  scrim: string;
+}
+
+export const NIGHT_DARK: NightPalette = {
   bg: '#0C0F14',
   surface: '#151B24',
   surfaceDeep: '#11161E',
@@ -42,7 +58,54 @@ export const night = {
   blue: '#0E9FE8',
 
   scrim: 'rgba(5,8,12,0.72)',
-} as const;
+};
+
+// Same tokens, cream room. The signature green stays the accent but drops to a
+// weight that can carry cream text and read as ink on a light card.
+export const NIGHT_LIGHT: NightPalette = {
+  bg: '#f5f2ea',
+  surface: '#fffefb',
+  surfaceDeep: '#efece1',
+
+  accent: '#2f8f5b',
+  accentInk: '#ffffff',
+  accentSoft: 'rgba(47,143,91,0.1)',
+  accentSofter: 'rgba(47,143,91,0.08)',
+  accentTint: 'rgba(47,143,91,0.12)',
+  accentBorder: 'rgba(47,143,91,0.45)',
+  accentBorderStrong: 'rgba(47,143,91,0.6)',
+  accentFaint: 'rgba(47,143,91,0.18)',
+  accentGlow: 'rgba(47,143,91,0.22)',
+  accentText: '#2b6b47',
+
+  text: '#262b33',
+  textMuted: 'rgba(38,43,51,0.62)',
+  textSoft: 'rgba(38,43,51,0.58)',
+  textDim: 'rgba(38,43,51,0.52)',
+  textFaint: 'rgba(38,43,51,0.46)',
+  textGhost: 'rgba(38,43,51,0.42)',
+
+  hairline: 'rgba(38,43,51,0.08)',
+  border: 'rgba(38,43,51,0.1)',
+  borderMuted: 'rgba(38,43,51,0.12)',
+  borderStrong: 'rgba(38,43,51,0.16)',
+  borderDashed: 'rgba(38,43,51,0.25)',
+
+  danger: '#a05a5a',
+  warn: '#8a5f38',
+  violet: '#6d4bc4',
+  violetText: '#5b4bb8',
+  blue: '#2f6fa8',
+
+  scrim: 'rgba(38,43,51,0.4)',
+};
+
+/** The live Qoach palette. Mutated by applyNight(); never reassign. */
+export const night: NightPalette = { ...NIGHT_DARK };
+
+export function applyNight(mode: ThemeMode): void {
+  Object.assign(night, mode === 'dark' ? NIGHT_DARK : NIGHT_LIGHT);
+}
 
 export const nightFonts = {
   // Space Grotesk 700 is the only display weight the canvas uses.

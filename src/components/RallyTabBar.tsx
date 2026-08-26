@@ -82,11 +82,11 @@ export default function RallyTabBar({ state, navigation }: BottomTabBarProps) {
       style={{
         position: 'absolute', left: 16, right: 16, bottom: Math.max(insets.bottom, 16),
         height: 66, borderRadius: radii.pill,
-        backgroundColor: 'rgba(255,254,251,0.94)',
+        backgroundColor: colors.tabBarBg,
         borderWidth: 1, borderColor: colors.borderStrong,
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
         paddingHorizontal: 10,
-        shadowColor: '#232a38', shadowOpacity: 0.14, shadowRadius: 32, shadowOffset: { width: 0, height: 12 },
+        shadowColor: colors.shadow, shadowOpacity: 0.14, shadowRadius: 32, shadowOffset: { width: 0, height: 12 },
         ...(Platform.OS === 'android' ? { elevation: 12 } : null),
       }}
     >
@@ -99,7 +99,7 @@ export default function RallyTabBar({ state, navigation }: BottomTabBarProps) {
         style={{
           width: 52, height: 52, borderRadius: 26, backgroundColor: colors.navy,
           alignItems: 'center', justifyContent: 'center', marginTop: -2,
-          shadowColor: '#212836', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
+          shadowColor: colors.navy, shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
           ...(Platform.OS === 'android' ? { elevation: 10 } : null),
         }}
       >

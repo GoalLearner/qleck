@@ -7,11 +7,21 @@ challenges, quick group polls, and cheering each other's achievements. Every
 yes lands on everyone's calendar. Built with **React Native + Expo (SDK 56),
 TypeScript**. Visual language comes from the Claude Design project
 `Rally App.dc.html` (design project ccc3325c-9294-492a-bb94-8aa35ee9d8be);
-new in-app screens follow its tokens (`src/theme.ts`). The **onboarding funnel
-is a deliberate exception**: it is ported from `Qleck Onboarding.dc.html`
-(design project 7091d355-0d06-4e43-b873-002e9629705c) and uses its own dark
-"Electric Night" palette in `src/onboarding/theme.ts`. Keep the two token sets
-apart — cream Rally inside the app, Electric Night before you're logged in.
+new in-app screens follow its tokens (`src/theme.ts`). The onboarding/Qoach
+surfaces are ported from `Qleck Onboarding.dc.html` (design project
+7091d355-0d06-4e43-b873-002e9629705c) and keep their own token *names* in
+`src/onboarding/theme.ts`.
+
+**Appearance (owner call 2026-08-25):** one setting drives BOTH token sets —
+the coach and the app must never disagree. `src/state/ThemeContext.tsx` holds
+the pref (`system` | `light` | `dark`, persisted, chosen in the You tab) and
+rewrites the live `colors` and `night` objects in place before render. Light =
+Rally cream; dark = Electric Night. Two rules keep it working:
+1. **Never capture a palette value in a module-level const** (`const INK =
+   colors.ink`) — it freezes to whichever mode loaded first. Read
+   `colors.x` / `night.x` inside the component.
+2. **Never add `StyleSheet.create` with palette colors** — it snapshots too.
+   Every style in this app is inline on purpose.
 
 ## Ground rules
 - Expo HAS CHANGED. Read the exact versioned docs at
@@ -35,9 +45,10 @@ Configured entirely in code. Do **not** mix in Expo Router.
   coach** (owner call 2026-08-24): Rally-era social surfaces (Plans, Streaks,
   Create, Friends, Event/Challenge detail screens) are quarantined out of the
   shell — files kept, routes removed — and return behind real backends per
-  ROADMAP P6. **Palette exception:** Qoach surfaces (intake, chat thread,
-  verdicts, NewGoal modal) keep Electric Night inside the app — the coach is
-  its own sub-brand; a locked protocol renders in cream via
+  ROADMAP P6. Qoach surfaces (intake, chat thread, verdicts, NewGoal modal)
+  keep their own token names but follow the shared appearance setting — the
+  old "Electric Night lives inside the app" exception is retired (see
+  Appearance above). A locked protocol renders via
   `src/components/protocolViews.tsx` on Today/Goals/You.
 
 ## Structure

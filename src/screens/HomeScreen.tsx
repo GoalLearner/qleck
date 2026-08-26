@@ -353,6 +353,23 @@ function nextMilestoneOf(g: GoalToday) {
 
 /* ── goal group header (shared by both layouts) ─────────────────────────── */
 
+/**
+ * A goal group folds itself away once its last rep of the day is banked
+ * (owner call 2026-08-25) — only unfinished work stays open, so a six-goal
+ * morning shrinks as you work through it. An explicit tap on the header wins
+ * over the default for the rest of the session, either direction: you can
+ * reopen a finished goal to un-check something, or fold one you haven't
+ * started yet.
+ */
+function useGroupFolding() {
+  const [override, setOverride] = useState<Record<string, boolean>>({});
+  const defaultOpen = (g: GoalToday) => !(g.reps.length > 0 && g.done === g.reps.length);
+  const isOpen = (g: GoalToday) => override[g.goal.id] ?? defaultOpen(g);
+  const toggle = (g: GoalToday) =>
+    setOverride(prev => ({ ...prev, [g.goal.id]: !(prev[g.goal.id] ?? defaultOpen(g)) }));
+  return { isOpen, toggle };
+}
+
 // Just the goal name and the count — no phase, no method detail (owner call
 // 2026-08-24: less information, keep it simple; the Goals tab holds the rest).
 function GroupHeader({ g, open, onToggle, headerRef }: {
@@ -383,7 +400,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
 }) {
   const { checkInStep, uncheckStep, profile } = useRally();
   const m = useTodayModel(goals, byGoal);
-  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   const multi = m.perGoal.length > 1;
   const milestoneOwner = m.perGoal.find(g => nextMilestoneOf(g));
@@ -421,11 +438,11 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
                   <GroupHeader
                     g={g}
                     headerRef={el => { headerRefs.current[g.goal.id] = el; }}
-                    open={!closed[g.goal.id]}
-                    onToggle={() => setClosed(prev => ({ ...prev, [g.goal.id]: !prev[g.goal.id] }))}
+                    open={fold.isOpen(g)}
+                    onToggle={() => fold.toggle(g)}
                   />
                 )}
-                {!closed[g.goal.id] && g.reps.map(rep => (
+                {(!multi || fold.isOpen(g)) && g.reps.map(rep => (
                   <RepCard
                     key={rep.step.id}
                     rep={rep}
@@ -518,7 +535,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
   const { checkInStep, uncheckStep, profile } = useRally();
   const navigation = useNavigation<any>();
   const m = useTodayModel(goals, byGoal);
-  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const fold = useGroupFolding();
   const [qtyVals, setQtyVals] = useState<Record<string, number>>({});
   const headerRefs = useRef<Record<string, View | null>>({});
   useCelebrateOnDone(m.allDone, celebrate);
@@ -589,10 +606,10 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
                   <GroupHeader
                     g={g}
                     headerRef={el => { headerRefs.current[g.goal.id] = el; }}
-                    open={!closed[g.goal.id]}
-                    onToggle={() => setClosed(prev => ({ ...prev, [g.goal.id]: !prev[g.goal.id] }))}
+                    open={fold.isOpen(g)}
+                    onToggle={() => fold.toggle(g)}
                   />
-                  {!closed[g.goal.id] && g.reps.map(rep => (
+                  {fold.isOpen(g) && g.reps.map(rep => (
                     <RepCard
                       key={rep.step.id}
                       rep={rep}

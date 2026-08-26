@@ -96,6 +96,9 @@ interface RallyState {
   completeGoalById: (goalId: string) => Promise<void>;
   /** Carry a finished plan forward — longer, or as a lighter maintenance goal. */
   graduate: (goalId: string, mode: 'extend' | 'maintain', weeks?: number) => Promise<void>;
+  /** Re-read goals from the server. The adjust flow owns its own two API calls
+   *  (propose returns data the caller needs), so it re-syncs through this. */
+  refreshGoals: () => Promise<void>;
   events: RallyEvent[];
   challenges: Challenge[];
   polls: Poll[];
@@ -397,11 +400,12 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     profile, people, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, finishedGoals,
     checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
+    refreshGoals: refresh,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
   }), [profile, people, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, finishedGoals,
-    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate, refresh,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 

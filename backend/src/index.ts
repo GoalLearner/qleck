@@ -12,6 +12,8 @@
 //   GET  /goals                           (Bearer token)   → every active goal (Today renders these as groups)
 //   GET  /goals/current                   (Bearer token)   → newest active goal (legacy single-goal clients)
 //   POST /goals/:id/abandon               (Bearer token)   → explicit drop; rows kept as history
+//   POST /goals/:id/revise                {feedback, currentWeek}          → proposed revision, NOTHING written
+//   POST /goals/:id/revise/apply          {protocol, protocolId, ...}     → appends it as the next version
 //   POST /check-ins                       {id, goalId, stepId, localDate, value?} — idempotent
 //   GET  /check-ins?goalId=&from=&to=     (Bearer token)   → rows in range
 //   DELETE /check-ins?goalId=&stepId=&date= — un-check (idempotent by key)
@@ -20,6 +22,7 @@ import { registerDevice, touchUser, verifyToken } from './auth';
 import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type SessionRow, type Verdict } from './coach';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
+import { applyRevision, proposeRevision, type ReviseBody } from './revision';
 import type { Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
@@ -130,6 +133,40 @@ export default {
         );
         if (!result.ok) return json({ error: result.error, details: result.details }, result.status, cors);
         return json({ goal: result.goal, replayed: result.replayed ?? false }, 200, cors);
+      }
+
+      // "Adjust my plan", in two halves. /revise runs the model and writes
+      // nothing so the client can show the change and let the user discard it
+      // for free; /revise/apply is the only half that touches the database.
+      const reviseMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/revise$/);
+      if (reviseMatch && request.method === 'POST') {
+        if (env.AI_ENABLED !== 'true') return json({ error: 'ai_disabled' }, 503, cors);
+        if (!providerReady(env)) return json({ error: 'ai_unconfigured', provider: provider(env) }, 503, cors);
+        const revIp = request.headers.get('CF-Connecting-IP') ?? 'local';
+        const revHarness = !!env.HARNESS_SECRET && request.headers.get('X-Qleck-Harness') === env.HARNESS_SECRET;
+        if (!revHarness) {
+          const quotaError = await checkQuota(env, userId, revIp);
+          if (quotaError) return json({ error: quotaError, message: 'Daily coach limit reached — back tomorrow.' }, 429, cors);
+        }
+        const result = await proposeRevision(
+          env, userId, reviseMatch[1],
+          (await request.json().catch(() => ({}))) as ReviseBody,
+          { deviceId: userId, ip: revIp, synthetic: revHarness },
+        );
+        if (!result.ok) return json({ error: result.error, details: result.details }, result.status, cors);
+        return json({ protocol: 'protocol' in result ? result.protocol : null, currentWeek: 'currentWeek' in result ? result.currentWeek : null }, 200, cors);
+      }
+
+      // No AI, so no gate: accepting a revision the user has already seen must
+      // not be blocked by a quota or a kill-switch.
+      const applyMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/revise\/apply$/);
+      if (applyMatch && request.method === 'POST') {
+        const result = await applyRevision(
+          env, userId, applyMatch[1],
+          (await request.json().catch(() => ({}))) as ReviseBody,
+        );
+        if (!result.ok) return json({ error: result.error, details: result.details }, result.status, cors);
+        return json({ goal: 'goal' in result ? result.goal : null, replayed: 'replayed' in result ? result.replayed ?? false : false }, 200, cors);
       }
       if (url.pathname === '/check-ins' && request.method === 'POST') {
         const result = await recordCheckIn(env, userId, (await request.json().catch(() => ({}))) as Record<string, unknown>);

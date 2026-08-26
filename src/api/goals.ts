@@ -117,4 +117,52 @@ export async function graduateGoal(
   return data.goal;
 }
 
+
+/* ── Adjust my plan ───────────────────────────────────────────────────── */
+
+/** Carries the server's error code so the UI can tell "you already adjusted
+ *  this today" from "the coach is down". `graduateGoal` throws bare Errors and
+ *  loses that distinction; new callers should use this. */
+export class GoalApiError extends Error {
+  constructor(public code: string, public status: number, public details?: string[]) {
+    super(code);
+  }
+}
+
+async function expectJson<T>(res: Response): Promise<T> {
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string; details?: string[] };
+  if (!res.ok) throw new GoalApiError(data.error ?? `http_${res.status}`, res.status, data.details);
+  return data;
+}
+
+/**
+ * Ask Qoach for a revision. Writes NOTHING server-side — the caller shows the
+ * change and only calls applyRevision if the user accepts.
+ */
+export async function proposeRevision(
+  id: string, feedback: string, currentWeek: number,
+): Promise<{ protocol: Protocol; currentWeek: number }> {
+  const res = await authed(`/goals/${id}/revise`, {
+    method: 'POST',
+    body: JSON.stringify({ feedback, currentWeek }),
+  });
+  return expectJson<{ protocol: Protocol; currentWeek: number }>(res);
+}
+
+/**
+ * Accept a proposed revision. `protocolId` is minted by the CALLER and reused
+ * across retries — minting inside would make a retry after a dropped response
+ * append a second version instead of replaying the first.
+ */
+export async function applyRevision(
+  id: string, protocolId: string, protocol: Protocol, currentWeek: number, feedback: string,
+): Promise<RemoteGoal> {
+  const res = await authed(`/goals/${id}/revise/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ protocolId, protocol, currentWeek, feedback }),
+  });
+  const data = await expectJson<{ goal: RemoteGoal }>(res);
+  return data.goal;
+}
+
 export { mintId as mintGoalId };

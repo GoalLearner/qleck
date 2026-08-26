@@ -49,9 +49,16 @@ function daysBetween(a: string, b: string): number {
  * one would retroactively un-earn it).
  */
 export function spliceFrozenPast(stored: Protocol, revised: Protocol, frozenThrough: number): Protocol {
+  // Selected by END week on both sides, which is what makes this safe mid-plan.
+  // Filtering the future by start_week works only when frozenThrough lands on a
+  // phase boundary (always true for graduation, where it is the plan's end).
+  // Mid-plan it lands INSIDE a phase, and that phase would then match neither
+  // filter — it would vanish, leaving a tiling gap validateProtocol rejects.
+  // A phase that extends past the frozen line is reshapeable, so it comes from
+  // the revision; everything ending before it is history and comes from store.
   const past = stored.phases.filter(p => p.end_week <= frozenThrough);
   const future = revised.phases
-    .filter(p => p.start_week > frozenThrough)
+    .filter(p => p.end_week > frozenThrough)
     .sort((a, b) => a.start_week - b.start_week);
   const pastMilestones = stored.milestones.filter(m => m.week <= frozenThrough);
   const futureMilestones = revised.milestones.filter(m => m.week > frozenThrough);

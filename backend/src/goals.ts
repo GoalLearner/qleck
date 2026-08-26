@@ -254,6 +254,22 @@ export async function protocolExists(env: Env, protocolId: string): Promise<bool
   return !!row;
 }
 
+/**
+ * Protocol versions written for this goal today (UTC calendar day). Backs the
+ * roadmap's 1-adjustment-per-goal-per-day cap without storing a counter —
+ * protocols.created_at already records exactly this.
+ */
+export async function protocolsWrittenToday(env: Env, goalId: string): Promise<number> {
+  const row = await env.DB
+    .prepare(
+      `SELECT COUNT(*) AS n FROM protocols
+       WHERE goal_id = ? AND version > 1 AND created_at >= datetime('now', 'start of day')`,
+    )
+    .bind(goalId)
+    .first<{ n: number }>();
+  return Number(row?.n ?? 0);
+}
+
 /** Active goals excluding one — graduating must stay cap-neutral. */
 export async function activeGoalCount(env: Env, userId: string, exceptId: string): Promise<number> {
   const row = await env.DB

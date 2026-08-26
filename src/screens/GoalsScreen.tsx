@@ -7,7 +7,7 @@
 //
 // Dropping a goal stays an explicit, two-tap act — never a side effect of
 // adding another. "Tweak it with Qoach" wires to the P4 revise client; for
-// now it answers honestly with a toast.
+// now it opens the AdjustPlan modal.
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useAppearance } from '../state/ThemeContext';
@@ -358,7 +358,7 @@ export default function GoalsScreen() {
               m={sel}
               onBack={() => setSelId(null)}
               onDrop={() => { dropGoal(sel.goal.id); setSelId(null); }}
-              onTweak={() => showToast('Mid-plan tweaks with Qoach land soon — nothing here is sacred.')}
+              onTweak={() => navigation.navigate('AdjustPlan', { goalId: sel.goal.id })}
             />
           ) : (
             <FadeInUp>

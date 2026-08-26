@@ -31,5 +31,6 @@ DAILY_IP_LIMIT = "450"
 # an anonymous AI proxy, so the allowlist is deliberately a short list of hosts
 # we chose, not a pattern anyone could satisfy by deploying their own site.
 #   localhost:8090  = the Expo web dev preview
-#   qleck-beta      = the Netlify tester build (add the real name if it differs)
-CORS_ORIGINS = "http://localhost:8090,https://qleck-beta.netlify.app"
+#   *.netlify.app   = the tester build (both the assigned name and the
+#                     qleck-beta alias, so renaming the site does not break it)
+CORS_ORIGINS = "http://localhost:8090,https://qleck-beta.netlify.app,https://symphonious-gecko-f4b59d.netlify.app"

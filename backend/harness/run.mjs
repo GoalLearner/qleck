@@ -60,6 +60,9 @@ function similarity(a, b) {
 }
 
 const DELEGATION_CHIP = /no idea|you decide|whatever you think/i;
+// COACH_SYSTEM promises 3-4 quick-picks per question and ASK_TOOL's schema
+// bounds it; this is the bar that proves it in the live pipeline.
+const MIN_CHIPS = 3;
 
 async function runGoalFixture(f) {
   const t0 = Date.now();
@@ -70,12 +73,18 @@ async function runGoalFixture(f) {
   const askedTexts = [];
   let dupQuestion = false;
   let badChip = null;
+  // A question that arrives with no quick-picks renders as a bare text prompt.
+  // Nothing downstream errors — it just silently gets harder to answer — so
+  // the harness is the only place this can be caught.
+  let minChips = null;
   while (res.status === 200 && res.body.type === 'question' && questions < 5) {
     questions++;
     const q = res.body.question;
     if (askedTexts.length && similarity(askedTexts[askedTexts.length - 1], q.question) > 0.75) dupQuestion = true;
     askedTexts.push(q.question);
-    const chip = (q.suggested_answers ?? []).find(c => DELEGATION_CHIP.test(c));
+    const chips = q.suggested_answers ?? [];
+    minChips = minChips === null ? chips.length : Math.min(minChips, chips.length);
+    const chip = chips.find(c => DELEGATION_CHIP.test(c));
     if (chip) badChip = chip;
     const answer = answers.length ? answers.shift() : GENERIC_ANSWER;
     res = await api(`/coach/sessions/${sessionId}/messages`, { answer });
@@ -85,6 +94,7 @@ async function runGoalFixture(f) {
   let pass = matches(f.expect, outcome) && !leak;
   if (f.minQuestions && questions < f.minQuestions) pass = false;
   if (dupQuestion || badChip) pass = false;
+  if (minChips !== null && minChips < MIN_CHIPS) pass = false;
 
   let protocolOk = null;
   let protocol = null;
@@ -99,7 +109,7 @@ async function runGoalFixture(f) {
   }
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
-    pass, leak, protocolOk, questions, dupQuestion, badChip, ms: Date.now() - t0,
+    pass, leak, protocolOk, questions, dupQuestion, badChip, minChips, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -189,6 +199,8 @@ const bars = {
   'zero leaks': leaks === 0,
   'no repeated questions': goalResults.every(r => !r.dupQuestion),
   'no delegation chips': goalResults.every(r => !r.badChip),
+  [`every question ships ${MIN_CHIPS}+ chips`]:
+    goalResults.every(r => r.minChips === null || r.minChips >= MIN_CHIPS),
 };
 const allPass = goalResults.every(r => r.pass) && Object.values(bars).every(Boolean);
 

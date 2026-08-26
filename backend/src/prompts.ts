@@ -14,7 +14,9 @@
 // regex guess at which words in goal_statement were method vs goal.
 // v13: MAINTENANCE_SYSTEM — the plan after the plan, for goals that reach the
 // end of their run and want to keep the habit rather than stop.
-export const PROMPT_VERSION = 13;
+// v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
+// degrades to a bare text prompt, and no bar used to catch it.
+export const PROMPT_VERSION = 14;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -112,7 +114,12 @@ export const ASK_TOOL = {
       suggested_answers: {
         type: 'array',
         items: { type: 'string' },
-        description: '3-4 short quick-pick answers (2-6 words each) covering the realistic range, least to most committed. The user taps one or types their own.',
+        // Bounded in the SCHEMA, not just the prose: a question that arrives
+        // with no chips renders as a bare text prompt and nothing downstream
+        // notices. Prevention beats the harness catching it later.
+        minItems: 3,
+        maxItems: 4,
+        description: '3-4 short quick-pick answers (2-6 words each) covering the realistic range, least to most committed. The user taps one or types their own. Never fewer than 3.',
       },
     },
   },

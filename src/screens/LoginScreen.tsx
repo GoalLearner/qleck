@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import { colors, fonts, radii } from '../theme';
 
-const CREAM = colors.cream;
 
 function AuthButton({ label, solid, onPress }: { label: string; solid?: boolean; onPress: () => void }) {
   return (
@@ -13,11 +12,11 @@ function AuthButton({ label, solid, onPress }: { label: string; solid?: boolean;
       style={{
         height: 54, borderRadius: radii.pill, marginBottom: solid ? 10 : 18,
         alignItems: 'center', justifyContent: 'center',
-        backgroundColor: solid ? CREAM : 'transparent',
+        backgroundColor: solid ? colors.cream : 'transparent',
         borderWidth: solid ? 0 : 1.5, borderColor: 'rgba(245,242,234,0.28)',
       }}
     >
-      <Text style={{ fontSize: 15, fontFamily: solid ? fonts.extrabold : fonts.bold, color: solid ? colors.loginNavy : CREAM }}>
+      <Text style={{ fontSize: 15, fontFamily: solid ? fonts.extrabold : fonts.bold, color: solid ? colors.loginNavy : colors.cream }}>
         {label}
       </Text>
     </Pressable>
@@ -42,7 +41,7 @@ export default function LoginScreen({ onLogin }: { onLogin: () => void }) {
           <View style={{ position: 'absolute', left: 28, top: 6, width: 44, height: 44, borderRadius: 22, backgroundColor: '#dcecdf', borderWidth: 3, borderColor: colors.loginNavy }} />
           <View style={{ position: 'absolute', left: 56, top: 0, width: 44, height: 44, borderRadius: 22, backgroundColor: '#f6e5d4', borderWidth: 3, borderColor: colors.loginNavy }} />
         </View>
-        <Text style={{ fontFamily: fonts.serif, fontSize: 48, color: CREAM, letterSpacing: -1, lineHeight: 50 }}>qleck</Text>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 48, color: colors.cream, letterSpacing: -1, lineHeight: 50 }}>qleck</Text>
         <Text style={{ fontFamily: fonts.serif, fontSize: 17, color: 'rgba(245,242,234,0.72)', marginTop: 12 }}>
           Plans that actually happen.
         </Text>
@@ -66,7 +65,7 @@ export default function LoginScreen({ onLogin }: { onLogin: () => void }) {
             style={{
               flex: 1, height: 54, borderRadius: radii.pill, borderWidth: 1.5,
               borderColor: 'rgba(245,242,234,0.16)', backgroundColor: 'rgba(245,242,234,0.07)',
-              color: CREAM, paddingHorizontal: 20, fontSize: 14.5, fontFamily: fonts.medium,
+              color: colors.cream, paddingHorizontal: 20, fontSize: 14.5, fontFamily: fonts.medium,
             }}
           />
           <Pressable

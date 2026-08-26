@@ -9,10 +9,12 @@ import type { OnboardingFlow } from '../useOnboardingFlow';
 const STATUS_LABEL: Record<string, string> = {
   idle: '', checking: 'checking…', taken: 'taken', free: 'it’s yours', short: 'too short',
 };
-const STATUS_COLOR: Record<string, string> = {
+// Read at call time — a frozen map would keep the dark palette's near-white
+// text and vanish on the cream background.
+const statusColor = (k: string): string => ({
   idle: night.textGhost, checking: night.textGhost, taken: night.danger,
   free: night.accent, short: night.warn,
-};
+}[k] ?? night.textGhost);
 
 // Photo + real name are required — the doc's anti-impersonation rule.
 function AvatarPicker({ flow }: { flow: OnboardingFlow }) {
@@ -96,7 +98,7 @@ export default function ProfileSetupScreen({ flow }: { flow: OnboardingFlow }) {
           <Text
             style={{
               position: 'absolute', right: 16, top: 0, lineHeight: 52,
-              fontFamily: nightFonts.display, fontSize: 12, color: STATUS_COLOR[flow.unameStatus],
+              fontFamily: nightFonts.display, fontSize: 12, color: statusColor(flow.unameStatus),
             }}
           >
             {STATUS_LABEL[flow.unameStatus]}

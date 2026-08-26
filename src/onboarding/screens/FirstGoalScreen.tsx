@@ -279,17 +279,20 @@ function Dot({ delay }: { delay: number }) {
   );
 }
 
-const QOACH_BUBBLE = {
+// A function, not a const: a module-level object would capture whichever
+// palette was loaded at import time and stay that color forever (this bubble
+// was stuck on the dark surface in light mode — dark text on a black card).
+const qoachBubble = () => ({
   backgroundColor: night.surface,
   borderWidth: 1, borderColor: night.hairline,
   borderTopLeftRadius: 4, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 18,
-} as const;
+});
 
 function TypingRow() {
   return (
     <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
       <QoachMark size={34} fontSize={18} />
-      <View style={[QOACH_BUBBLE, { flexDirection: 'row', gap: 5, paddingHorizontal: 18, paddingVertical: 17, alignItems: 'center' }]}>
+      <View style={[qoachBubble(),{ flexDirection: 'row', gap: 5, paddingHorizontal: 18, paddingVertical: 17, alignItems: 'center' }]}>
         <Dot delay={0} /><Dot delay={150} /><Dot delay={300} />
       </View>
     </View>
@@ -333,17 +336,14 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
         <QoachMark />
         <Text style={{ fontFamily: nightFonts.display, fontSize: 18, color: night.text, letterSpacing: 0.2 }}>Qoach</Text>
         <View style={{ flex: 1 }} />
+        {/* No denominator: 4 is the server's CAP, not a plan. Qoach asks as
+            few as it needs (often one), so "1 OF 4" promised three questions
+            that never came. Count what actually happened instead. */}
         <View style={{ alignItems: 'flex-end', gap: 5 }}>
-          <MonoLabel text={`QUESTION ${coach.questionCount} OF 4`} color={night.textFaint} style={{ fontSize: 10.5, letterSpacing: 1 }} />
+          <MonoLabel text={`QUESTION ${coach.questionCount}`} color={night.textFaint} style={{ fontSize: 10.5, letterSpacing: 1 }} />
           <View style={{ flexDirection: 'row', gap: 5 }}>
-            {[1, 2, 3, 4].map(n => (
-              <View
-                key={n}
-                style={{
-                  width: 18, height: 4, borderRadius: 2,
-                  backgroundColor: coach.questionCount >= n ? night.accent : 'rgba(255,255,255,0.15)',
-                }}
-              />
+            {Array.from({ length: Math.max(1, coach.questionCount) }, (_, i) => (
+              <View key={i} style={{ width: 18, height: 4, borderRadius: 2, backgroundColor: night.accent }} />
             ))}
           </View>
         </View>
@@ -372,7 +372,7 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
                 <QoachMark size={34} fontSize={18} />
                 <View style={{ gap: 10, flex: 1, maxWidth: 560, alignItems: 'flex-start' }}>
                   <Pop style={{ alignSelf: 'stretch' }}>
-                    <View style={[QOACH_BUBBLE, { paddingHorizontal: 20, paddingVertical: 16 }]}>
+                    <View style={[qoachBubble(),{ paddingHorizontal: 20, paddingVertical: 16 }]}>
                       <Text style={{ fontFamily: nightFonts.display, fontSize: 19, lineHeight: 24.7, color: night.text, marginBottom: 7 }}>
                         {entry.question.question}
                       </Text>

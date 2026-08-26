@@ -43,11 +43,12 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
   );
 }
 
-const inputStyle = {
+// Per call: a module-level style would freeze to the palette loaded first.
+const inputStyle = () => ({
   height: 52, borderRadius: radii.input, borderWidth: 1.5, borderColor: colors.inputBorder,
   backgroundColor: colors.card, paddingHorizontal: 18, fontSize: 14.5,
   fontFamily: fonts.semibold, color: colors.ink,
-} as const;
+});
 
 export default function CreateScreen() {
   const navigation = useNavigation<any>();
@@ -160,7 +161,7 @@ export default function CreateScreen() {
                 onChangeText={title => set({ title })}
                 placeholder={isPoll ? 'Where to next? Tacos or sushi?' : 'Saturday picnic, 5k relay, taco tour…'}
                 placeholderTextColor={colors.tabIdle}
-                style={inputStyle}
+                style={inputStyle()}
               />
             </View>
 
@@ -192,7 +193,7 @@ export default function CreateScreen() {
                       onChangeText={v => setPollOption(i, v)}
                       placeholder={['First option', 'Second option', 'Third option (optional)'][i]}
                       placeholderTextColor={colors.tabIdle}
-                      style={inputStyle}
+                      style={inputStyle()}
                     />
                   ))}
                 </View>
@@ -219,7 +220,7 @@ export default function CreateScreen() {
                         onChangeText={place => set({ place })}
                         placeholder="The park, Sam's place, anywhere…"
                         placeholderTextColor={colors.tabIdle}
-                        style={inputStyle}
+                        style={inputStyle()}
                       />
                     </View>
                   </>

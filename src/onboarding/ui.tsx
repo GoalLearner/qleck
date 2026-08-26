@@ -77,13 +77,13 @@ export function Note({ children, center }: { children: React.ReactNode; center?:
 
 /* ── buttons ────────────────────────────────────────────────────────────── */
 
-const GLOW = Platform.select({
-  web: { boxShadow: '0 8px 24px rgba(43,227,128,0.25)' } as ViewStyle,
-  default: {
-    shadowColor: night.accent, shadowOpacity: 0.3,
-    shadowRadius: 12, shadowOffset: { width: 0, height: 8 }, elevation: 8,
-  } as ViewStyle,
-});
+// Built per call so the glow follows the active palette.
+const glow = (): ViewStyle => (Platform.OS === 'web'
+  ? { boxShadow: `0 8px 24px ${night.accentGlow}` } as ViewStyle
+  : {
+      shadowColor: night.accent, shadowOpacity: 0.3,
+      shadowRadius: 12, shadowOffset: { width: 0, height: 8 }, elevation: 8,
+    } as ViewStyle);
 
 export function PrimaryButton({
   label, onPress, disabled, style,
@@ -97,7 +97,7 @@ export function PrimaryButton({
           alignItems: 'center', justifyContent: 'center',
           opacity: disabled ? 0.4 : pressed ? 0.88 : 1,
         },
-        GLOW,
+        glow(),
         style,
       ]}
     >

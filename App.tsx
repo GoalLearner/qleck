@@ -7,16 +7,12 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
-import {
-  PlusJakartaSans_400Regular,
-  PlusJakartaSans_500Medium,
-  PlusJakartaSans_600SemiBold,
-  PlusJakartaSans_700Bold,
-  PlusJakartaSans_800ExtraBold,
-} from '@expo-google-fonts/plus-jakarta-sans';
-import { YoungSerif_400Regular } from '@expo-google-fonts/young-serif';
-import { SpaceGrotesk_700Bold } from '@expo-google-fonts/space-grotesk';
-import { DMSans_400Regular, DMSans_500Medium } from '@expo-google-fonts/dm-sans';
+// Fonts are vendored into assets/fonts rather than imported from the
+// @expo-google-fonts packages. Expo emits a package-sourced asset under
+// dist/assets/node_modules/..., and some static hosts (Netlify Drop among
+// them) drop node_modules directories from an upload — every face then 404s,
+// useFonts never resolves, and the app hangs on a blank loading screen with
+// no error. Keeping the files in the repo keeps them out of that path.
 
 import RallyTabBar from './src/components/RallyTabBar';
 import GoalsScreen from './src/screens/GoalsScreen';
@@ -82,20 +78,25 @@ function AppShell() {
   }, []);
   const logIn = () => { setLoggedIn(true); AsyncStorage.setItem('qleck-session', '1').catch(() => {}); };
   const logOut = () => { setLoggedIn(false); AsyncStorage.removeItem('qleck-session').catch(() => {}); };
-  const [fontsLoaded] = useFonts({
-    PlusJakartaSans_400Regular,
-    PlusJakartaSans_500Medium,
-    PlusJakartaSans_600SemiBold,
-    PlusJakartaSans_700Bold,
-    PlusJakartaSans_800ExtraBold,
-    YoungSerif_400Regular,
+  // Keys are the family names every style refers to (src/theme.ts fonts.*),
+  // so they must not be renamed.
+  const [fontsLoaded, fontError] = useFonts({
+    PlusJakartaSans_400Regular: require('./assets/fonts/PlusJakartaSans_400Regular.ttf'),
+    PlusJakartaSans_500Medium: require('./assets/fonts/PlusJakartaSans_500Medium.ttf'),
+    PlusJakartaSans_600SemiBold: require('./assets/fonts/PlusJakartaSans_600SemiBold.ttf'),
+    PlusJakartaSans_700Bold: require('./assets/fonts/PlusJakartaSans_700Bold.ttf'),
+    PlusJakartaSans_800ExtraBold: require('./assets/fonts/PlusJakartaSans_800ExtraBold.ttf'),
+    YoungSerif_400Regular: require('./assets/fonts/YoungSerif_400Regular.ttf'),
     // Onboarding ("Electric Night") type ramp.
-    SpaceGrotesk_700Bold,
-    DMSans_400Regular,
-    DMSans_500Medium,
+    SpaceGrotesk_700Bold: require('./assets/fonts/SpaceGrotesk_700Bold.ttf'),
+    DMSans_400Regular: require('./assets/fonts/DMSans_400Regular.ttf'),
+    DMSans_500Medium: require('./assets/fonts/DMSans_500Medium.ttf'),
   });
 
-  if (!fontsLoaded || loggedIn === null) {
+  // Render anyway if a face fails to load. A missing font is a cosmetic
+  // problem; a permanently blank screen is a broken app, and that is exactly
+  // what this gate produced when the fonts 404'd on the first web deploy.
+  if ((!fontsLoaded && !fontError) || loggedIn === null) {
     return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
   }
 

@@ -27,5 +27,9 @@ AI_ENABLED = "true"
 # prices. Local dev overrides these in .dev.vars (effectively unlimited).
 DAILY_DEVICE_LIMIT = "150"
 DAILY_IP_LIMIT = "450"
-# Comma-separated allowed browser origins (Expo web preview).
-CORS_ORIGINS = "http://localhost:8090"
+# Comma-separated allowed browser origins. Exact match, no wildcards — this is
+# an anonymous AI proxy, so the allowlist is deliberately a short list of hosts
+# we chose, not a pattern anyone could satisfy by deploying their own site.
+#   localhost:8090  = the Expo web dev preview
+#   qleck-beta      = the Netlify tester build (add the real name if it differs)
+CORS_ORIGINS = "http://localhost:8090,https://qleck-beta.netlify.app"

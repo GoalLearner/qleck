@@ -13,9 +13,20 @@ export interface DeviceIdentity {
 
 const PROD_URL = 'https://qleck-api.richmondcampano93.workers.dev';
 
+/**
+ * Where the client talks to qleck-api.
+ *
+ * Web has two lives: the dev preview on localhost (which must hit the local
+ * worker, so backend changes are testable without deploying) and a deployed
+ * build on a real host (which must hit production, or it would call the
+ * VISITOR's own machine and fail entirely). Decided by hostname rather than a
+ * build flag so both work from the same bundle.
+ */
 export function apiBase(): string {
-  if (Platform.OS === 'web') return 'http://localhost:8787';
-  return PROD_URL;
+  if (Platform.OS !== 'web') return PROD_URL;
+  const host = typeof location !== 'undefined' ? location.hostname : '';
+  const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '' || host.endsWith('.local');
+  return isLocal ? 'http://localhost:8787' : PROD_URL;
 }
 
 let cached: DeviceIdentity | null = null;

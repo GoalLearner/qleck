@@ -1,6 +1,7 @@
 // Goal persistence client (ROADMAP.md P2a): locking a plan writes it to the
 // server; launch hydrates from GET /goals/current. Client-minted goal ids make
 // saves idempotent under retry.
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AcceptedPlan } from '../onboarding/useCoachFlow';
 import type { Protocol } from './coachTypes';
 import { apiBase, getIdentity, localDate } from './device';
@@ -34,26 +35,104 @@ async function authed(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
-/** Persist an accepted plan. Fire-and-forget friendly: throws on failure.
- * Pass `id` when the caller already added the goal optimistically. */
-export async function saveGoal(plan: AcceptedPlan, goalText: string, id?: string): Promise<RemoteGoal> {
+/* ── the goal outbox ─────────────────────────────────────────────────────
+ * A goal is the single most expensive thing a user produces here: a coaching
+ * conversation plus a generated protocol. It used to be saved fire-and-forget
+ * with a console.warn on failure, so one flaky request left the plan in the
+ * local cache only — displayed as if it were safe, and gone for good the
+ * moment that cache was cleared. Now the write is queued durably first and
+ * drained in the background, exactly like check-ins. The server makes this
+ * safe to replay: createGoal returns the existing row for an id it already
+ * has, and the insert is INSERT OR IGNORE.
+ */
+const GOAL_OUTBOX_KEY = 'qleck-goal-outbox';
+
+export interface PendingGoal {
+  id: string;
+  goalText: string;
+  statement: string;
+  durationWeeks: number;
+  startedOn: string;
+  timezone: string | null;
+  protocol: Protocol;
+  /** Set when the server refused the payload outright (4xx). Kept in the
+   *  queue so the goal stays visible, but not retried — a rejection will be
+   *  rejected again, and a silent drop is how plans got lost in the first
+   *  place. */
+  rejected?: boolean;
+}
+
+async function readGoalOutbox(): Promise<PendingGoal[]> {
+  try {
+    const raw = await AsyncStorage.getItem(GOAL_OUTBOX_KEY);
+    return raw ? (JSON.parse(raw) as PendingGoal[]) : [];
+  } catch { return []; }
+}
+
+async function writeGoalOutbox(items: PendingGoal[]): Promise<void> {
+  await AsyncStorage.setItem(GOAL_OUTBOX_KEY, JSON.stringify(items)).catch(() => {});
+}
+
+/** Goals written locally that the server has not confirmed yet. */
+export async function pendingGoals(): Promise<PendingGoal[]> {
+  return readGoalOutbox();
+}
+
+/** Drop the queue (logout — a pending goal belongs to the old identity). */
+export async function clearGoalOutbox(): Promise<void> {
+  await AsyncStorage.removeItem(GOAL_OUTBOX_KEY).catch(() => {});
+}
+
+let flushingGoals = false;
+/** Drain the goal queue. Safe to call any time; one pass at a time. */
+export async function flushGoalOutbox(): Promise<void> {
+  if (flushingGoals) return;
+  flushingGoals = true;
+  try {
+    const items = await readGoalOutbox();
+    const keep: PendingGoal[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.rejected) { keep.push(item); continue; } // known-bad: skip, don't drop
+      try {
+        const res = await authed('/goals', { method: 'POST', body: JSON.stringify(item) });
+        if (res.ok) continue;                            // saved — leaves the queue
+        if (res.status >= 400 && res.status < 500) {
+          // The server will never accept this. Retrying forever would wedge
+          // everything behind it, and dropping it would make the user's plan
+          // disappear — so park it: still listed, no longer retried.
+          console.warn(`goal ${item.id} refused by the server (${res.status})`);
+          keep.push({ ...item, rejected: true });
+          continue;
+        }
+        keep.push(item, ...items.slice(i + 1));           // 5xx — try again later
+        break;
+      } catch {
+        keep.push(item, ...items.slice(i + 1));           // offline — queue intact
+        break;
+      }
+    }
+    await writeGoalOutbox(keep);
+  } finally { flushingGoals = false; }
+}
+
+/** Queue an accepted plan for persistence, then try to send it right away.
+ *  Resolves once the write is DURABLE locally, not once the server has it. */
+export async function saveGoal(plan: AcceptedPlan, goalText: string, id?: string): Promise<void> {
   const timezone = (() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null; } catch { return null; }
   })();
-  const res = await authed('/goals', {
-    method: 'POST',
-    body: JSON.stringify({
-      id: id ?? mintId(),
-      goalText: goalText || plan.statement,
-      statement: plan.statement,
-      durationWeeks: plan.durationWeeks,
-      startedOn: localDate(),
-      timezone,
-      protocol: plan.protocol,
-    }),
-  });
-  if (!res.ok) throw new Error(`saveGoal failed (${res.status})`);
-  return ((await res.json()) as { goal: RemoteGoal }).goal;
+  const item: PendingGoal = {
+    id: id ?? mintId(),
+    goalText: goalText || plan.statement,
+    statement: plan.statement,
+    durationWeeks: plan.durationWeeks,
+    startedOn: localDate(),
+    timezone,
+    protocol: plan.protocol,
+  };
+  await writeGoalOutbox([...(await readGoalOutbox()), item]);
+  void flushGoalOutbox();
 }
 
 /** The active goal on the server, or null. */

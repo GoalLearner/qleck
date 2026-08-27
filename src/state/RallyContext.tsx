@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  abandonGoal, completeGoal, fetchFinishedGoals, fetchGoals, graduateGoal, mintGoalId, saveGoal,
-  type RemoteGoal,
+  abandonGoal, clearGoalOutbox, completeGoal, fetchFinishedGoals, fetchGoals, flushGoalOutbox,
+  graduateGoal, mintGoalId, pendingGoals, saveGoal, type RemoteGoal,
 } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
 import { localDate, resetIdentity } from '../api/device';
@@ -148,12 +148,24 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
    *  after anything that changes the goal set (graduation, close-out). */
   const refresh = useCallback(async () => {
     const [remote, archived] = await Promise.all([fetchGoals(), fetchFinishedGoals().catch(() => [])]);
-    const active = remote.map(toActive);
+    // Server truth PLUS anything still queued. Without the queued ones a goal
+    // whose save has not landed yet would be wiped from the list here — the
+    // user would watch a plan they just built disappear.
+    const queued = await pendingGoals().catch(() => []);
+    const remoteIds = new Set(remote.map(g => g.id));
+    const active = [
+      ...remote.map(toActive),
+      ...queued.filter(q => !remoteIds.has(q.id)).map(q => ({
+        id: q.id, startedOn: q.startedOn, statement: q.statement,
+        durationWeeks: q.durationWeeks, protocol: q.protocol,
+      })),
+    ];
     setGoals(active);
     setFinishedGoals(archived.map(toActive));
     const today = localDate();
-    const rows = await Promise.all(active.map(g => fetchCheckIns(g.id, g.startedOn, today)));
-    setCheckInsByGoal(Object.fromEntries(active.map((g, i) => [g.id, rows[i]])));
+    const known = active.filter(g => remoteIds.has(g.id));
+    const rows = await Promise.all(known.map(g => fetchCheckIns(g.id, g.startedOn, today)));
+    setCheckInsByGoal(prev => ({ ...prev, ...Object.fromEntries(known.map((g, i) => [g.id, rows[i]])) }));
   }, []);
 
   // P2a hydration: cached profile + goals first (instant, offline-friendly),
@@ -171,6 +183,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
         if (goalsRaw) setGoals(JSON.parse(goalsRaw) as ActiveGoal[]);
       } catch { hydratedRef.current = true; }
       try {
+        await flushGoalOutbox();
         await flushOutbox();
         await refresh();
       } catch { /* offline: cache already applied */ }
@@ -196,7 +209,9 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
       id, startedOn: localDate(), statement: plan.statement,
       durationWeeks: plan.durationWeeks, protocol: plan.protocol,
     }]);
-    saveGoal(plan, plan.goalText, id).catch(err => console.warn('goal save deferred:', err));
+    // Queued durably, then sent in the background — a failed request retries
+    // on the next launch instead of quietly losing the plan.
+    saveGoal(plan, plan.goalText, id).catch(err => console.warn('goal queue failed:', err));
   }, []);
 
   const applyOnboarding = useCallback((result: OnboardingResult) => {
@@ -412,6 +427,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     // these keys with the cleared state, which is the same thing this removal
     // does — belt and braces, not a race.
     await AsyncStorage.multiRemove(['qleck-goals', 'qleck-profile']).catch(() => {});
+    await clearGoalOutbox();
     await resetIdentity();
     resetDeviceId();
   }, []);

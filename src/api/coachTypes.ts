@@ -22,6 +22,9 @@ export interface Verdict {
   success_probability?: number;
   /** counter_offer only: the same honest read on the ORIGINAL ask. */
   original_probability?: number;
+  /** Parallel to success_factors: one line each on how the factor moves the
+   *  odds. Absent on verdicts stored before prompt v18. */
+  success_factor_notes?: string[];
 }
 
 export interface CoachQuestion {

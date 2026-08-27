@@ -7,15 +7,16 @@
 // The canvas' device frame + flow-map rail are mockup chrome (not ported);
 // its fake routes are replaced by the real pipeline via useCoachFlow.
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Animated, Easing, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
 import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, TextButton, Title } from '../ui';
+import { OddsChip, OddsDial } from '../OddsDial';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
-import type { Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep } from '../../api/coachTypes';
+import type { Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
 import Confetti, { type ConfettiHandle } from '../../components/Confetti';
 import { celebratePlan } from '../../lib/celebrate';
 
@@ -312,6 +313,309 @@ function WeekStrip({
   );
 }
 
+/* ── verdict screens (canvas turn 5: the odds dial) ───────────────────── */
+
+const DEFAULT_ODDS_CAPTION = 'A judgment from your answers, not a statistic — it moves with what you do.';
+
+/** Verdict chips row: decision + duration, shared by both verdict screens. */
+function VerdictChips({ label, labelColor, weeks }: { label: string; labelColor: string; weeks: string }) {
+  return (
+    <Pop>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        <View
+          style={{
+            paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
+            backgroundColor: `${labelColor}17`, borderWidth: 1, borderColor: `${labelColor}59`,
+          }}
+        >
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 11, letterSpacing: 1.8, color: labelColor }}>{label}</Text>
+        </View>
+        <View
+          style={{
+            paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
+            backgroundColor: night.surface, borderWidth: 1, borderColor: night.borderMuted,
+          }}
+        >
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 11, letterSpacing: 1, color: night.text }}>{weeks}</Text>
+        </View>
+      </View>
+    </Pop>
+  );
+}
+
+/** The drivers list: tap one and Qoach explains how it moves the number. */
+function DriverList({
+  factors, notes, active, onPick,
+}: {
+  factors: string[];
+  notes?: string[];
+  active: number;
+  onPick: (i: number) => void;
+}) {
+  return (
+    <View style={{ gap: 8 }}>
+      {factors.map((t, i) => {
+        const on = active === i;
+        return (
+          <Pressable
+            key={t}
+            onPress={() => onPick(on ? -1 : i)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: on ? night.accentSofter : night.surface,
+              borderWidth: 1, borderColor: on ? night.accentBorder : night.hairline,
+              borderRadius: 16, paddingVertical: 13, paddingHorizontal: 16,
+            }}
+          >
+            <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', color: on ? night.accent : night.textGhost }}>
+              {`0${i + 1}`}
+            </Text>
+            <Text style={{ flex: 1, fontFamily: nightFonts.bodyMedium, fontSize: 14, lineHeight: 19.5, color: on ? night.text : night.textMuted }}>
+              {t}
+            </Text>
+            <Text style={{ fontSize: 12, color: on ? night.accent : night.textGhost }}>{on ? '◆' : '◇'}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function OddsCardHeader({ left, right }: { left: string; right: string }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+      <Text style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: '700', letterSpacing: 1.6, color: night.textFaint }}>{left}</Text>
+      <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost }}>{right}</Text>
+    </View>
+  );
+}
+
+/** Canvas 5a/5c — feasible verdict with the odds dial. */
+function FeasibleVerdict({ v, onBuild, onReset }: { v: Verdict; onBuild: () => void; onReset: () => void }) {
+  const { width } = useWindowDimensions();
+  const wide = width >= 820;
+  const [driver, setDriver] = useState(-1);
+  const odds = v.success_probability;
+  const caption =
+    driver >= 0 && v.success_factor_notes?.[driver]
+      ? v.success_factor_notes[driver]
+      : DEFAULT_ODDS_CAPTION;
+
+  const dialCard = odds !== undefined ? (
+    <View
+      style={{
+        width: wide ? 350 : '100%',
+        backgroundColor: night.surface, borderWidth: 1, borderColor: night.hairline,
+        borderRadius: 24, paddingHorizontal: 22, paddingVertical: 18,
+      }}
+    >
+      <OddsCardHeader left="QOACH'S CALL" right="TAP DIAL TO REPLAY" />
+      <View style={{ marginTop: 8 }}>
+        <OddsDial value={odds} color={night.accent} condLabel="IF YOU SHOW UP" size={wide ? 296 : Math.min(width - 104, 296)} />
+      </View>
+      <View style={{ minHeight: 42, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}>
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18.5, color: night.textSoft, textAlign: 'center' }}>
+          {caption}
+        </Text>
+      </View>
+    </View>
+  ) : null;
+
+  const drivers = (
+    <View style={{ flex: wide ? 1 : undefined, gap: 9 }}>
+      <OddsCardHeader
+        left={odds !== undefined ? 'WHAT MOVES THE NUMBER' : 'WHAT WILL DECIDE IT'}
+        right={v.success_factor_notes?.length ? 'TAP ONE — QOACH EXPLAINS' : ''}
+      />
+      <DriverList factors={v.success_factors} notes={v.success_factor_notes} active={driver} onPick={setDriver} />
+      {odds !== undefined ? (
+        <Text style={{ paddingHorizontal: 6, fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 17, color: night.textGhost }}>
+          {`${odds} today isn't ${odds} forever — skip weeks and Qoach revises it.`}
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  return (
+    <Screen>
+      <View style={{ width: '100%', maxWidth: 920, alignSelf: 'center' }}>
+        <VerdictChips label={'✓ FEASIBLE'} labelColor={night.accent} weeks={`${v.duration_weeks} WEEKS`} />
+        <Title style={{ fontSize: wide ? 31 : 25, lineHeight: wide ? 36 : 30, marginTop: 18, marginBottom: 10 }}>
+          {v.goal_statement}
+        </Title>
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 23, color: night.textMuted, maxWidth: 660 }}>
+          {v.assessment}
+        </Text>
+        <View style={{ flexDirection: wide ? 'row' : 'column', gap: 20, marginTop: 24 }}>
+          {dialCard}
+          {drivers}
+        </View>
+        <View style={{ marginTop: 26 }}>
+          <PrimaryButton label="Build my plan" onPress={onBuild} style={wide ? { width: 440, alignSelf: 'center' } : undefined} />
+          <TextButton label="Change my goal" onPress={onReset} height={46} />
+        </View>
+      </View>
+    </Screen>
+  );
+}
+
+/** Canvas 5b — the counter-offer as a negotiation: one dial, two pills. */
+function CounterVerdict({
+  v, goalText, onBuild, onReset,
+}: {
+  v: Verdict;
+  goalText: string;
+  onBuild: () => void;
+  onReset: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const wide = width >= 880;
+  const [view, setView] = useState<'asked' | 'offer'>('offer');
+  const succ = v.success_probability;
+  const orig = v.original_probability;
+  const hasPair = succ !== undefined && orig !== undefined;
+  const asked = hasPair && view === 'asked';
+  const dialColor = asked ? night.warn : night.accent;
+
+  const goalCards = (
+    <View style={{ gap: 10 }}>
+      {[
+        { key: 'asked' as const, label: 'AS YOU ASKED', text: v.original_request ?? goalText, ac: night.warn },
+        { key: 'offer' as const, label: "QOACH'S VERSION", text: v.goal_statement, ac: night.accent },
+      ].map(g => {
+        const on = hasPair ? view === g.key : g.key === 'offer';
+        return (
+          <Pressable
+            key={g.key}
+            disabled={!hasPair}
+            onPress={() => setView(g.key)}
+            style={{
+              backgroundColor: on ? night.surface : 'transparent',
+              borderWidth: 1, borderColor: on ? `${g.ac}80` : night.hairline,
+              borderRadius: 18, paddingVertical: 14, paddingHorizontal: 18,
+            }}
+          >
+            <Text style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: '700', letterSpacing: 1.4, color: on ? g.ac : night.textGhost }}>
+              {g.label}
+            </Text>
+            <Text
+              style={{
+                marginTop: 4, fontFamily: nightFonts.display, fontSize: 17, lineHeight: 22,
+                color: on ? night.text : night.textGhost,
+                textDecorationLine: !on && g.key === 'asked' ? 'line-through' : 'none',
+              }}
+            >
+              {g.text}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
+  const dialCard = succ !== undefined ? (
+    <View
+      style={{
+        width: wide ? 380 : '100%', alignSelf: wide ? 'flex-start' : undefined,
+        backgroundColor: night.surface, borderWidth: 1, borderColor: night.hairline,
+        borderRadius: 24, paddingHorizontal: 20, paddingVertical: 16,
+      }}
+    >
+      {hasPair ? (
+        <View style={{ flexDirection: 'row', gap: 5, backgroundColor: night.hairline, borderRadius: 999, padding: 5 }}>
+          {[
+            { key: 'asked' as const, label: 'As you asked', pct: `${orig}%` },
+            { key: 'offer' as const, label: "Qoach's version", pct: `${succ}%` },
+          ].map(pl => {
+            const on = view === pl.key;
+            return (
+              <Pressable
+                key={pl.key}
+                onPress={() => setView(pl.key)}
+                style={{
+                  flex: 1, height: 36, borderRadius: 999, flexDirection: 'row', gap: 7,
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: on ? night.text : 'transparent',
+                }}
+              >
+                <Text style={{ fontFamily: nightFonts.display, fontSize: 12, color: on ? night.bg : night.textMuted }}>
+                  {pl.label}
+                </Text>
+                <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', color: on ? (pl.key === 'asked' ? '#e8b467' : '#8fd3ab') : night.textGhost }}>
+                  {pl.pct}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+      <View style={{ marginTop: 12 }}>
+        <OddsDial
+          value={asked ? (orig as number) : succ}
+          color={dialColor}
+          condLabel={asked ? 'EVEN ALL-IN' : 'IF YOU SHOW UP'}
+          size={wide ? 300 : Math.min(width - 100, 300)}
+        />
+      </View>
+      <View style={{ minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}>
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18.5, color: night.textSoft, textAlign: 'center' }}>
+          {asked
+            ? "As stated, the odds aren't on your side — that's why Qoach countered."
+            : 'Rebuilt so the odds are on your side.'}
+        </Text>
+      </View>
+      {hasPair ? (
+        <Text style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost, paddingTop: 8 }}>
+          TAP A PILL TO FLIP · TAP THE DIAL TO REPLAY
+        </Text>
+      ) : null}
+    </View>
+  ) : null;
+
+  const leftCol = (
+    <View style={{ flex: wide ? 1 : undefined, gap: 14 }}>
+      <Title style={{ fontSize: wide ? 31 : 25, lineHeight: wide ? 36 : 30 }}>About that goal.</Title>
+      {goalCards}
+      <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 23, color: night.textMuted }}>
+        "{v.assessment}"
+      </Text>
+      <View style={{ marginTop: 6 }}>
+        <PrimaryButton label="Take the deal" onPress={onBuild} />
+        <TextButton label="Change my goal" onPress={onReset} height={46} />
+      </View>
+    </View>
+  );
+
+  return (
+    <Screen>
+      <View style={{ width: '100%', maxWidth: 960, alignSelf: 'center' }}>
+        <VerdictChips label={'⇄ COUNTER-OFFER'} labelColor={night.warn} weeks={`${v.duration_weeks} WEEKS OFFERED`} />
+        <View style={{ flexDirection: wide ? 'row' : 'column', gap: wide ? 26 : 18, marginTop: 20 }}>
+          {wide ? (
+            <>
+              {leftCol}
+              {dialCard}
+            </>
+          ) : (
+            <>
+              <Title style={{ fontSize: 25, lineHeight: 30 }}>About that goal.</Title>
+              {goalCards}
+              {dialCard}
+              <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 23, color: night.textMuted }}>
+                "{v.assessment}"
+              </Text>
+              <View>
+                <PrimaryButton label="Take the deal" onPress={onBuild} />
+                <TextButton label="Change my goal" onPress={onReset} height={46} />
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+    </Screen>
+  );
+}
+
 /**
  * The protocol reveal (canvas turn "Protocol reveal — the plan lands as a
  * moment, not a wall").
@@ -323,10 +627,11 @@ function WeekStrip({
  * strip gives the whole span at a glance, and locking in actually pays off.
  */
 function ProtocolReveal({
-  protocol, statement, onLock, onRestart,
+  protocol, statement, odds, onLock, onRestart,
 }: {
   protocol: Protocol;
   statement: string;
+  odds?: number;
   onLock: () => void;
   onRestart: () => void;
 }) {
@@ -379,6 +684,9 @@ function ProtocolReveal({
                 {locked ? 'LIVE' : 'DRAFT'}
               </Text>
             </View>
+            <View style={{ flex: 1 }} />
+            {/* 5d: the verdict number rides along, same conditional, smaller badge */}
+            {odds !== undefined ? <OddsChip value={odds} /> : null}
           </View>
 
           <Text style={{ fontFamily: nightFonts.display, fontSize: 21, lineHeight: 26.25, color: night.text, marginTop: 8 }}>
@@ -911,119 +1219,20 @@ export default function FirstGoalScreen({
     return <ChatThread coach={coach} answer={answer} setAnswer={setAnswer} onDismiss={onDismiss} dismissLabel={dismissLabel} />;
   }
 
-  /* verdict — feasible */
+  /* verdict — feasible (canvas 5a desktop / 5c phone) */
   if (coach.phase === 'verdict' && coach.verdict && coach.verdict.decision === 'feasible') {
-    const v = coach.verdict;
-    return (
-      <Screen>
-        <Pop>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <View
-              style={{
-                paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
-                backgroundColor: night.accentTint, borderWidth: 1, borderColor: night.accentBorderStrong,
-              }}
-            >
-              <Text style={{ fontFamily: nightFonts.display, fontSize: 11, letterSpacing: 1.8, color: night.accent }}>✓ FEASIBLE</Text>
-            </View>
-            <View
-              style={{
-                paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
-                backgroundColor: night.surface, borderWidth: 1, borderColor: night.borderMuted,
-              }}
-            >
-              <Text style={{ fontFamily: nightFonts.display, fontSize: 11, letterSpacing: 1, color: night.text }}>
-                {v.duration_weeks} WEEKS
-              </Text>
-            </View>
-          </View>
-        </Pop>
-        <Title style={{ fontSize: 25, lineHeight: 30, marginTop: 18, marginBottom: 14 }}>{v.goal_statement}</Title>
-        <Text style={{ fontFamily: nightFonts.body, fontSize: 14, lineHeight: 22.4, color: night.textMuted, marginBottom: 20 }}>
-          {v.assessment}
-        </Text>
-        <MonoLabel
-          text="WHAT WILL DECIDE IT"
-          color={night.textFaint}
-          style={{ fontFamily: nightFonts.display, fontSize: 10.5, letterSpacing: 1.5, marginBottom: 10 }}
-        />
-        <View style={{ gap: 9 }}>
-          {v.success_factors.map(f => (
-            <View key={f} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-              <View
-                style={{
-                  width: 7, height: 7, borderRadius: 4, backgroundColor: night.accent, marginTop: 6,
-                  shadowColor: night.accent, shadowOpacity: 0.6, shadowRadius: 5, shadowOffset: { width: 0, height: 0 },
-                }}
-              />
-              <Text style={{ flex: 1, fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 19.5, color: night.text }}>
-                {f}
-              </Text>
-            </View>
-          ))}
-        </View>
-        <Spacer />
-        <PrimaryButton label="Build my plan" onPress={coach.buildPlan} />
-        <TextButton label="Change my goal" onPress={coach.reset} height={46} />
-      </Screen>
-    );
+    return <FeasibleVerdict v={coach.verdict} onBuild={coach.buildPlan} onReset={coach.reset} />;
   }
 
-  /* verdict — counter-offer */
+  /* verdict — counter-offer (canvas 5b: the negotiation, one dial flips) */
   if (coach.phase === 'verdict' && coach.verdict) {
-    const v = coach.verdict;
     return (
-      <Screen>
-        <Pop>
-          <View
-            style={{
-              alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
-              backgroundColor: 'rgba(247,179,43,0.13)', borderWidth: 1, borderColor: 'rgba(247,179,43,0.6)',
-            }}
-          >
-            <Text style={{ fontFamily: nightFonts.display, fontSize: 11, letterSpacing: 1.8, color: night.warn }}>⇄ COUNTER-OFFER</Text>
-          </View>
-        </Pop>
-
-        <View
-          style={{
-            marginTop: 18, borderRadius: 16, backgroundColor: night.surfaceDeep,
-            borderWidth: 1, borderColor: night.hairline, paddingHorizontal: 16, paddingVertical: 14,
-          }}
-        >
-          <MonoLabel text="YOUR ASK" style={{ marginBottom: 5 }} />
-          <Text
-            style={{
-              fontFamily: nightFonts.display, fontSize: 15, lineHeight: 20, color: night.textFaint,
-              textDecorationLine: 'line-through', textDecorationColor: 'rgba(247,179,43,0.65)',
-            }}
-          >
-            {v.original_request ?? coach.goalText}
-          </Text>
-        </View>
-        <Text style={{ textAlign: 'center', fontFamily: nightFonts.display, fontSize: 16, color: night.textGhost, marginVertical: 8 }}>↓</Text>
-        <View
-          style={{
-            borderRadius: 16, backgroundColor: 'rgba(43,227,128,0.09)',
-            borderWidth: 1, borderColor: night.accentBorder, paddingHorizontal: 16, paddingVertical: 14,
-          }}
-        >
-          <MonoLabel text="QOACH'S OFFER" color={night.accent} style={{ marginBottom: 5 }} />
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 18, lineHeight: 23.4, color: night.text }}>
-            {v.goal_statement}
-          </Text>
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 12, color: night.accent, marginTop: 4 }}>
-            {v.duration_weeks} weeks
-          </Text>
-        </View>
-
-        <Text style={{ marginTop: 18, fontFamily: nightFonts.body, fontSize: 14, lineHeight: 22.4, color: night.textMuted }}>
-          "{v.assessment}"
-        </Text>
-        <Spacer />
-        <PrimaryButton label="Take the deal" onPress={coach.buildPlan} />
-        <TextButton label="Change my goal" onPress={coach.reset} height={46} />
-      </Screen>
+      <CounterVerdict
+        v={coach.verdict}
+        goalText={coach.goalText}
+        onBuild={coach.buildPlan}
+        onReset={coach.reset}
+      />
     );
   }
 
@@ -1033,6 +1242,7 @@ export default function FirstGoalScreen({
       <ProtocolReveal
         protocol={coach.protocol}
         statement={coach.verdict.goal_statement}
+        odds={coach.verdict.success_probability}
         onLock={lockIn}
         onRestart={coach.reset}
       />

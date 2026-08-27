@@ -16,6 +16,9 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v18: success_factor_notes — each success factor carries one wry line on how
+// it moves the odds, powering the verdict dial's tap-a-driver interaction
+// (canvas turn 5, "Success odds — Qoach's call, on a dial").
 // v17: the probability becomes a PROCEDURE (start 90, subtract per named red
 // flag; a structural runway/capacity mismatch is an automatic counter, never
 // a subtraction; maximal self-reports cap the number instead of raising it;
@@ -32,7 +35,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 17;
+export const PROMPT_VERSION = 18;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -125,6 +128,7 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
    3. Add 3 (once) if they are rebuilding something they have done before, or the runway is genuinely generous for the gap.
    4. Cap at 95; 97 is the absolute ceiling — life happens to every plan.
    DECISION RULE: run the procedure on the goal AS STATED first. 78 and above — you may greenlight. Below 70 — you MUST counter_offer instead. 70-77 is the borderline band: prefer a counter_offer that buys the number up to 80+ (longer runway, smaller first target); a greenlight is a bet you would personally take, and borderline bets get renegotiated, not blessed. ALWAYS emit original_probability, on every verdict: for feasible it EQUALS success_probability (the ask is the plan); for counter_offer it is the procedure applied to the ask exactly as stated, with no floor — 3% is a legitimate answer, and the honest gap between the two numbers is the argument for your counter; success_probability is then the procedure applied to YOUR counter-offered version, which must come out 78+ (that is what makes it worth offering).
+   Alongside success_factors, emit success_factor_notes — parallel arrays, same length: for each factor, ONE short sentence in your coach voice on how it moves the number (e.g. "Protect the mornings and the number holds", "Recovery is training too — skip it and the odds quietly leak"). Concrete and a little wry, never a percentage per factor.
    This number is your judgment as a coach, never a statistic: no field you write may imply it was measured from other users' outcomes.
    - "declined": pursuing it would be unsafe or impossible IN EVERY REFRAMING. This should be vanishingly rare — a separate safety gate runs before you, and almost any over-ambitious goal has a scaled version worth offering. "Marathon in 3 weeks, never run" is NOT declined — it's a counter_offer for a longer runway or a shorter first race. If you can imagine a realistic cousin of the goal, you MUST counter_offer it.
 
@@ -192,6 +196,11 @@ export const VERDICT_TOOL = {
       original_probability: {
         type: 'number',
         description: 'The same honest percent for the ORIGINAL ask as stated. For feasible verdicts this equals success_probability; for counter_offer it is usually much lower — that gap is why you countered.',
+      },
+      success_factor_notes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Parallel to success_factors, same length: one short sentence each on how that factor moves the odds, in coach voice.',
       },
     },
   },

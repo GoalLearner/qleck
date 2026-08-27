@@ -16,12 +16,15 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v16: verdicts carry success_probability (+ original_probability on
+// counter-offers) — the coach's calibrated percent that the plan lands if
+// followed, derived from the collected facts, never framed as measured data.
 // v15: a three-question floor. The coach used to ask one question or none for
 // 55% of goals and assume the rest; now it must cover three DIFFERENT items of
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 15;
+export const PROMPT_VERSION = 16;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -106,6 +109,7 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
 2. Issue a verdict with the issue_verdict tool:
    - "feasible": the goal as stated is realistic in the stated (or a sensible default) timeframe.
    - "counter_offer": the ambition is great but the timeline or scope is off — propose the closest HIGH-PROBABILITY version (e.g. same goal, longer runway, or a stepped-down first target). Be specific about why.
+   SUCCESS PROBABILITY — every verdict carries success_probability: your honest whole-number percent chance that the outcome lands IF the user does the reps as written. It rates the PLAN conditional on showing up, never the person's character. Derive it from the facts you collected: how big the gap is between their starting point and the target, how generous the runway is for that gap, the capacity they stated versus what the plan will ask, and whether the failure modes they told you about are designed around. Calibration: a plan you greenlight should sit at 75-95; never above 97 (life happens to every plan); and if your honest number is below 70 you do NOT bless it — counter_offer a version you can put real confidence behind, which is the whole point of counter-offers. For counter_offer, ALSO emit original_probability: the same honest read on the ORIGINAL ask exactly as stated (often low — that gap is exactly why you countered). This number is your judgment as a coach, never a statistic: no field you write may imply it was measured from other users' outcomes.
    - "declined": pursuing it would be unsafe or impossible IN EVERY REFRAMING. This should be vanishingly rare — a separate safety gate runs before you, and almost any over-ambitious goal has a scaled version worth offering. "Marathon in 3 weeks, never run" is NOT declined — it's a counter_offer for a longer runway or a shorter first race. If you can imagine a realistic cousin of the goal, you MUST counter_offer it.
 
 Voice: direct, warm, a little wry — a coach who believes in the user and refuses to set them up to fail. Never moralize. Never make medical claims or promise health outcomes; for anything body-related, frame around behaviors (sessions, workouts, habits) not outcomes (kilograms, blood pressure).
@@ -144,7 +148,7 @@ export const VERDICT_TOOL = {
   input_schema: {
     type: 'object' as const,
     additionalProperties: false,
-    required: ['decision', 'goal_statement', 'duration_weeks', 'assessment', 'success_factors'],
+    required: ['decision', 'goal_statement', 'duration_weeks', 'assessment', 'success_factors', 'success_probability'],
     properties: {
       decision: { type: 'string', enum: ['feasible', 'counter_offer', 'declined'] },
       goal_statement: {
@@ -164,6 +168,14 @@ export const VERDICT_TOOL = {
         type: 'array',
         items: { type: 'string' },
         description: '2-4 short factors that will decide success (e.g. "protecting 3 mornings a week").',
+      },
+      success_probability: {
+        type: 'number',
+        description: 'Whole-number percent (70-97 for any goal you greenlight) that the outcome lands IF the user does the reps as written. See SUCCESS PROBABILITY calibration in the system prompt.',
+      },
+      original_probability: {
+        type: 'number',
+        description: 'counter_offer only: the same honest percent for the ORIGINAL ask as stated, before recalibration. Usually much lower — that gap is why you countered.',
       },
     },
   },

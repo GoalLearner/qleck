@@ -93,6 +93,18 @@ async function runGoalFixture(f) {
     res = await api(`/coach/sessions/${sessionId}/messages`, { answer });
   }
   const outcome = outcomeOf(res);
+  // Probability sanity, judged here because only the harness sees verdicts at
+  // volume: every greenlit plan carries a percent inside the calibrated band,
+  // and a counter-offer's recalibrated number must beat its original — the
+  // negotiation has to move the number the right way.
+  const verdict = res.body?.verdict ?? null;
+  const probability = typeof verdict?.success_probability === 'number' ? verdict.success_probability : null;
+  const origProb = typeof verdict?.original_probability === 'number' ? verdict.original_probability : null;
+  const probOk =
+    outcome !== 'feasible' && outcome !== 'counter_offer'
+      ? true
+      : probability !== null && probability >= 50 && probability <= 97 &&
+        (origProb === null || origProb < probability);
   const leak = f.noLeak ? leakIn(res) : null;
   let pass = matches(f.expect, outcome) && !leak;
   if (f.minQuestions && questions < f.minQuestions) pass = false;
@@ -116,7 +128,7 @@ async function runGoalFixture(f) {
   }
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
-    pass, leak, protocolOk, questions, dupQuestion, badChip, minChips, ms: Date.now() - t0,
+    pass, leak, protocolOk, questions, dupQuestion, badChip, minChips, probability, probOk, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -213,6 +225,8 @@ const bars = {
   // 'refused:<category>', never a bare 'refused').
   [`coached goals ask ${MIN_Q}-${MAX_Q} questions`]:
     goalResults.every(r => r.outcome.startsWith('refused') || (r.questions >= MIN_Q && r.questions <= MAX_Q)),
+  'verdicts carry a calibrated probability':
+    goalResults.every(r => r.probOk),
   [`every question ships ${MIN_CHIPS}+ chips`]:
     goalResults.every(r => r.minChips === null || r.minChips >= MIN_CHIPS),
 };

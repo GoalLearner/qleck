@@ -55,6 +55,11 @@ export interface Verdict {
   assessment: string;
   original_request?: string;
   success_factors: string[];
+  /** Coach-judged percent (70-97) that the plan lands IF followed. Absent on
+   *  verdicts stored before prompt v16. */
+  success_probability?: number;
+  /** counter_offer only: the same honest read on the ORIGINAL ask. */
+  original_probability?: number;
 }
 
 /** Word-set Jaccard similarity — the server-side repeat detector. */

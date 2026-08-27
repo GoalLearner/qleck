@@ -33,4 +33,4 @@ DAILY_IP_LIMIT = "450"
 #   localhost:8090  = the Expo web dev preview
 #   *.netlify.app   = the tester build (both the assigned name and the
 #                     qleck-beta alias, so renaming the site does not break it)
-CORS_ORIGINS = "http://localhost:8090,https://qleck-beta.netlify.app,https://symphonious-gecko-f4b59d.netlify.app"
+CORS_ORIGINS = "http://localhost:8090,https://qleck-beta.netlify.app,https://symphonious-gecko-f4b59d.netlify.app,https://superlative-babka-03b86d.netlify.app"

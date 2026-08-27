@@ -66,6 +66,21 @@ export async function getIdentity(): Promise<DeviceIdentity> {
   return inflight;
 }
 
+/**
+ * Forget this device's identity, so the next call registers a brand new one.
+ *
+ * Until real accounts land (ROADMAP P3) the device token IS the account: every
+ * goal is owned by the user behind it. Keeping the token across a logout meant
+ * the next "new account" inherited the previous one's goals wearing a new
+ * name. The goals stay on the server — this end simply stops being able to
+ * reach them, which is the honest behaviour while sign-up is still mocked.
+ */
+export async function resetIdentity(): Promise<void> {
+  cached = null;
+  inflight = null;
+  await AsyncStorage.removeItem(KEY).catch(() => {});
+}
+
 /** Today's date in the device's local time, as YYYY-MM-DD. */
 export function localDate(): string {
   const d = new Date();

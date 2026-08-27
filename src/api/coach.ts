@@ -40,6 +40,14 @@ export function getDeviceId(): string {
   return deviceId;
 }
 
+/** Drop the coach's device id alongside the auth identity on logout. */
+export function resetDeviceId(): void {
+  deviceId = null;
+  if (Platform.OS === 'web') {
+    try { window.localStorage.removeItem('qleck-device'); } catch { /* fine */ }
+  }
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   let res: Response;
   try {

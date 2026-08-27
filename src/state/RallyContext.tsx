@@ -5,7 +5,8 @@ import {
   type RemoteGoal,
 } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
-import { localDate } from '../api/device';
+import { localDate, resetIdentity } from '../api/device';
+import { resetDeviceId } from '../api/coach';
 import { planIsOver, planStats, type CheckIn } from '../lib/protocolTime';
 import {
   DAYMAP, DAY_OPTIONS, DUMPLING, FRIENDS, INITIAL_ACHIEVEMENTS, INITIAL_CHALLENGES,
@@ -99,6 +100,8 @@ interface RallyState {
   /** Re-read goals from the server. The adjust flow owns its own two API calls
    *  (propose returns data the caller needs), so it re-syncs through this. */
   refreshGoals: () => Promise<void>;
+  /** Clear this device's identity + caches (logout). */
+  signOut: () => Promise<void>;
   events: RallyEvent[];
   challenges: Challenge[];
   polls: Poll[];
@@ -396,16 +399,33 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     setLastSent({ avKeys: picked, draft });
   }, []);
 
+  /** Logout: forget who this device is and everything cached about them.
+   *  Sign-up is still mocked (P3), so a lingering identity made every "new
+   *  account" the previous account with a fresh name painted on it. */
+  const signOut = useCallback(async () => {
+    setGoals([]);
+    setFinishedGoals([]);
+    setCheckInsByGoal({});
+    setProfile(DEFAULT_PROFILE);
+    // hydratedRef stays true on purpose: the persist effects must keep running
+    // so the NEXT account's goals and profile are cached. They will re-write
+    // these keys with the cleared state, which is the same thing this removal
+    // does — belt and braces, not a race.
+    await AsyncStorage.multiRemove(['qleck-goals', 'qleck-profile']).catch(() => {});
+    await resetIdentity();
+    resetDeviceId();
+  }, []);
+
   const value = useMemo<RallyState>(() => ({
     profile, people, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, finishedGoals,
     checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
-    refreshGoals: refresh,
+    refreshGoals: refresh, signOut,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress,
   }), [profile, people, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, finishedGoals,
-    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate, refresh,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate, refresh, signOut,
     events, challenges, polls, achievements, following, inviteState, jogState, lastSent,
     setRsvp, checkIn, respondInvite, joinJog, sendRally, toggleFollow, vote, cheer, logTeamProgress]);
 

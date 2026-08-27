@@ -87,6 +87,11 @@ export interface CallParams {
   tools: ToolDef[];
   toolChoice: ToolChoice;
   maxTokens: number;
+  /** Sampling temperature; default 0.7. Pinned-verdict calls pass 0.2 —
+   *  calibration showed borderline verdicts flipping decision class at 0.7,
+   *  and a user who retries until greenlit is the exploit that opens.
+   *  Question phrasing keeps the default for variety. */
+  temperature?: number;
 }
 
 export interface ModelCallResult {
@@ -134,7 +139,7 @@ async function deepseekOnce(env: Env, params: CallParams): Promise<RawResult> {
       max_tokens: params.maxTokens,
       // Lower than DeepSeek's default: structured tool output gets noticeably
       // less malformed (unquoted values, dropped brackets) at reduced temp.
-      temperature: 0.7,
+      temperature: params.temperature ?? 0.7,
     }),
   });
   if (!res.ok) {

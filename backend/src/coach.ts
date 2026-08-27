@@ -42,7 +42,7 @@ interface TranscriptEntry {
 
 export interface CoachTurnResult {
   type: 'question' | 'verdict' | 'refused' | 'error';
-  question?: { question: string; why_it_matters: string };
+  question?: { question: string; why_it_matters: string; suggested_answers?: string[] };
   verdict?: Verdict;
   refusal?: { category: string; message: string };
   error?: string;
@@ -195,6 +195,7 @@ export async function coachTurn(
         ? { type: 'tool', name: ASK_TOOL.name }
         : { type: 'any' },
     maxTokens: 2048,
+    ...(mustVerdict ? { temperature: 0.2 } : {}),
   });
 
   if (result.refused) {
@@ -270,6 +271,7 @@ export async function coachTurn(
         tools: [VERDICT_TOOL],
         toolChoice: { type: 'tool', name: VERDICT_TOOL.name },
         maxTokens: 2048,
+        temperature: 0.2,
       });
       if (forced.toolName === VERDICT_TOOL.name) {
         const fv = forced.toolInput as Verdict;

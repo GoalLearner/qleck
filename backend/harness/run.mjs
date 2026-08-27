@@ -103,8 +103,10 @@ async function runGoalFixture(f) {
   const probOk =
     outcome !== 'feasible' && outcome !== 'counter_offer'
       ? true
-      : probability !== null && probability >= 50 && probability <= 97 &&
-        (origProb === null || origProb < probability);
+      : probability !== null && probability >= 70 && probability <= 97 &&
+        (outcome === 'feasible'
+          ? origProb === null || origProb === probability
+          : origProb !== null && origProb < probability);
   const leak = f.noLeak ? leakIn(res) : null;
   let pass = matches(f.expect, outcome) && !leak;
   if (f.minQuestions && questions < f.minQuestions) pass = false;

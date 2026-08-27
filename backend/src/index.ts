@@ -238,6 +238,39 @@ export default {
         if (!goalText || goalText.length > MAX_GOAL_CHARS) {
           return json({ error: 'invalid_goal_text', max: MAX_GOAL_CHARS }, 400, cors);
         }
+
+        // Verdict memory: the same device re-submitting the same goal within
+        // 48h gets the SAME verdict back, not a fresh roll. Calibration showed
+        // genuinely borderline goals can flip decision class between runs, and
+        // without memory that flip is an exploit — resubmit a countered goal
+        // until a greenlight lands. Reuse also reads as a coach who remembers,
+        // and costs zero AI calls. Harness traffic is exempt (it replays the
+        // same fixtures against a fixed device by design), and the copied
+        // transcript keeps the protocol step working on the new session.
+        if (!isHarness) {
+          const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+          const recent = await env.DB
+            .prepare(
+              `SELECT id, goal_text, transcript, clarify_turns, verdict FROM coach_sessions
+               WHERE device_id = ? AND status = 'verdict' AND updated_at > datetime('now', '-2 days')
+               ORDER BY updated_at DESC LIMIT 10`,
+            )
+            .bind(deviceId)
+            .all<{ id: string; goal_text: string; transcript: string; clarify_turns: number; verdict: string }>();
+          const prior = (recent.results ?? []).find(r => norm(r.goal_text) === norm(goalText));
+          if (prior?.verdict) {
+            const reusedId = crypto.randomUUID();
+            await env.DB
+              .prepare(
+                `INSERT INTO coach_sessions (id, device_id, goal_text, transcript, clarify_turns, status, verdict)
+                 VALUES (?, ?, ?, ?, ?, 'verdict', ?)`,
+              )
+              .bind(reusedId, deviceId, goalText, prior.transcript, prior.clarify_turns, prior.verdict)
+              .run();
+            return json({ sessionId: reusedId, type: 'verdict', verdict: JSON.parse(prior.verdict) }, 200, cors);
+          }
+        }
+
         const sessionId = crypto.randomUUID();
         await env.DB
           .prepare(`INSERT INTO coach_sessions (id, device_id, goal_text) VALUES (?, ?, ?)`)
@@ -343,6 +376,37 @@ export default {
 };
 
 /** Shared: run one coach turn and persist the resulting session state. */
+/**
+ * The probability band lives in the prompt and the harness enforces it in
+ * CI — but production must not TRUST the model. This is the one choke point
+ * every verdict passes through (stored and returned in the same breath), so
+ * the guarantee lives here: whatever reaches a user is a whole number in
+ * 1-97, a counter-offer's original is strictly below its counter, and a
+ * greenlit verdict never carries a number that contradicts the greenlight
+ * (below 70 the coach is instructed to counter-offer instead — a "feasible,
+ * 55%" pairing reads as the coach disagreeing with itself). Anything outside
+ * those rules is DROPPED, not clamped: a missing gauge degrades safely, a
+ * clamped number would be a lie.
+ */
+function sanitizeOdds(v: Verdict): void {
+  const clean = (n: unknown): number | undefined => {
+    if (typeof n !== 'number' || !Number.isFinite(n)) return undefined;
+    const r = Math.round(n);
+    return r >= 1 && r <= 97 ? r : undefined;
+  };
+  let sp = clean(v.success_probability);
+  if (sp !== undefined && sp < 70 && v.decision !== 'declined') sp = undefined;
+  let op = clean(v.original_probability);
+  if (sp === undefined) op = undefined;
+  else if (v.decision === 'counter_offer') {
+    if (op === undefined || op >= sp) op = undefined; // the gap IS the point
+  } else {
+    op = sp; // feasible: the ask is the plan, the pair is degenerate by design
+  }
+  v.success_probability = sp;
+  v.original_probability = op;
+}
+
 async function runCoachTurn(
   env: Env,
   cors: Record<string, string>,
@@ -358,6 +422,15 @@ async function runCoachTurn(
   }
 
   if (result.type === 'question' && result.question) {
+    // Delegation chips ("you decide", "not sure") are banned in the prompt,
+    // but a ban that lives only in prose is a hope, not a guarantee — the
+    // model still emits one occasionally. Filter them here, the same
+    // trust-nothing stance sanitizeOdds takes: a question with one fewer
+    // quick-pick degrades safely, a shrug-chip on a fact question does not.
+    if (Array.isArray(result.question.suggested_answers)) {
+      result.question.suggested_answers = result.question.suggested_answers
+        .filter((c: string) => !/no idea|you decide|not sure|whatever you think|up to you/i.test(c));
+    }
     transcript.push({ question: result.question.question, why: result.question.why_it_matters });
     await env.DB
       .prepare(
@@ -369,6 +442,7 @@ async function runCoachTurn(
   }
 
   if (result.type === 'verdict' && result.verdict) {
+    sanitizeOdds(result.verdict);
     await env.DB
       .prepare(
         `UPDATE coach_sessions SET transcript = ?, status = 'verdict', verdict = ?, updated_at = datetime('now') WHERE id = ?`,

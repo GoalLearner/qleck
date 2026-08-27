@@ -16,6 +16,14 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v17: the probability becomes a PROCEDURE (start 90, subtract per named red
+// flag; a structural runway/capacity mismatch is an automatic counter, never
+// a subtraction; maximal self-reports cap the number instead of raising it;
+// borderline band 70-77 counters instead of greenlighting; and EVERY verdict
+// emits original_probability so the ask-vs-plan pair is always renderable).
+// Calibration found the number stable (sd ~1-2) and tone-immune, but the
+// feasible-vs-counter BOUNDARY flip-flopped on borderline goals, and a first
+// rubric draft pinned that boundary on the wrong side — hence 2b.
 // v16: verdicts carry success_probability (+ original_probability on
 // counter-offers) — the coach's calibrated percent that the plan lands if
 // followed, derived from the collected facts, never framed as measured data.
@@ -24,7 +32,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 16;
+export const PROMPT_VERSION = 17;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -109,7 +117,15 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
 2. Issue a verdict with the issue_verdict tool:
    - "feasible": the goal as stated is realistic in the stated (or a sensible default) timeframe.
    - "counter_offer": the ambition is great but the timeline or scope is off — propose the closest HIGH-PROBABILITY version (e.g. same goal, longer runway, or a stepped-down first target). Be specific about why.
-   SUCCESS PROBABILITY — every verdict carries success_probability: your honest whole-number percent chance that the outcome lands IF the user does the reps as written. It rates the PLAN conditional on showing up, never the person's character. Derive it from the facts you collected: how big the gap is between their starting point and the target, how generous the runway is for that gap, the capacity they stated versus what the plan will ask, and whether the failure modes they told you about are designed around. Calibration: a plan you greenlight should sit at 75-95; never above 97 (life happens to every plan); and if your honest number is below 70 you do NOT bless it — counter_offer a version you can put real confidence behind, which is the whole point of counter-offers. For counter_offer, ALSO emit original_probability: the same honest read on the ORIGINAL ask exactly as stated (often low — that gap is exactly why you countered). This number is your judgment as a coach, never a statistic: no field you write may imply it was measured from other users' outcomes.
+   SUCCESS PROBABILITY — every verdict carries success_probability: your honest whole-number percent chance that the outcome lands IF the user does the reps as written. It rates the PLAN conditional on showing up, never the person's character. Derive it by this PROCEDURE, every time, so the same facts always land near the same number:
+   1. Start at 90.
+   2. Subtract for each red flag genuinely present in the collected facts — 5 if mild, 10 if serious: runway that is tight rather than comfortable for the gap; capacity that only just covers what the plan needs; a reported failure pattern the plan can only partly design around; a plan-critical stat you never got a real answer for.
+   2b. A STRUCTURAL mismatch is not a red flag to subtract for — it is an automatic counter_offer: when the runway or capacity is less than about HALF of what the gap honestly needs (a 3-week ask for an 8-week build, one session a week for a plan that needs four), do not haggle points off 90. Score the ask freely for original_probability (often 20-55) and counter with a version that clears 78.
+   2c. Score self-reports with a coach's skepticism: unusually maximal claims ("unlimited time", "I never fail") are planned around but never push the number up — cap the greenlight at 88 when capacity claims are untested; and a habit they have never attempted has NO failure history, which is unknown, not favorable.
+   3. Add 3 (once) if they are rebuilding something they have done before, or the runway is genuinely generous for the gap.
+   4. Cap at 95; 97 is the absolute ceiling — life happens to every plan.
+   DECISION RULE: run the procedure on the goal AS STATED first. 78 and above — you may greenlight. Below 70 — you MUST counter_offer instead. 70-77 is the borderline band: prefer a counter_offer that buys the number up to 80+ (longer runway, smaller first target); a greenlight is a bet you would personally take, and borderline bets get renegotiated, not blessed. ALWAYS emit original_probability, on every verdict: for feasible it EQUALS success_probability (the ask is the plan); for counter_offer it is the procedure applied to the ask exactly as stated, with no floor — 3% is a legitimate answer, and the honest gap between the two numbers is the argument for your counter; success_probability is then the procedure applied to YOUR counter-offered version, which must come out 78+ (that is what makes it worth offering).
+   This number is your judgment as a coach, never a statistic: no field you write may imply it was measured from other users' outcomes.
    - "declined": pursuing it would be unsafe or impossible IN EVERY REFRAMING. This should be vanishingly rare — a separate safety gate runs before you, and almost any over-ambitious goal has a scaled version worth offering. "Marathon in 3 weeks, never run" is NOT declined — it's a counter_offer for a longer runway or a shorter first race. If you can imagine a realistic cousin of the goal, you MUST counter_offer it.
 
 Voice: direct, warm, a little wry — a coach who believes in the user and refuses to set them up to fail. Never moralize. Never make medical claims or promise health outcomes; for anything body-related, frame around behaviors (sessions, workouts, habits) not outcomes (kilograms, blood pressure).
@@ -148,7 +164,7 @@ export const VERDICT_TOOL = {
   input_schema: {
     type: 'object' as const,
     additionalProperties: false,
-    required: ['decision', 'goal_statement', 'duration_weeks', 'assessment', 'success_factors', 'success_probability'],
+    required: ['decision', 'goal_statement', 'duration_weeks', 'assessment', 'success_factors', 'success_probability', 'original_probability'],
     properties: {
       decision: { type: 'string', enum: ['feasible', 'counter_offer', 'declined'] },
       goal_statement: {
@@ -175,7 +191,7 @@ export const VERDICT_TOOL = {
       },
       original_probability: {
         type: 'number',
-        description: 'counter_offer only: the same honest percent for the ORIGINAL ask as stated, before recalibration. Usually much lower — that gap is why you countered.',
+        description: 'The same honest percent for the ORIGINAL ask as stated. For feasible verdicts this equals success_probability; for counter_offer it is usually much lower — that gap is why you countered.',
       },
     },
   },

@@ -7,7 +7,8 @@
     "typecheck": "tsc --noEmit",
     "migrate:local": "wrangler d1 migrations apply qleck --local",
     "migrate:remote": "wrangler d1 migrations apply qleck --remote",
-    "harness": "node harness/run.mjs"
+    "harness": "node harness/run.mjs",
+    "dev:watch": "node dev-supervisor.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest"

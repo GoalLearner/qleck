@@ -1092,14 +1092,32 @@ export default function FirstGoalScreen({
   }
 
   /* error — snag */
+  // Every failure kind used to render the same "hit a snag" line, so a client
+  // that could not REACH the coach looked identical to a coach that broke.
+  // That cost two rounds of diagnosis in one day: once for a tester whose
+  // requests never left the browser, once for a dev worker that was simply
+  // not running. The specific message is already on the error; show it.
+  const snagNetwork = coach.error?.kind === 'network';
   return (
     <Screen>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18 }}>
         <BigCircle glyph="!" tint="warn" />
-        <Title style={{ fontSize: 26, lineHeight: 30, textAlign: 'center' }}>The coach hit a snag</Title>
-        <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 23.2, color: night.textMuted, textAlign: 'center', maxWidth: 270 }}>
-          Not you — us. Try again in a moment; your goal is still right here.
+        <Title style={{ fontSize: 26, lineHeight: 30, textAlign: 'center' }}>
+          {snagNetwork ? "Can't reach the coach" : 'The coach hit a snag'}
+        </Title>
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 23.2, color: night.textMuted, textAlign: 'center', maxWidth: 280 }}>
+          {coach.error?.message ?? 'Not you — us. Try again in a moment; your goal is still right here.'}
         </Text>
+        {coach.error ? (
+          <Text style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: 1.2, color: night.textGhost, textAlign: 'center' }}>
+            {coach.error.kind.toUpperCase()}
+          </Text>
+        ) : null}
+        {!snagNetwork ? (
+          <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 19, color: night.textGhost, textAlign: 'center', maxWidth: 280 }}>
+            Your goal is still right here.
+          </Text>
+        ) : null}
       </View>
       {coach.error?.retryable && <PrimaryButton label="Retry" onPress={coach.retry} />}
       <TextButton label="Back to my goal" onPress={coach.reset} height={46} />

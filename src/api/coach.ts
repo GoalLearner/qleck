@@ -60,9 +60,15 @@ async function post<T>(path: string, body: unknown): Promise<T> {
       body: JSON.stringify(body),
     });
   } catch {
+    // On the dev preview this almost always means the local Worker is not
+    // running, which reads as a mysterious app bug unless we say so. In a
+    // deployed build the same failure really is the network.
+    const local = baseUrl().includes('localhost');
     throw new CoachApiError({
       kind: 'network', retryable: true,
-      message: "Can't reach the coach — check your connection and try again.",
+      message: local
+        ? `No answer from ${baseUrl()} — start the local worker: cd backend && npx wrangler dev`
+        : "Can't reach the coach — check your connection and try again.",
     });
   }
   const json = await res.json().catch(() => ({} as Record<string, unknown>));

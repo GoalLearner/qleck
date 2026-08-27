@@ -7,6 +7,13 @@
   command = "npx expo export --platform web"
   publish = "dist"
 
+# Netlify's default image ships an older Node than this project builds on.
+# Expo SDK 56's exporter needs a modern one; pin it so a CI build matches the
+# local export rather than failing on syntax the old runtime cannot parse.
+[build.environment]
+  NODE_VERSION = "22"
+  NPM_FLAGS = "--legacy-peer-deps"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

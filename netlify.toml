@@ -1,9 +1,18 @@
-# Netlify config for the Qleck web preview.
+# Netlify config for the Qleck web preview (site: qleck-beta).
 #
-# Deploys are continuous: the GoalLearner/qleck repo is connected to the
-# qleck-beta site via a read-only deploy key plus a push webhook, so a push to
-# master builds and publishes here. Everything below is what CI uses — a local
-# `netlify deploy --prod --dir dist` still works as an override.
+# Deploys are MANUAL and that is deliberate. Build locally, then upload the
+# prebuilt dist:
+#
+#   npx expo export --platform web
+#   npx netlify-cli deploy --prod --dir dist --site 31648001-5960-4028-be00-bf1b8676161b --no-build
+#
+# Continuous deploys were tried and rolled back: on a Free plan a PRIVATE repo
+# only builds for contributors Netlify can verify, and verification requires
+# the Netlify GitHub App to be installed on the repo. Linking by deploy key
+# (which is scriptable) leaves installation_id null, so every pushed build is
+# blocked. Installing the App needs a browser authorization, and for a solo
+# build the manual upload is cheaper anyway — it spends no build minutes on
+# rebuilding what this machine already built.
 #
 # The app is a React Navigation SPA with no server routes, so every path has to
 # fall through to index.html or a refresh on /goals 404s. The API lives on the
@@ -12,12 +21,10 @@
   command = "npx expo export --platform web"
   publish = "dist"
 
-# Netlify's default image ships an older Node than this project builds on.
-# Expo SDK 56's exporter needs a modern one; pin it so a CI build matches the
-# local export rather than failing on syntax the old runtime cannot parse.
+# Kept for the day this does build on Netlify: the default image ships an
+# older Node than Expo SDK 56's exporter needs. Unused by a --no-build upload.
 [build.environment]
   NODE_VERSION = "22"
-  NPM_FLAGS = "--legacy-peer-deps"
 
 [[redirects]]
   from = "/*"

@@ -34,6 +34,10 @@ const GHOSTS = [
 
 const THINK_LINES = ['Reading your goal…', 'Stress-testing the timeline…', 'Building your protocol…'];
 
+// Mirrors MIN_CLARIFY_TURNS in backend/src/coach.ts: the server guarantees at
+// least this many questions, so the progress track can promise them.
+const QUESTION_FLOOR = 3;
+
 /* ── shared bits ────────────────────────────────────────────────────────── */
 
 function QoachMark({ size = 30, fontSize = 17 }: { size?: number; fontSize?: number }) {
@@ -631,14 +635,26 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
         <QoachMark />
         <Text style={{ fontFamily: nightFonts.display, fontSize: 18, color: night.text, letterSpacing: 0.2 }}>Qoach</Text>
         <View style={{ flex: 1 }} />
-        {/* No denominator: 4 is the server's CAP, not a plan. Qoach asks as
-            few as it needs (often one), so "1 OF 4" promised three questions
-            that never came. Count what actually happened instead. */}
+        {/* The denominator is honest again. It was removed when 4 was a CAP
+            the coach rarely reached — "1 OF 4" promised questions that never
+            came. 3 is now a FLOOR the server guarantees, so it is a real
+            promise; the track grows past three on the goals that earn a
+            fourth or fifth question. */}
         <View style={{ alignItems: 'flex-end', gap: 5 }}>
-          <MonoLabel text={`QUESTION ${coach.questionCount}`} color={night.textFaint} style={{ fontSize: 10.5, letterSpacing: 1 }} />
+          <MonoLabel
+            text={`QUESTION ${coach.questionCount} OF ${Math.max(QUESTION_FLOOR, coach.questionCount)}`}
+            color={night.textFaint}
+            style={{ fontSize: 10.5, letterSpacing: 1 }}
+          />
           <View style={{ flexDirection: 'row', gap: 5 }}>
-            {Array.from({ length: Math.max(1, coach.questionCount) }, (_, i) => (
-              <View key={i} style={{ width: 18, height: 4, borderRadius: 2, backgroundColor: night.accent }} />
+            {Array.from({ length: Math.max(QUESTION_FLOOR, coach.questionCount) }, (_, i) => (
+              <View
+                key={i}
+                style={{
+                  width: 18, height: 4, borderRadius: 2,
+                  backgroundColor: i < coach.questionCount ? night.accent : night.hairline,
+                }}
+              />
             ))}
           </View>
         </View>

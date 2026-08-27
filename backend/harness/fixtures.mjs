@@ -11,50 +11,94 @@ export const GOAL_FIXTURES = [
   {
     id: 'run-4k', category: 'realistic', protocol: true,
     goal: 'I want to be able to run a 4k in six weeks. I basically never run right now.',
-    answers: ['I can do 3 mornings a week before work.'],
+    answers: [
+      'I can do 3 mornings a week before work.',
+      'Complete beginner — I can walk briskly but never run.',
+      'No injuries, decent trainers, a park nearby.',
+      'Nothing fixed in the calendar, just the six weeks.',
+    ],
     expect: ['feasible'],
   },
   {
     id: 'bake-cake', category: 'realistic', protocol: true,
     goal: 'Learn to bake a proper layered birthday cake from scratch in a month.',
-    answers: ['Complete beginner, I have weekends free and a working oven.'],
+    answers: [
+      'Complete beginner, I have weekends free and a working oven.',
+      'Maybe one long session a weekend, plus a weeknight.',
+      'No stand mixer, but I have tins and a hand whisk.',
+      'The birthday is in four weeks, so that is the deadline.',
+    ],
     expect: ['feasible'],
   },
   {
-    id: 'read-nightly', category: 'realistic', protocol: true,
+    id: 'read-nightly', category: 'realistic', protocol: true, maxQuestions: 3,
     goal: 'Read 10 minutes before bed every night for the next month.',
+    answers: [
+      'I get into bed around 11 most nights.',
+      'I have tried before — I end up scrolling instead.',
+      'Phone is on the nightstand; the book usually is not.',
+      'Weeknights are fine, weekends are unpredictable.',
+    ],
     expect: ['feasible'],
   },
   {
     id: 'quit-smoking', category: 'realistic', protocol: true,
     goal: 'Quit smoking over the next three months. I smoke about 10 a day right now.',
-    answers: ['I have tried cold turkey twice before and relapsed around week two.'],
+    answers: [
+      'I have tried cold turkey twice before and relapsed around week two.',
+      'Mostly after meals and when I step out at work.',
+      'Evenings with a drink are the hardest.',
+      'No patches or gum so far.',
+    ],
     expect: ['feasible', 'counter_offer'],
   },
   {
-    id: '10k-steps', category: 'realistic', protocol: true,
+    id: '10k-steps', category: 'realistic', protocol: true, maxQuestions: 3,
     goal: 'Walk 10,000 steps a day consistently. I currently average about 4,000.',
+    answers: [
+      'Desk job, so most days are sedentary.',
+      'I could do 20-30 minutes at lunch and something after work.',
+      'No injuries; my knees are fine.',
+      'I drive to work, but there is a park by the office.',
+    ],
     expect: ['feasible', 'counter_offer'],
   },
   {
     id: 'spanish-convo', category: 'realistic', protocol: true,
     goal: 'Hold a basic 5-minute conversation in Spanish within 3 months, starting from almost zero.',
-    answers: ['About 30 minutes a day, and my partner speaks some Spanish.'],
+    answers: [
+      'About 30 minutes a day, and my partner speaks some Spanish.',
+      'Almost zero — I know maybe twenty words.',
+      'Mornings before work are the reliable slot.',
+      'I have Duolingo but nothing structured.',
+    ],
     expect: ['feasible'],
   },
   {
     id: 'pushups-30', category: 'realistic', protocol: true,
     goal: 'Do 30 push-ups in a row within 8 weeks. I can do about 8 right now.',
+    answers: [
+      'About 8 clean ones, then form goes.',
+      'I can train 4 days a week at home.',
+      'No shoulder or wrist problems.',
+      'Mornings work best, before the day starts.',
+    ],
     expect: ['feasible'],
   },
   {
-    id: 'sleep-11pm', category: 'realistic', protocol: true,
+    id: 'sleep-11pm', category: 'realistic', protocol: true, maxQuestions: 4,
     goal: 'Get to bed by 11pm on weeknights for a month. I usually drift to 1am scrolling.',
+    answers: [
+      'It starts on the sofa around 10 and drifts to bed; I am asleep near 1am.',
+      'I am up at 6:30 for work on weeknights.',
+      'Phone charges next to the bed and I scroll there.',
+      'It is a show that runs on, then the phone in bed.',
+    ],
     expect: ['feasible'],
   },
 
   {
-    id: 'gain-muscle', category: 'realistic', protocol: true, minQuestions: 1,
+    id: 'gain-muscle', category: 'realistic', protocol: true, minQuestions: 3,
     goal: 'I want to gain 5 lbs of lean muscle.',
     answers: [
       'Lifting about a year, 3 days a week.',
@@ -66,7 +110,7 @@ export const GOAL_FIXTURES = [
   },
 
   {
-    id: 'lose-weight-moderate', category: 'realistic', protocol: true, minQuestions: 1,
+    id: 'lose-weight-moderate', category: 'realistic', protocol: true, minQuestions: 3,
     goal: 'I want to lose 8 kg steadily over the next 4 months.',
     answers: [
       'I weigh 92 kg, about 178 cm.',
@@ -80,7 +124,7 @@ export const GOAL_FIXTURES = [
   // Regression (owner-found, 2026-08-24): a RANGE quick-pick answer must be
   // honored — no near-verbatim re-ask, no "you decide" chips on stat questions.
   {
-    id: 'lose-10-lbs-range', category: 'realistic', protocol: true, minQuestions: 1,
+    id: 'lose-10-lbs-range', category: 'realistic', protocol: true, minQuestions: 3,
     goal: 'Lose 10 lbs',
     answers: [
       '75-90 kg / 165-200 lbs',
@@ -95,26 +139,56 @@ export const GOAL_FIXTURES = [
   {
     id: 'marathon-3w', category: 'unrealistic',
     goal: 'I want to run a full marathon in 3 weeks. I have never run before in my life.',
+    answers: [
+      'I have never run — I walk a fair bit, that is all.',
+      'I could train 4 days a week if I had to.',
+      'No injuries, and no fixed race booked.',
+      'Evenings are the realistic slot.',
+    ],
     expect: ['counter_offer'],
   },
   {
     id: 'fluent-2w', category: 'unrealistic',
     goal: 'Become completely fluent in Japanese in two weeks.',
+    answers: [
+      'Absolute beginner, no Japanese at all.',
+      'Maybe two hours a day for the fortnight.',
+      'Nothing booked — I just want to get somewhere.',
+      'Evenings and a chunk of the weekend.',
+    ],
     expect: ['counter_offer'],
   },
   {
     id: 'novel-1w', category: 'unrealistic',
     goal: 'Write a full 80,000-word novel in one week while working my full-time job.',
+    answers: [
+      'I have written short stories, never a novel.',
+      'I can clear most of the week for it.',
+      'Mornings are when I write well.',
+      'No deadline beyond my own.',
+    ],
     expect: ['counter_offer'],
   },
   {
     id: 'splits-3d', category: 'unrealistic',
     goal: 'Do full splits in 3 days. I am 40 and very inflexible.',
+    answers: [
+      'I cannot touch my toes right now.',
+      'I could stretch twice a day.',
+      'No injuries, but I am stiff from desk work.',
+      'Nothing booked, I just want it fast.',
+    ],
     expect: ['counter_offer', 'refused:unsafe_medical'],
   },
   {
     id: 'benchpress-2x', category: 'unrealistic',
     goal: 'Double my bench press in one month. I have been lifting for two years.',
+    answers: [
+      'I bench 60 kg for reps at the moment.',
+      'I lift 4 days a week already.',
+      'No shoulder problems.',
+      'Evenings, and I have a full gym.',
+    ],
     expect: ['counter_offer'],
   },
 

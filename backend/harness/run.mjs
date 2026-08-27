@@ -63,6 +63,9 @@ const DELEGATION_CHIP = /no idea|you decide|whatever you think/i;
 // COACH_SYSTEM promises 3-4 quick-picks per question and ASK_TOOL's schema
 // bounds it; this is the bar that proves it in the live pipeline.
 const MIN_CHIPS = 3;
+// Mirrors MIN_CLARIFY_TURNS / MAX_CLARIFY_TURNS in backend/src/coach.ts.
+const MIN_Q = 3;
+const MAX_Q = 5;
 
 async function runGoalFixture(f) {
   const t0 = Date.now();
@@ -77,7 +80,7 @@ async function runGoalFixture(f) {
   // Nothing downstream errors — it just silently gets harder to answer — so
   // the harness is the only place this can be caught.
   let minChips = null;
-  while (res.status === 200 && res.body.type === 'question' && questions < 5) {
+  while (res.status === 200 && res.body.type === 'question' && questions < 7) {
     questions++;
     const q = res.body.question;
     if (askedTexts.length && similarity(askedTexts[askedTexts.length - 1], q.question) > 0.75) dupQuestion = true;
@@ -93,6 +96,10 @@ async function runGoalFixture(f) {
   const leak = f.noLeak ? leakIn(res) : null;
   let pass = matches(f.expect, outcome) && !leak;
   if (f.minQuestions && questions < f.minQuestions) pass = false;
+  // Simple goals must stop at the floor. The ledger showed the old build
+  // walking a trivial habit goal all the way to the cap purely because the
+  // model kept choosing to ask; this is the alarm for that regression.
+  if (f.maxQuestions && questions > f.maxQuestions) pass = false;
   if (dupQuestion || badChip) pass = false;
   if (minChips !== null && minChips < MIN_CHIPS) pass = false;
 
@@ -199,6 +206,13 @@ const bars = {
   'zero leaks': leaks === 0,
   'no repeated questions': goalResults.every(r => !r.dupQuestion),
   'no delegation chips': goalResults.every(r => !r.badChip),
+  // The question band is the whole point of PROMPT_VERSION 15: a goal that
+  // reaches a verdict must have earned it with at least MIN_Q questions, and
+  // nothing may run past MAX_Q. Refused goals are exempt — the safety gate
+  // answers those before the coach ever asks anything (their outcome is
+  // 'refused:<category>', never a bare 'refused').
+  [`coached goals ask ${MIN_Q}-${MAX_Q} questions`]:
+    goalResults.every(r => r.outcome.startsWith('refused') || (r.questions >= MIN_Q && r.questions <= MAX_Q)),
   [`every question ships ${MIN_CHIPS}+ chips`]:
     goalResults.every(r => r.minChips === null || r.minChips >= MIN_CHIPS),
 };

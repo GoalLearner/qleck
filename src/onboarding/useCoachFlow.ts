@@ -2,7 +2,7 @@
 // Mirrors the server's session states — the server is authoritative (turn
 // caps, safety, validation); this hook only tracks what to render.
 //
-// intake → thinking → question (≤2, server-enforced) → verdict → building →
+// intake → thinking → question (3-5, server-enforced) → verdict → building →
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
 import { useCallback, useRef, useState } from 'react';

@@ -8,11 +8,20 @@ import {
 } from './prompts';
 import { PROTOCOL_TOOL_SCHEMA, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
 
-// Server-enforced negotiation cap: at most 4 clarifying questions, then the
-// coach must issue a verdict (the ask tool is simply withheld). Four because
-// plans that prescribe personal numbers (protein grams, calorie surpluses,
-// pace targets) must collect the underlying facts first — see COACH_SYSTEM.
-const MAX_CLARIFY_TURNS = 4;
+// Server-enforced negotiation band: at least 3 clarifying questions, at most 5.
+// Both ends work the same way — the tool the coach must not use is simply
+// withheld — so neither depends on the model choosing to obey.
+//
+// The floor exists because the coach, left to itself, asked one question or
+// none for 55% of goals and filled the rest in with assumptions. A plan built
+// on three facts about the person beats a plan built on one; intake is the
+// cheapest place to buy that accuracy (about +$0.001 per question).
+//
+// Between the floor and the cap the coach chooses freely, and the readiness
+// audit below can veto a thin verdict — that is what carries an
+// under-specified goal to a 4th or 5th question while a simple one stops at 3.
+const MIN_CLARIFY_TURNS = 3;
+const MAX_CLARIFY_TURNS = 5;
 
 export interface SessionRow {
   id: string;
@@ -62,6 +71,12 @@ function questionSimilarity(a: string, b: string): number {
 function lastQuestion(session: SessionRow): string | null {
   const transcript: TranscriptEntry[] = JSON.parse(session.transcript);
   return transcript.length ? transcript[transcript.length - 1].question : null;
+}
+
+/** Every question asked so far, newest last. */
+function priorQuestions(session: SessionRow): string[] {
+  const transcript: TranscriptEntry[] = JSON.parse(session.transcript);
+  return transcript.map(t => t.question).filter(Boolean);
 }
 
 function goalAsData(goalText: string): string {
@@ -145,13 +160,35 @@ export async function coachTurn(
   session: SessionRow,
   pendingAnswer?: string,
 ): Promise<CoachTurnResult> {
-  const forceVerdict = session.clarify_turns >= MAX_CLARIFY_TURNS;
+  const atCeiling = session.clarify_turns >= MAX_CLARIFY_TURNS;
+  const forceAsk = session.clarify_turns < MIN_CLARIFY_TURNS;
+
+  // Between the floor and the ceiling, the auditor decides whether there is
+  // anything left worth asking — an AFFIRMATIVE gate, not just a veto.
+  //
+  // This is load-bearing. The ledger shows sessions that asked the old maximum
+  // of 4 with ZERO audit calls: the model never tried to verdict, it simply
+  // kept asking until the cap took the tool away. "Get to bed by 11pm" — about
+  // as simple as a goal gets — was one of them. So the model's own appetite is
+  // not a brake, and raising the ceiling without this gate would march every
+  // simple goal to 5. The audit fails open to `sufficient`, which lands on
+  // "stop at the floor" — the safe direction.
+  const gateAudit = !atCeiling && !forceAsk
+    ? await auditReadiness(env, meta, session, pendingAnswer)
+    : null;
+  const nothingLeftToAsk = !!gateAudit && (gateAudit.sufficient || gateAudit.missing.length === 0);
+  const mustVerdict = atCeiling || nothingLeftToAsk;
+
   const result = await callModel(env, { ...meta, kind: 'coach_turn' }, {
     model: modelsFor(env).coach,
     system: COACH_SYSTEM,
     messages: coachMessages(session, pendingAnswer),
-    tools: forceVerdict ? [VERDICT_TOOL] : [ASK_TOOL, VERDICT_TOOL],
-    toolChoice: forceVerdict ? { type: 'tool', name: VERDICT_TOOL.name } : { type: 'any' },
+    tools: mustVerdict ? [VERDICT_TOOL] : forceAsk ? [ASK_TOOL] : [ASK_TOOL, VERDICT_TOOL],
+    toolChoice: mustVerdict
+      ? { type: 'tool', name: VERDICT_TOOL.name }
+      : forceAsk
+        ? { type: 'tool', name: ASK_TOOL.name }
+        : { type: 'any' },
     maxTokens: 2048,
   });
 
@@ -162,14 +199,33 @@ export async function coachTurn(
     };
   }
   const prevQ = lastQuestion(session);
-  const isRepeat = (q: { question?: string } | null) =>
-    !!prevQ && !!q?.question && questionSimilarity(prevQ, q.question) > 0.72;
+  const priors = priorQuestions(session);
+  // Compare against EVERY prior question, not just the last one.
+  //
+  // With a 3-question floor the likeliest failure changes shape: the model no
+  // longer re-asks what it just asked, it circles back to question 1 on
+  // question 3. A last-only check cannot see that. The immediately-previous
+  // question keeps the proven 0.72 threshold; older ones use a stricter 0.80,
+  // because a false positive below the floor is now expensive — it costs a
+  // retry on a question the coach is obliged to ask anyway.
+  const repeatOf = (text?: string): string | null => {
+    if (!text) return null;
+    for (let i = priors.length - 1; i >= 0; i--) {
+      const threshold = i === priors.length - 1 ? 0.72 : 0.8;
+      if (questionSimilarity(priors[i], text) > threshold) return priors[i];
+    }
+    return null;
+  };
+  const isRepeat = (q: { question?: string } | null) => repeatOf(q?.question) !== null;
 
   if (result.toolName === ASK_TOOL.name) {
     const q = result.toolInput as CoachTurnResult['question'];
     if (!isRepeat(q ?? null)) return { type: 'question', question: q };
     // Repeat guard: the model re-asked what was just answered (or dodged).
     // One correction attempt — a DIFFERENT question or a verdict on defaults.
+    // Below the floor the escape hatch closes: "or issue the verdict" would
+    // punch straight through the minimum, so the correction demands a
+    // DIFFERENT question instead of offering a way out.
     const retry = await callModel(env, { ...meta, kind: 'coach_turn' }, {
       model: modelsFor(env).coach,
       system: COACH_SYSTEM,
@@ -177,20 +233,28 @@ export async function coachTurn(
         ...coachMessages(session, pendingAnswer),
         {
           role: 'user',
-          content:
-            `[repeat guard] You already asked: "${prevQ}" — and the user's reply stands, even if it was vague. ` +
-            `Do NOT ask it again in any wording. Either ask about a DIFFERENT missing item, or issue the verdict ` +
-            `now using sensible defaults for anything unanswered.`,
+          content: forceAsk
+            ? `[repeat guard] You have already asked: ${priors.map(x => `"${x}"`).join(' / ')} — and the user's ` +
+              `replies stand, even if vague. Do NOT ask any of them again in any wording. Ask about a DIFFERENT ` +
+              `missing item: pick a dimension from the information-coverage list this conversation has not ` +
+              `covered yet.`
+            : `[repeat guard] You already asked: "${prevQ}" — and the user's reply stands, even if it was vague. ` +
+              `Do NOT ask it again in any wording. Either ask about a DIFFERENT missing item, or issue the verdict ` +
+              `now using sensible defaults for anything unanswered.`,
         },
       ],
-      tools: [ASK_TOOL, VERDICT_TOOL],
-      toolChoice: { type: 'any' },
+      tools: forceAsk ? [ASK_TOOL] : [ASK_TOOL, VERDICT_TOOL],
+      toolChoice: forceAsk ? { type: 'tool', name: ASK_TOOL.name } : { type: 'any' },
       maxTokens: 2048,
     });
     if (retry.toolName === ASK_TOOL.name) {
       const rq = retry.toolInput as CoachTurnResult['question'];
       if (!isRepeat(rq ?? null)) return { type: 'question', question: rq };
-      // Still circling → force the verdict and be done.
+      // Still circling. Above the floor we cut losses and take the verdict;
+      // below it we would rather ship the repeated question than break the
+      // minimum — the floor is the point of the feature, and a duplicate is a
+      // quality problem, not a correctness one.
+      if (forceAsk) return { type: 'question', question: rq ?? q };
       const forced = await callModel(env, { ...meta, kind: 'coach_turn' }, {
         model: modelsFor(env).coach,
         system: COACH_SYSTEM,
@@ -221,10 +285,11 @@ export async function coachTurn(
     if (verdict.decision === 'declined') {
       return { type: 'refused', refusal: { category: 'declined', message: verdict.assessment } };
     }
-    // Sufficiency gate: while question budget remains, a cheap auditor gets a
-    // veto — a verdict on thin information becomes one more targeted question.
-    if (!forceVerdict) {
-      const audit = await auditReadiness(env, meta, session, pendingAnswer);
+    // Sufficiency veto: the model verdicted while the auditor said facts were
+    // still missing. Reuse the gate's answer rather than paying for a second
+    // audit call — in this band we have already asked it this turn.
+    if (!mustVerdict) {
+      const audit = gateAudit ?? await auditReadiness(env, meta, session, pendingAnswer);
       if (!audit.sufficient && audit.missing.length > 0) {
         const reask = await callModel(env, { ...meta, kind: 'coach_turn' }, {
           model: modelsFor(env).coach,

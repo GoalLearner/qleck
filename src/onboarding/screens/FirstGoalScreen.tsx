@@ -16,7 +16,7 @@ import { OddsChip, OddsDial } from '../OddsDial';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
-import type { Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
+import type { PaceKey, Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
 import Confetti, { type ConfettiHandle } from '../../components/Confetti';
 import { celebratePlan } from '../../lib/celebrate';
 
@@ -390,16 +390,38 @@ function OddsCardHeader({ left, right }: { left: string; right: string }) {
   );
 }
 
-/** Canvas 5a/5c — feasible verdict with the odds dial. */
-function FeasibleVerdict({ v, onBuild, onReset }: { v: Verdict; onBuild: () => void; onReset: () => void }) {
+const PACE_LABELS: Record<PaceKey, string> = {
+  sprint: 'Time crunch',
+  steady: 'Steady',
+  relaxed: 'No rush',
+};
+
+/** Canvas 5a/5c — feasible verdict with the odds dial, at 2-3 paces. */
+function FeasibleVerdict({
+  v, pace, onPace, onBuild, onReset,
+}: {
+  v: Verdict;
+  pace: PaceKey;
+  onPace: (p: PaceKey) => void;
+  onBuild: () => void;
+  onReset: () => void;
+}) {
   const { width } = useWindowDimensions();
   const wide = width >= 820;
   const [driver, setDriver] = useState(-1);
-  const odds = v.success_probability;
+
+  // The paces, when the verdict offers them: the same goal at 2-3 runways,
+  // each with its own honestly-priced odds. Steady is the coach's pick and
+  // mirrors the verdict's own numbers, so the fallback path is identical.
+  const paces = v.pace_options;
+  const chosen = paces?.find(o => o.key === pace) ?? paces?.find(o => o.key === 'steady');
+  const odds = chosen?.success_probability ?? v.success_probability;
+  const weeks = chosen?.duration_weeks ?? v.duration_weeks;
+  const sprinting = !!paces && chosen?.key === 'sprint';
   const caption =
     driver >= 0 && v.success_factor_notes?.[driver]
       ? v.success_factor_notes[driver]
-      : DEFAULT_ODDS_CAPTION;
+      : chosen?.note || DEFAULT_ODDS_CAPTION;
 
   const dialCard = odds !== undefined ? (
     <View
@@ -410,14 +432,49 @@ function FeasibleVerdict({ v, onBuild, onReset }: { v: Verdict; onBuild: () => v
       }}
     >
       <OddsCardHeader left="QOACH'S CALL" right="TAP DIAL TO REPLAY" />
+      {paces ? (
+        <View style={{ flexDirection: 'row', gap: 5, backgroundColor: night.hairline, borderRadius: 999, padding: 5, marginTop: 10 }}>
+          {paces.map(o => {
+            const on = o.key === chosen?.key;
+            return (
+              <Pressable
+                key={o.key}
+                onPress={() => onPace(o.key)}
+                style={{
+                  flex: 1, height: 40, borderRadius: 999,
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: on ? night.text : 'transparent',
+                }}
+              >
+                <Text style={{ fontFamily: nightFonts.display, fontSize: 11.5, color: on ? night.bg : night.textMuted }}>
+                  {PACE_LABELS[o.key]}
+                </Text>
+                <Text style={{ fontFamily: MONO, fontSize: 9, fontWeight: '700', color: on ? (o.key === 'sprint' ? '#e8b467' : '#8fd3ab') : night.textGhost }}>
+                  {`${o.duration_weeks}wk · ${o.success_probability}%`}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       <View style={{ marginTop: 8 }}>
-        <OddsDial value={odds} color={night.accent} condLabel="IF YOU SHOW UP" size={wide ? 296 : Math.min(width - 104, 296)} />
+        <OddsDial
+          value={odds}
+          color={sprinting ? night.warn : night.accent}
+          condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
+          size={wide ? 296 : Math.min(width - 104, 296)}
+        />
       </View>
       <View style={{ minHeight: 42, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}>
         <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18.5, color: night.textSoft, textAlign: 'center' }}>
           {caption}
         </Text>
       </View>
+      {paces ? (
+        <Text style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost, paddingTop: 6 }}>
+          STEADY IS QOACH'S PICK · TAP A PILL TO SWITCH
+        </Text>
+      ) : null}
     </View>
   ) : null;
 
@@ -439,7 +496,7 @@ function FeasibleVerdict({ v, onBuild, onReset }: { v: Verdict; onBuild: () => v
   return (
     <Screen>
       <View style={{ width: '100%', maxWidth: 920, alignSelf: 'center' }}>
-        <VerdictChips label={'✓ FEASIBLE'} labelColor={night.accent} weeks={`${v.duration_weeks} WEEKS`} />
+        <VerdictChips label={'✓ FEASIBLE'} labelColor={night.accent} weeks={`${weeks} WEEKS`} />
         <Title style={{ fontSize: wide ? 31 : 25, lineHeight: wide ? 36 : 30, marginTop: 18, marginBottom: 10 }}>
           {v.goal_statement}
         </Title>
@@ -451,7 +508,11 @@ function FeasibleVerdict({ v, onBuild, onReset }: { v: Verdict; onBuild: () => v
           {drivers}
         </View>
         <View style={{ marginTop: 26 }}>
-          <PrimaryButton label="Build my plan" onPress={onBuild} style={wide ? { width: 440, alignSelf: 'center' } : undefined} />
+          <PrimaryButton
+            label={paces ? `Build my plan — ${weeks} weeks` : 'Build my plan'}
+            onPress={onBuild}
+            style={wide ? { width: 440, alignSelf: 'center' } : undefined}
+          />
           <TextButton label="Change my goal" onPress={onReset} height={46} />
         </View>
       </View>
@@ -1221,7 +1282,15 @@ export default function FirstGoalScreen({
 
   /* verdict — feasible (canvas 5a desktop / 5c phone) */
   if (coach.phase === 'verdict' && coach.verdict && coach.verdict.decision === 'feasible') {
-    return <FeasibleVerdict v={coach.verdict} onBuild={coach.buildPlan} onReset={coach.reset} />;
+    return (
+      <FeasibleVerdict
+        v={coach.verdict}
+        pace={coach.pace}
+        onPace={coach.setPace}
+        onBuild={coach.buildPlan}
+        onReset={coach.reset}
+      />
+    );
   }
 
   /* verdict — counter-offer (canvas 5b: the negotiation, one dial flips) */
@@ -1242,7 +1311,7 @@ export default function FirstGoalScreen({
       <ProtocolReveal
         protocol={coach.protocol}
         statement={coach.verdict.goal_statement}
-        odds={coach.verdict.success_probability}
+        odds={coach.chosenOdds}
         onLock={lockIn}
         onRestart={coach.reset}
       />

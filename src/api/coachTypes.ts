@@ -10,6 +10,15 @@ export type {
 } from '../../backend/src/protocolSchema';
 import type { Protocol } from '../../backend/src/protocolSchema';
 
+export type PaceKey = 'sprint' | 'steady' | 'relaxed';
+
+export interface PaceOption {
+  key: PaceKey;
+  duration_weeks: number;
+  success_probability: number;
+  note: string;
+}
+
 export interface Verdict {
   decision: 'feasible' | 'counter_offer' | 'declined';
   goal_statement: string;
@@ -25,6 +34,10 @@ export interface Verdict {
   /** Parallel to success_factors: one line each on how the factor moves the
    *  odds. Absent on verdicts stored before prompt v18. */
   success_factor_notes?: string[];
+  /** feasible only: 2-3 paces for the same goal; steady mirrors the verdict's
+   *  own duration and probability. Absent before prompt v19, and dropped by
+   *  the server when malformed. */
+  pace_options?: PaceOption[];
 }
 
 export interface CoachQuestion {

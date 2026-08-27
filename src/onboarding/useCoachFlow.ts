@@ -7,6 +7,7 @@
 // screens will render these states; until then plain screens do.
 import { useCallback, useRef, useState } from 'react';
 import { answerCoachQuestion, generateProtocol, startCoachSession } from '../api/coach';
+import type { PaceKey } from '../api/coachTypes';
 import {
   CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
   type CoachTurnResponse, type Protocol, type Verdict,
@@ -92,15 +93,20 @@ export function useCoachFlow() {
     answerCoachQuestion(id, a).then(handleTurn, err => fail(err, () => answerQuestion(a)));
   }, [fail, handleTurn]);
 
+  // Which pace the user picked on the verdict screen. Steady is the coach's
+  // recommendation and the default; the choice re-times protocol generation
+  // and decides which odds the reveal chip carries.
+  const [pace, setPace] = useState<PaceKey>('steady');
+
   const buildPlan = useCallback(() => {
     const id = sessionId.current;
     if (!id) return;
     setPhase('building');
-    generateProtocol(id).then(
+    generateProtocol(id, pace).then(
       res => { setProtocol(res.protocol); setPhase('protocol'); },
       err => fail(err, buildPlan),
     );
-  }, [fail]);
+  }, [fail, pace]);
 
   /** Back to a blank intake — new goal, new session. */
   const reset = useCallback(() => {
@@ -112,6 +118,7 @@ export function useCoachFlow() {
     setQa([]);
     setVerdict(null);
     setRefusal(null);
+    setPace('steady');
     setProtocol(null);
     setError(null);
     setPhase('intake');
@@ -121,11 +128,18 @@ export function useCoachFlow() {
 
   const acceptedPlan: AcceptedPlan | null =
     protocol && verdict
-      ? { goalText, statement: verdict.goal_statement, durationWeeks: verdict.duration_weeks, protocol }
+      // durationWeeks comes from the PROTOCOL: a sprint or relaxed pace means
+      // the verdict's headline weeks and the generated plan's weeks differ.
+      ? { goalText, statement: verdict.goal_statement, durationWeeks: protocol.duration_weeks, protocol }
       : null;
+
+  /** The odds of whatever pace was chosen — what the reveal chip shows. */
+  const chosenOdds =
+    verdict?.pace_options?.find(o => o.key === pace)?.success_probability ?? verdict?.success_probability;
 
   return {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
+    pace, setPace, chosenOdds,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan,
   };
 }

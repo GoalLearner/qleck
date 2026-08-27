@@ -100,6 +100,17 @@ async function runGoalFixture(f) {
   const verdict = res.body?.verdict ?? null;
   const probability = typeof verdict?.success_probability === 'number' ? verdict.success_probability : null;
   const origProb = typeof verdict?.original_probability === 'number' ? verdict.original_probability : null;
+  // Pace options: every feasible verdict must offer 2-3 well-ordered paces
+  // (the server drops malformed sets, so a missing set here means the model
+  // stopped emitting them or the sanitizer had to discard them).
+  const paces = verdict?.pace_options;
+  const paceOk =
+    outcome !== 'feasible'
+      ? true
+      : Array.isArray(paces) && paces.length >= 2 && paces.length <= 3 &&
+        paces.some(o => o.key === 'steady') &&
+        paces.every((o, i) => i === 0 || o.duration_weeks > paces[i - 1].duration_weeks) &&
+        paces.every((o, i) => i === 0 || o.success_probability >= paces[i - 1].success_probability);
   const probOk =
     outcome !== 'feasible' && outcome !== 'counter_offer'
       ? true
@@ -130,7 +141,7 @@ async function runGoalFixture(f) {
   }
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
-    pass, leak, protocolOk, questions, dupQuestion, badChip, minChips, probability, probOk, ms: Date.now() - t0,
+    pass, leak, protocolOk, questions, dupQuestion, badChip, minChips, probability, probOk, paceOk, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -229,6 +240,8 @@ const bars = {
     goalResults.every(r => r.outcome.startsWith('refused') || (r.questions >= MIN_Q && r.questions <= MAX_Q)),
   'verdicts carry a calibrated probability':
     goalResults.every(r => r.probOk),
+  'feasible verdicts offer 2-3 ordered paces':
+    goalResults.every(r => r.paceOk),
   [`every question ships ${MIN_CHIPS}+ chips`]:
     goalResults.every(r => r.minChips === null || r.minChips >= MIN_CHIPS),
 };

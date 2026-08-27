@@ -48,6 +48,15 @@ export interface CoachTurnResult {
   error?: string;
 }
 
+export type PaceKey = 'sprint' | 'steady' | 'relaxed';
+
+export interface PaceOption {
+  key: PaceKey;
+  duration_weeks: number;
+  success_probability: number;
+  note: string;
+}
+
 export interface Verdict {
   decision: 'feasible' | 'counter_offer' | 'declined';
   goal_statement: string;
@@ -63,6 +72,10 @@ export interface Verdict {
   /** Parallel to success_factors: one line each on how the factor moves the
    *  odds. Absent on verdicts stored before prompt v18. */
   success_factor_notes?: string[];
+  /** feasible only: 2-3 paces for the same goal; steady mirrors the verdict's
+   *  own duration and probability. Absent before prompt v19, and dropped by
+   *  the server when malformed. */
+  pace_options?: PaceOption[];
 }
 
 /** Word-set Jaccard similarity — the server-side repeat detector. */
@@ -339,7 +352,12 @@ export async function generateProtocol(
   meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
   session: SessionRow,
   verdict: Verdict,
+  pace?: PaceKey,
 ): Promise<{ protocol?: Protocol; errors?: string[] }> {
+  // The chosen pace re-times the plan: same goal, same facts, different
+  // runway. Steady IS the verdict, so only sprint/relaxed change anything.
+  const paceOpt = pace && pace !== 'steady' ? verdict.pace_options?.find(o => o.key === pace) : undefined;
+  const paceWeeks = paceOpt?.duration_weeks ?? verdict.duration_weeks;
   const transcript: TranscriptEntry[] = JSON.parse(session.transcript);
   const qa = transcript
     .filter(t => t.answer !== undefined)
@@ -352,7 +370,12 @@ export async function generateProtocol(
         `Accepted verdict:\n${JSON.stringify(verdict)}\n\n` +
         `Original goal:\n${goalAsData(session.goal_text)}\n\n` +
         (qa ? `Clarifying Q&A:\n${qa}\n\n` : '') +
-        `Generate the protocol for "${verdict.goal_statement}" over ${verdict.duration_weeks} weeks.`,
+        `Generate the protocol for "${verdict.goal_statement}" over ${paceWeeks} weeks.` +
+        (paceOpt
+          ? paceOpt.key === 'sprint'
+            ? ` The user chose the time-crunch pacing (${paceWeeks} weeks at ${paceOpt.success_probability}% odds) — tighter than your recommended pace. Week one still starts almost too easy; the later phases carry the compression, and the plan should say out loud where the discipline has to hold.`
+            : ` The user chose the no-rush pacing (${paceWeeks} weeks at ${paceOpt.success_probability}% odds) — more air than your recommended pace. Keep a firm weekly rhythm so the extra room never becomes drift.`
+          : ''),
     },
   ];
 

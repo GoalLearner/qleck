@@ -19,7 +19,7 @@
 //   DELETE /check-ins?goalId=&stepId=&date= — un-check (idempotent by key)
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { registerDevice, touchUser, verifyToken } from './auth';
-import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type SessionRow, type Verdict } from './coach';
+import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type PaceKey, type PaceOption, type SessionRow, type Verdict } from './coach';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
@@ -318,7 +318,9 @@ export default {
           return json({ error: 'no_verdict_yet', status: session.status }, 409, cors);
         }
         const verdict = JSON.parse(session.verdict) as Verdict;
-        const result = await generateProtocol(env, { ...meta, sessionId: session.id }, session, verdict);
+        const pace: PaceKey | undefined =
+          body.pace === 'sprint' || body.pace === 'steady' || body.pace === 'relaxed' ? body.pace : undefined;
+        const result = await generateProtocol(env, { ...meta, sessionId: session.id }, session, verdict, pace);
         if (!result.protocol) {
           return json({ error: 'protocol_generation_failed', details: result.errors }, 502, cors);
         }
@@ -405,6 +407,46 @@ function sanitizeOdds(v: Verdict): void {
   }
   v.success_probability = sp;
   v.original_probability = op;
+
+  // Pace options: 2-3 honest paces, or nothing. Steady is force-aligned to
+  // the verdict's own (already sanitized) numbers so the recommended pill can
+  // never disagree with the dial, orderings are hard rules, and a sprint
+  // priced under 40 is a lie wearing an option's clothes — dropped alone if
+  // the rest still make a pair.
+  let paces: PaceOption[] | undefined;
+  if (v.decision === 'feasible' && sp !== undefined && Array.isArray(v.pace_options)) {
+    const seen = new Set<string>();
+    const cleaned = v.pace_options
+      .map((o): PaceOption | undefined => {
+        if (!o || typeof o !== 'object') return undefined;
+        const key = (o as PaceOption).key;
+        if (key !== 'sprint' && key !== 'steady' && key !== 'relaxed') return undefined;
+        if (seen.has(key)) return undefined;
+        seen.add(key);
+        const weeks = Math.round(Number((o as PaceOption).duration_weeks));
+        const prob = Math.round(Number((o as PaceOption).success_probability));
+        const note = typeof (o as PaceOption).note === 'string' ? (o as PaceOption).note : '';
+        if (!Number.isFinite(weeks) || weeks < 1 || weeks > 52) return undefined;
+        if (!Number.isFinite(prob) || prob < 1 || prob > 97) return undefined;
+        return { key, duration_weeks: weeks, success_probability: prob, note };
+      })
+      .filter((o): o is PaceOption => o !== undefined);
+
+    const steady = cleaned.find(o => o.key === 'steady');
+    if (steady) {
+      steady.duration_weeks = Math.round(v.duration_weeks);
+      steady.success_probability = sp;
+      let sprint = cleaned.find(o => o.key === 'sprint');
+      const relaxed = cleaned.find(o => o.key === 'relaxed');
+      if (sprint && (sprint.success_probability < 40 || sprint.duration_weeks >= steady.duration_weeks || sprint.success_probability >= sp)) {
+        sprint = undefined;
+      }
+      const relaxedOk = relaxed && relaxed.duration_weeks > steady.duration_weeks && relaxed.success_probability >= sp;
+      const ordered = [sprint, steady, relaxedOk ? relaxed : undefined].filter((o): o is PaceOption => o !== undefined);
+      if (ordered.length >= 2) paces = ordered;
+    }
+  }
+  v.pace_options = paces;
 }
 
 async function runCoachTurn(

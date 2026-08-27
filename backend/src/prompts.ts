@@ -16,6 +16,11 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v19: pace_options — a feasible verdict offers the same goal at 2-3 honest
+// paces (sprint / steady / relaxed), each priced by the same procedure, and
+// the user picks one before the protocol is built. Steady mirrors the
+// top-level fields; the sprint has no greenlight floor because it is an
+// eyes-open stretch, not a recommendation.
 // v18: success_factor_notes — each success factor carries one wry line on how
 // it moves the odds, powering the verdict dial's tap-a-driver interaction
 // (canvas turn 5, "Success odds — Qoach's call, on a dial").
@@ -35,7 +40,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 18;
+export const PROMPT_VERSION = 19;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -128,6 +133,11 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
    3. Add 3 (once) if they are rebuilding something they have done before, or the runway is genuinely generous for the gap.
    4. Cap at 95; 97 is the absolute ceiling — life happens to every plan.
    DECISION RULE: run the procedure on the goal AS STATED first. 78 and above — you may greenlight. Below 70 — you MUST counter_offer instead. 70-77 is the borderline band: prefer a counter_offer that buys the number up to 80+ (longer runway, smaller first target); a greenlight is a bet you would personally take, and borderline bets get renegotiated, not blessed. ALWAYS emit original_probability, on every verdict: for feasible it EQUALS success_probability (the ask is the plan); for counter_offer it is the procedure applied to the ask exactly as stated, with no floor — 3% is a legitimate answer, and the honest gap between the two numbers is the argument for your counter; success_probability is then the procedure applied to YOUR counter-offered version, which must come out 78+ (that is what makes it worth offering).
+   PACE OPTIONS — on a feasible verdict, ALSO emit pace_options: the same goal at 2-3 honest paces, each priced by the same procedure. The user picks one before the plan is built.
+   - "steady" (always present): your recommended plan — IDENTICAL duration_weeks and success_probability to the verdict's top-level fields.
+   - "sprint" (include when a meaningfully shorter runway is still physically plausible): compress the runway by roughly 25-40%. Price it honestly with the same procedure and NO greenlight floor — it should usually land 50-70; if an honest sprint would fall below 50, pick a gentler sprint or omit it. Its note sells the trade straight: what discipline it demands, what one slip costs.
+   - "relaxed" (include unless the goal is deadline-bound or already very long): extend the runway by roughly 25-50% — enough air to breathe, never enough to lose urgency. Price it at or above steady, capped at 97. Its note names the real risk at this pace: drift, not difficulty.
+   Hard rules: duration_weeks strictly increases sprint < steady < relaxed (whole weeks, 1-52); success_probability strictly increases from sprint to steady, and relaxed is >= steady. Each note is ONE sentence in coach voice.
    Alongside success_factors, emit success_factor_notes — parallel arrays, same length: for each factor, ONE short sentence in your coach voice on how it moves the number (e.g. "Protect the mornings and the number holds", "Recovery is training too — skip it and the odds quietly leak"). Concrete and a little wry, never a percentage per factor.
    This number is your judgment as a coach, never a statistic: no field you write may imply it was measured from other users' outcomes.
    - "declined": pursuing it would be unsafe or impossible IN EVERY REFRAMING. This should be vanishingly rare — a separate safety gate runs before you, and almost any over-ambitious goal has a scaled version worth offering. "Marathon in 3 weeks, never run" is NOT declined — it's a counter_offer for a longer runway or a shorter first race. If you can imagine a realistic cousin of the goal, you MUST counter_offer it.
@@ -201,6 +211,21 @@ export const VERDICT_TOOL = {
         type: 'array',
         items: { type: 'string' },
         description: 'Parallel to success_factors, same length: one short sentence each on how that factor moves the odds, in coach voice.',
+      },
+      pace_options: {
+        type: 'array',
+        description: 'feasible only: 2-3 paces for the same goal — sprint (shorter, honest lower odds), steady (your recommendation, mirrors the top-level fields), relaxed (a bit longer, odds at or above steady). See PACE OPTIONS.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['key', 'duration_weeks', 'success_probability', 'note'],
+          properties: {
+            key: { type: 'string', enum: ['sprint', 'steady', 'relaxed'] },
+            duration_weeks: { type: 'number' },
+            success_probability: { type: 'number' },
+            note: { type: 'string', description: 'One sentence on the trade this pace makes, in coach voice.' },
+          },
+        },
       },
     },
   },

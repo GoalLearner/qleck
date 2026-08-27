@@ -15,7 +15,9 @@ import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, Tex
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
-import type { Protocol, ProtocolStep } from '../../api/coachTypes';
+import type { Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep } from '../../api/coachTypes';
+import Confetti, { type ConfettiHandle } from '../../components/Confetti';
+import { celebratePlan } from '../../lib/celebrate';
 
 
 const MONO = nightFonts.mono;
@@ -127,79 +129,372 @@ function stepMetric(step: ProtocolStep): string {
 function StepRow({ step }: { step: ProtocolStep }) {
   const k = kindStyle(step.kind);
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+    <View
+      style={{
+        flexDirection: 'row', alignItems: 'flex-start', gap: 11,
+        paddingVertical: 10, borderTopWidth: 1, borderTopColor: night.hairline,
+      }}
+    >
       <View
         style={{
-          width: 26, height: 26, borderRadius: 8, backgroundColor: k.bg,
+          width: 26, height: 26, borderRadius: 9, backgroundColor: k.bg, marginTop: 1,
           borderWidth: 1, borderColor: k.bd, alignItems: 'center', justifyContent: 'center',
         }}
       >
         <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: k.fg }}>{k.glyph}</Text>
       </View>
-      <Text style={{ flex: 1, fontFamily: nightFonts.bodyMedium, fontSize: 13, lineHeight: 17.5, color: night.text }}>
-        {step.title}
-      </Text>
-      <View style={{ backgroundColor: k.pill, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-        <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: k.fg }}>{stepMetric(step)}</Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 18, color: night.text }}>
+          {step.title}
+        </Text>
+        {/* The canvas' rep detail: the "how", one line under the what. */}
+        {step.details ? (
+          <Text style={{ marginTop: 3, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: night.textDim }}>
+            {step.details}
+          </Text>
+        ) : null}
+      </View>
+      {/* Sits beside its rep rather than stranded at the far edge: the column
+          is width-capped in ProtocolReveal, which is what pinned these chips
+          to the horizon in a desktop browser. */}
+      <View style={{ backgroundColor: k.pill, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginTop: 1 }}>
+        <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: k.fg }}>{stepMetric(step)}</Text>
       </View>
     </View>
   );
 }
 
-function MilestoneRow({ week, title }: { week: number; title: string }) {
+/** One phase: a header that always shows, reps only while open. */
+function PhaseCard({
+  phase, open, isLast, milestones, onToggle,
+}: {
+  phase: ProtocolPhase;
+  open: boolean;
+  isLast: boolean;
+  milestones: ProtocolMilestone[];
+  onToggle: () => void;
+}) {
+  const weeks = phase.start_week === phase.end_week
+    ? `WEEK ${phase.start_week}`
+    : `WEEKS ${phase.start_week}\u2013${phase.end_week}`;
+  const n = phase.steps.length;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 6 }}>
-      <Text style={{ fontFamily: nightFonts.display, fontSize: 12, color: night.accent }}>⚑</Text>
-      <MonoLabel text={`WEEK ${week} — ${title.toUpperCase()}`} color={night.textDim} style={{ fontSize: 10.5 }} />
-      <View style={{ flex: 1, height: 1, backgroundColor: night.hairline }} />
+    <View
+      style={{
+        backgroundColor: night.surface, borderRadius: 22, overflow: 'hidden',
+        borderWidth: 1, borderColor: open ? night.accentBorder : night.hairline,
+      }}
+    >
+      <Pressable
+        onPress={onToggle}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 }}
+      >
+        <View
+          style={{
+            paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999,
+            backgroundColor: open ? night.accentSoft : night.hairline,
+            borderWidth: 1, borderColor: open ? night.accentBorder : 'transparent',
+          }}
+        >
+          <Text style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: '700', letterSpacing: 1, color: open ? night.accent : night.textDim }}>
+            {weeks}
+          </Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 16, lineHeight: 20, color: open ? night.text : night.textMuted }}>
+            {phase.title}
+          </Text>
+          <Text
+            numberOfLines={open ? undefined : 1}
+            style={{ marginTop: 2, fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: night.textGhost }}
+          >
+            {phase.focus}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 11.5, color: night.textGhost }}>
+          {n} {n === 1 ? 'rep' : 'reps'}
+        </Text>
+        <Text style={{ width: 12, textAlign: 'center', fontFamily: nightFonts.bodyMedium, fontSize: 11, color: night.textGhost }}>
+          {open ? '\u25be' : '\u25b8'}
+        </Text>
+      </Pressable>
+
+      {open ? (
+        <View style={{ paddingHorizontal: 16 }}>
+          {phase.steps.map(step => <StepRow key={step.id} step={step} />)}
+        </View>
+      ) : null}
+
+      {/* Milestones show whether or not the phase is open: they are the
+          "you did it" markers, not detail to be folded away. */}
+      {milestones.map(m => (
+        <View
+          key={m.id}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 8,
+            paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12,
+            borderTopWidth: 1, borderTopColor: night.hairline,
+          }}
+        >
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 11, color: isLast ? night.accent : night.warn }}>⚑</Text>
+          <Text
+            numberOfLines={1}
+            style={{ flex: 1, fontFamily: MONO, fontSize: 9.5, fontWeight: '700', letterSpacing: 1.2, color: isLast ? night.accent : night.textDim }}
+          >
+            {`WEEK ${m.week} \u2014 ${m.title.toUpperCase()}`}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
 
-function ProtocolBody({ protocol }: { protocol: Protocol }) {
-  const milestones = [...protocol.milestones].sort((a, b) => a.week - b.week);
+/**
+ * The week strip: every week of the plan at a glance, milestone weeks flagged,
+ * tap one to open the phase it belongs to.
+ *
+ * Long plans scroll rather than squeezing to ever-thinner cells. A 52-week
+ * goal ("read 12 books this year") crammed into a flex row is how the week
+ * bars ran off the grid before; fixed-width cells stay legible at any length.
+ */
+function WeekStrip({
+  weeks, milestoneWeeks, activeFrom, activeTo, onPick,
+}: {
+  weeks: number;
+  milestoneWeeks: Set<number>;
+  activeFrom: number;
+  activeTo: number;
+  onPick: (week: number) => void;
+}) {
+  const scrolls = weeks > 14;
+  const cells = Array.from({ length: weeks }, (_, i) => i + 1).map(w => {
+    const on = w >= activeFrom && w <= activeTo;
+    return (
+      <Pressable
+        key={w}
+        onPress={() => onPick(w)}
+        style={{
+          flex: scrolls ? undefined : 1, width: scrolls ? 34 : undefined,
+          height: 30, borderRadius: 9, borderWidth: 1,
+          borderColor: on ? night.accentBorder : night.hairline,
+          backgroundColor: on ? night.accentSoft : 'transparent',
+          alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 2,
+        }}
+      >
+        <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: on ? night.accent : night.textGhost }}>
+          {w}
+        </Text>
+        {milestoneWeeks.has(w) ? (
+          <Text style={{ fontSize: 8, lineHeight: 10, color: on ? night.accent : night.warn }}>⚑</Text>
+        ) : null}
+      </Pressable>
+    );
+  });
+
   return (
-    <View style={{ gap: 10 }}>
-      {protocol.phases.map(phase => (
-        <React.Fragment key={phase.id}>
-          <View
-            style={{
-              borderRadius: 20, backgroundColor: night.surface,
-              borderWidth: 1, borderColor: night.hairline, padding: 16,
-            }}
-          >
+    <View style={{ marginTop: 16 }}>
+      {scrolls ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+          {cells}
+        </ScrollView>
+      ) : (
+        <View style={{ flexDirection: 'row', gap: 6 }}>{cells}</View>
+      )}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 7 }}>
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 11, color: night.textGhost }}>⚑ milestone weeks</Text>
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 11, color: night.textGhost }}>tap a week to open its phase</Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The protocol reveal (canvas turn "Protocol reveal — the plan lands as a
+ * moment, not a wall").
+ *
+ * The plan used to arrive as one long wall of every rep in every phase, with
+ * a legend explaining three glyphs and the frequency chips stranded at the
+ * far right of a desktop window. Now phase one sits open with its coaching
+ * detail, later phases fold to an honest one-line summary each, the week
+ * strip gives the whole span at a glance, and locking in actually pays off.
+ */
+function ProtocolReveal({
+  protocol, statement, onLock, onRestart,
+}: {
+  protocol: Protocol;
+  statement: string;
+  onLock: () => void;
+  onRestart: () => void;
+}) {
+  const [open, setOpen] = useState(0);
+  const [locked, setLocked] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const confettiRef = useRef<ConfettiHandle>(null);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Every timer this screen starts is cancelled on unmount: the lock-in beat
+  // navigates away, and a stray callback firing after that sets state on a
+  // gone component.
+  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
+  const later = (fn: () => void, ms: number) => { timers.current.push(setTimeout(fn, ms)); };
+
+  const phases = protocol.phases;
+  const milestones = [...protocol.milestones].sort((a, b) => a.week - b.week);
+  const milestoneWeeks = new Set(milestones.map(m => m.week));
+  const active = phases[open] ?? phases[0];
+  const firstRep = phases[0]?.steps[0]?.title ?? '';
+  const openingReps = (phases[0]?.steps ?? []).reduce((n, st) => n + st.frequency.per_week, 0);
+
+  const say = (msg: string) => { setNote(msg); later(() => setNote(null), 2800); };
+
+  const lockIn = () => {
+    if (locked) return;
+    setLocked(true);
+    celebratePlan();                       // haptics + sound, the third sense
+    confettiRef.current?.fire();
+    later(onLock, 1800);                   // let the moment land before leaving
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <Screen style={{ paddingBottom: 0 }}>
+        {/* One capped, centred column. Without it a desktop browser stretches
+            each rep row to the full window and throws its chip to the far
+            edge, which is exactly how the deployed page looked. */}
+        <View style={{ width: '100%', maxWidth: 660, alignSelf: 'center', paddingBottom: 18 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            <MonoLabel text="YOUR PROTOCOL" color={night.accent} style={{ fontSize: 10.5, letterSpacing: 1.5 }} />
             <View
               style={{
-                alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
-                backgroundColor: night.accentSoft, borderWidth: 1, borderColor: night.accentBorder,
+                paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999,
+                backgroundColor: locked ? night.accentSoft : night.hairline,
+                borderWidth: 1, borderColor: locked ? night.accentBorder : 'transparent',
               }}
             >
-              <MonoLabel text={`WEEKS ${phase.start_week}–${phase.end_week}`} color={night.accent} />
-            </View>
-            <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: night.text, marginVertical: 10 }}>
-              {phase.title}
-            </Text>
-            <View style={{ gap: 8 }}>
-              {phase.steps.map(step => <StepRow key={step.id} step={step} />)}
+              <Text style={{ fontFamily: MONO, fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: locked ? night.accent : night.textDim }}>
+                {locked ? 'LIVE' : 'DRAFT'}
+              </Text>
             </View>
           </View>
-          {milestones
-            .filter(m => m.week >= phase.start_week && m.week <= phase.end_week)
-            .map(m => <MilestoneRow key={m.id} week={m.week} title={m.title} />)}
-        </React.Fragment>
-      ))}
 
-      <LinearGradient
-        colors={[night.accentSofter, 'rgba(14,159,232,0.08)']}
-        start={DIAGONAL.start}
-        end={DIAGONAL.end}
-        style={{ borderRadius: 16, borderWidth: 1, borderColor: night.accentFaint, paddingHorizontal: 16, paddingVertical: 14 }}
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 21, lineHeight: 26.25, color: night.text, marginTop: 8 }}>
+            {statement}
+          </Text>
+          {/* The old glyph legend is gone. It explained the notation instead
+              of the plan; the shape of the commitment is the useful summary. */}
+          <Text style={{ marginTop: 6, fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textDim }}>
+            {protocol.duration_weeks} weeks · {phases.length} {phases.length === 1 ? 'phase' : 'phases'}
+            {openingReps ? ` · starts at ${openingReps} reps a week` : ''}
+          </Text>
+
+          <WeekStrip
+            weeks={protocol.duration_weeks}
+            milestoneWeeks={milestoneWeeks}
+            activeFrom={active?.start_week ?? 1}
+            activeTo={active?.end_week ?? 1}
+            onPick={w => {
+              const i = phases.findIndex(ph => w >= ph.start_week && w <= ph.end_week);
+              if (i >= 0) setOpen(i);
+            }}
+          />
+
+          <View style={{ gap: 10, marginTop: 16 }}>
+            {phases.map((phase, i) => (
+              <PhaseCard
+                key={phase.id}
+                phase={phase}
+                open={i === open}
+                isLast={i === phases.length - 1}
+                milestones={milestones.filter(m => m.week >= phase.start_week && m.week <= phase.end_week)}
+                onToggle={() => setOpen(cur => (cur === i ? -1 : i))}
+              />
+            ))}
+          </View>
+
+          <LinearGradient
+            colors={[night.accentSofter, 'rgba(14,159,232,0.08)']}
+            start={DIAGONAL.start}
+            end={DIAGONAL.end}
+            style={{
+              marginTop: 10, borderRadius: 20, borderWidth: 1, borderColor: night.accentFaint,
+              paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', gap: 12,
+            }}
+          >
+            <QoachMark size={34} fontSize={16} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <MonoLabel text="QOACH'S NOTE" color={night.accent} style={{ marginBottom: 5 }} />
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 20, color: night.text, fontStyle: 'italic' }}>
+                {protocol.coach_notes}
+              </Text>
+            </View>
+          </LinearGradient>
+        </View>
+      </Screen>
+
+      {/* The commitment stays reachable without scrolling back down. */}
+      <View
+        style={{
+          paddingHorizontal: 28, paddingTop: 12, paddingBottom: 18,
+          borderTopWidth: 1, borderTopColor: night.hairline, backgroundColor: night.bg,
+        }}
       >
-        <MonoLabel text="QOACH'S NOTE" color={night.accent} style={{ marginBottom: 5 }} />
-        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 20, color: night.text, fontStyle: 'italic' }}>
-          {protocol.coach_notes}
-        </Text>
-      </LinearGradient>
+        <View style={{ width: '100%', maxWidth: 660, alignSelf: 'center' }}>
+          {locked ? (
+            <Pop>
+              <Pressable
+                onPress={onLock}
+                style={{
+                  borderRadius: 20, paddingHorizontal: 18, paddingVertical: 16, alignItems: 'center',
+                  backgroundColor: night.accentSoft, borderWidth: 1, borderColor: night.accentBorder,
+                }}
+              >
+                <Text style={{ fontFamily: nightFonts.display, fontSize: 18, color: night.text, textAlign: 'center' }}>
+                  Locked in.
+                </Text>
+                {firstRep ? (
+                  <Text style={{ marginTop: 6, fontFamily: nightFonts.bodyMedium, fontSize: 12.5, lineHeight: 18, color: night.textMuted, textAlign: 'center' }}>
+                    Rep one: {firstRep}
+                  </Text>
+                ) : null}
+                <Text style={{ marginTop: 4, fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost, textAlign: 'center' }}>
+                  Live on your Today page from here.
+                </Text>
+              </Pressable>
+            </Pop>
+          ) : (
+            <>
+              <PrimaryButton label="Lock it in" onPress={lockIn} />
+              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 26, marginTop: 4 }}>
+                <TextButton
+                  label="Adjust something"
+                  height={40}
+                  onPress={() => say('Adjusting mid-plan lands after launch — Start over for a different plan.')}
+                />
+                <TextButton label="Start over" height={40} onPress={onRestart} />
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+
+      {note ? (
+        <View style={{ position: 'absolute', top: 18, left: 0, right: 0, alignItems: 'center' }} pointerEvents="none">
+          <Pop>
+            <View
+              style={{
+                maxWidth: 460, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 11,
+                backgroundColor: night.surface, borderWidth: 1, borderColor: night.border,
+              }}
+            >
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, lineHeight: 18, color: night.text, textAlign: 'center' }}>
+                {note}
+              </Text>
+            </View>
+          </Pop>
+        </View>
+      ) : null}
+
+      <Confetti ref={confettiRef} />
     </View>
   );
 }
@@ -472,7 +767,6 @@ export default function FirstGoalScreen({
   );
   const [draft, setDraft] = useState('');
   const [answer, setAnswer] = useState('');
-  const [adjustHint, setAdjustHint] = useState(false);
   const [boxFocused, setBoxFocused] = useState(false);
   const [shakeCount, setShakeCount] = useState(0);
 
@@ -720,36 +1014,12 @@ export default function FirstGoalScreen({
   /* protocol preview */
   if (coach.phase === 'protocol' && coach.protocol && coach.verdict) {
     return (
-      <Screen>
-        <MonoLabel text="YOUR PROTOCOL" color={night.accent} style={{ fontSize: 10.5, letterSpacing: 1.5 }} />
-        <Text style={{ fontFamily: nightFonts.display, fontSize: 21, lineHeight: 26.25, color: night.text, marginTop: 8, marginBottom: 4 }}>
-          {coach.verdict.goal_statement}
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-          <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textDim }}>
-            {coach.protocol.duration_weeks} weeks · {coach.protocol.phases.length} phases  ·
-          </Text>
-          <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: night.blue }}>D</Text>
-          <Text style={{ fontFamily: nightFonts.body, fontSize: 12, color: night.textGhost }}>duration</Text>
-          <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: night.violetText }}>#</Text>
-          <Text style={{ fontFamily: nightFonts.body, fontSize: 12, color: night.textGhost }}>quantity</Text>
-          <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: night.accent }}>✓</Text>
-          <Text style={{ fontFamily: nightFonts.body, fontSize: 12, color: night.textGhost }}>done / not</Text>
-        </View>
-
-        <ProtocolBody protocol={coach.protocol} />
-
-        <View style={{ height: 16 }} />
-        <PrimaryButton label="Lock it in" onPress={lockIn} />
-        {adjustHint ? (
-          <Text style={{ height: 44, textAlign: 'center', paddingTop: 13, fontFamily: nightFonts.body, fontSize: 12.5, color: night.textFaint }}>
-            Adjusting mid-plan lands after launch — Start over for a different plan.
-          </Text>
-        ) : (
-          <TextButton label="Adjust something" onPress={() => setAdjustHint(true)} />
-        )}
-        <TextButton label="Start over" onPress={() => { setAdjustHint(false); coach.reset(); }} height={40} />
-      </Screen>
+      <ProtocolReveal
+        protocol={coach.protocol}
+        statement={coach.verdict.goal_statement}
+        onLock={lockIn}
+        onRestart={coach.reset}
+      />
     );
   }
 

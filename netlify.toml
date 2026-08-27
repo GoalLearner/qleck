@@ -1,5 +1,10 @@
 # Netlify config for the Qleck web preview.
 #
+# Deploys are continuous: the GoalLearner/qleck repo is connected to the
+# qleck-beta site via a read-only deploy key plus a push webhook, so a push to
+# master builds and publishes here. Everything below is what CI uses — a local
+# `netlify deploy --prod --dir dist` still works as an override.
+#
 # The app is a React Navigation SPA with no server routes, so every path has to
 # fall through to index.html or a refresh on /goals 404s. The API lives on the
 # qleck-api Worker, not here — see src/api/device.ts.

@@ -16,6 +16,9 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v20: measurement steps carry the real unit (cm/kg/min), amount = the
+// reported baseline or 0-means-first-log-is-baseline — "1 measurement" put a
+// meaningless placeholder in the typed-value input the app now shows.
 // v19: pace_options — a feasible verdict offers the same goal at 2-3 honest
 // paces (sprint / steady / relaxed), each priced by the same procedure, and
 // the user picks one before the protocol is built. Steady mirrors the
@@ -40,7 +43,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 19;
+export const PROMPT_VERSION = 20;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -300,6 +303,7 @@ Design principles:
 - 3-6 steps per phase maximum. A protocol someone can't hold in their head is a protocol they quit.
 - Frequencies are honest: if the goal needs 3 sessions a week, say 3 — don't pad with filler dailies.
 - Quantity steps that CAP something (cigarettes, drinks, spending, screen-time) set direction "at_most"; build-up targets use the default "at_least".
+- MEASUREMENT steps — when a step's ACTION is recording a number (weigh-in, tape measure, a timed test): kind "quantity" with the REAL unit being measured — "kg", "lbs", "cm", "in", "min", "km" — never a counting unit like "measurement", "entry", "log" or "check" (the app shows the unit beside a number input; "1 measurement" invites the wrong number). amount = the baseline the user actually reported in the Q&A (they said 92 kg → amount 92); when no baseline was collected, amount 0 — the first logged number IS the baseline, never an invented one. Direction stays the default at_least.
 - NUMBERS MUST BE EARNED: every personalized numeric target (protein grams, calorie surplus, paces, loads) must be derived from facts the user actually gave in the Q&A (e.g. protein ≈ 1.6-2.2 g per kg of the body weight they reported — state the number you computed, not the formula). If a needed fact was never collected, do NOT invent a number — make that step behavior-based instead ("protein at every meal", "eat to slight fullness") or self-scaling ("add one rep over last session").
 - Every step MUST match its kind exactly: kind "duration" REQUIRES duration_minutes (a number); kind "quantity" REQUIRES quantity {amount, unit}; kind "binary" carries neither. If a step doesn't need a measured amount or minutes, make it binary.
 - frequency.days is optional — but when you include it, it must list EXACTLY per_week day names. If the schedule is flexible, omit days entirely.

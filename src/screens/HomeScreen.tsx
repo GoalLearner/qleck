@@ -103,6 +103,8 @@ interface QtyControls {
   setText: (t: string) => void;
   unit: string;
   placeholder: string;
+  /** True for a baseline-less measurement: blank must not log a fake 0. */
+  needsNumber: boolean;
   log: () => void;
 }
 
@@ -140,10 +142,11 @@ function QtyInput({ qty, stacked }: { qty: QtyControls; stacked: boolean }) {
         </Text>
       </View>
       <Pressable
-        onPress={qty.log}
+        onPress={qty.needsNumber && qty.text.trim() === '' ? undefined : qty.log}
         style={{
           height: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: colors.navy,
           alignItems: 'center', justifyContent: 'center',
+          opacity: qty.needsNumber && qty.text.trim() === '' ? 0.4 : 1,
         }}
       >
         <Text style={{ fontFamily: fonts.extrabold, fontSize: 13.5, color: colors.creamText }}>Log it</Text>
@@ -440,11 +443,17 @@ function useQtyControls(checkInStep: (goalId: string, stepId: string, value?: nu
     if (rep.step.kind !== 'quantity' || !q) return undefined;
     const key = `${g.goal.id}:${rep.step.id}`;
     const text = texts[key] ?? '';
+    // amount 0 means two opposite things, split by direction: an at_most cap
+    // at 0 is abstinence (one blank tap logs the win), an at_least 0 is a
+    // baseline-less measurement (a number must be typed — protocol prompt
+    // v20's "first logged number IS the baseline").
+    const needsNumber = q.amount === 0 && q.direction !== 'at_most';
     return {
       text,
       setText: (t: string) => setTexts(prev => ({ ...prev, [key]: t })),
       unit: q.unit,
-      placeholder: String(q.amount),
+      placeholder: q.amount > 0 ? String(q.amount) : '',
+      needsNumber,
       log: () => {
         // Blank = the plan's own target (one tap keeps working); a typed
         // number — decimals included, comma tolerated — is the real value.

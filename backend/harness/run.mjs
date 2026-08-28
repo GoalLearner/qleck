@@ -16,15 +16,27 @@ const CONCURRENCY = 4;
 const GENERIC_ANSWER = 'Whatever you think is realistic — I have a normal schedule and average fitness.';
 
 async function api(path, body) {
-  const res = await fetch(BASE + path, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Qleck-Device': DEVICE,
-      'X-Qleck-Harness': SECRET,
-    },
-    body: JSON.stringify(body),
-  });
+  // One retry on a dropped connection or 5xx: wrangler dev recycles the
+  // worker on file changes, and a harness started in that window used to die
+  // on ECONNRESET before running a single fixture.
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(BASE + path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Qleck-Device': DEVICE,
+          'X-Qleck-Harness': SECRET,
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.status < 500 || attempt > 0) break;
+    } catch (err) {
+      if (attempt > 0) throw err;
+    }
+    await new Promise(r => setTimeout(r, 4000));
+  }
   let json = {};
   try { json = await res.json(); } catch { /* non-json error body */ }
   return { status: res.status, body: json };

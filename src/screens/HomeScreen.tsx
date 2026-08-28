@@ -413,9 +413,21 @@ function useGroupFolding() {
 
 // Just the goal name and the count — no phase, no method detail (owner call
 // 2026-08-24: less information, keep it simple; the Goals tab holds the rest).
-function GroupHeader({ g, open, onToggle, headerRef }: {
-  g: GoalToday; open: boolean; onToggle: () => void; headerRef?: (el: View | null) => void;
+/** Single-goal Today has no group header, so the odds join the section label:
+ *  "84% · BUILD THE GROOVE" (or "84→71% · ..." while drifted). */
+function singleHeaderLabel(g: GoalToday, byGoal: Record<string, CheckIn[]>, today: string): string {
+  const rf = reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, byGoal[g.goal.id] ?? [], today);
+  const phase = g.phase.title.toUpperCase();
+  if (!rf) return phase;
+  return `${rf.drifted ? `${rf.original}→${rf.current}` : rf.current}% · ${phase}`;
+}
+
+function GroupHeader({ g, checkIns, today, open, onToggle, headerRef }: {
+  g: GoalToday; checkIns: CheckIn[]; today: string; open: boolean; onToggle: () => void; headerRef?: (el: View | null) => void;
 }) {
+  // The odds ride the header, re-forecast live: green while the plan holds,
+  // amber with the drop spelled out when recent weeks slipped.
+  const rf = reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, checkIns, today);
   return (
     <Pressable
       ref={headerRef}
@@ -427,6 +439,11 @@ function GroupHeader({ g, open, onToggle, headerRef }: {
         {goalTitle(g.goal.statement, g.goal.protocol).toUpperCase()}
       </Text>
       <View style={{ flex: 1 }} />
+      {rf ? (
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: rf.drifted ? colors.inviteAccent : colors.success }}>
+          {rf.drifted ? `${rf.original}→${rf.current}%` : `${rf.current}%`}
+        </Text>
+      ) : null}
       <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: g.dot }}>{g.done}/{g.reps.length}</Text>
       <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.sectionLabel, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
     </Pressable>
@@ -554,8 +571,8 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
           <>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel }}>TODAY'S REPS</Text>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: multi ? colors.success : colors.sectionLabel }}>
-                {multi ? `${m.done} OF ${m.total} BANKED` : m.perGoal[0].phase.title.toUpperCase()}
+              <Text numberOfLines={1} style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: multi ? colors.success : colors.sectionLabel }}>
+                {multi ? `${m.done} OF ${m.total} BANKED` : singleHeaderLabel(m.perGoal[0], byGoal, m.today)}
               </Text>
             </View>
             {m.perGoal.filter(g => g.reps.length > 0).map(g => (
@@ -563,6 +580,8 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
                 {multi && (
                   <GroupHeader
                     g={g}
+                    checkIns={byGoal[g.goal.id] ?? []}
+                    today={m.today}
                     headerRef={el => { headerRefs.current[g.goal.id] = el; }}
                     open={fold.isOpen(g)}
                     onToggle={() => fold.toggle(g)}
@@ -722,6 +741,8 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
                 <React.Fragment key={g.goal.id}>
                   <GroupHeader
                     g={g}
+                    checkIns={byGoal[g.goal.id] ?? []}
+                    today={m.today}
                     headerRef={el => { headerRefs.current[g.goal.id] = el; }}
                     open={fold.isOpen(g)}
                     onToggle={() => fold.toggle(g)}

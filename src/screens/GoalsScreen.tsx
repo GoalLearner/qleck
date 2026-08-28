@@ -287,6 +287,7 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
         </View>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.onNavySoft, marginTop: 10 }}>
           {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
+          {m.rf ? ` · ${m.rf.drifted ? `${m.rf.original}→${m.rf.current}` : m.rf.current}% if you show up` : ''}
         </Text>
       </View>
 

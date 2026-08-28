@@ -18,7 +18,8 @@
 //   GET  /check-ins?goalId=&from=&to=     (Bearer token)   → rows in range
 //   DELETE /check-ins?goalId=&stepId=&date= — un-check (idempotent by key)
 import { checkQuota, provider, providerReady, type Env } from './ai';
-import { registerDevice, touchUser, verifyToken } from './auth';
+import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
+import { verifyAppleToken } from './apple';
 import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type PaceKey, type PaceOption, type SessionRow, type Verdict } from './coach';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
@@ -74,12 +75,32 @@ export default {
       return json(created, 200, cors);
     }
 
-    if (url.pathname.startsWith('/goals') || url.pathname.startsWith('/check-ins')) {
+    if (url.pathname.startsWith('/goals') || url.pathname.startsWith('/check-ins') || url.pathname === '/me') {
       if (!env.AUTH_SECRET) return json({ error: 'auth_unconfigured' }, 503, cors);
       const bearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
       const userId = await verifyToken(env, bearer || null);
       if (!userId) return json({ error: 'unauthorized' }, 401, cors);
       await touchUser(env, userId);
+
+      /* Profile that survives devices: name + handle live on the user row so
+       * a login on a fresh phone gets them back. */
+      if (url.pathname === '/me' && request.method === 'GET') {
+        const me = await env.DB
+          .prepare(`SELECT display_name, handle, timezone FROM users WHERE id = ?`)
+          .bind(userId)
+          .first<{ display_name: string | null; handle: string | null; timezone: string | null }>();
+        return json({ displayName: me?.display_name ?? null, handle: me?.handle ?? null, timezone: me?.timezone ?? null }, 200, cors);
+      }
+      if (url.pathname === '/me' && request.method === 'POST') {
+        const body = (await request.json().catch(() => ({}))) as { displayName?: unknown; handle?: unknown };
+        const displayName = typeof body.displayName === 'string' ? body.displayName.trim().slice(0, 80) : null;
+        const handle = typeof body.handle === 'string' ? body.handle.trim().slice(0, 40) : null;
+        await env.DB
+          .prepare(`UPDATE users SET display_name = COALESCE(?, display_name), handle = COALESCE(?, handle) WHERE id = ?`)
+          .bind(displayName, handle, userId)
+          .run();
+        return json({ ok: true }, 200, cors);
+      }
 
       // Wrapped so a D1 constraint (a raced protocol version, say) comes back
       // as a readable JSON error WITH cors headers — an unhandled throw here
@@ -197,6 +218,63 @@ export default {
         console.error('goals route failed:', err);
         return json({ error: 'goal_unavailable' }, 502, cors);
       }
+    }
+
+    /* ── Sign in with Apple (P3) ────────────────────────────────────────
+     * The account IS the Apple identity. Four branches, all resolving to a
+     * {userId, token} the client swaps into qleck-identity:
+     *   known sub                    → login (Apple proof outranks the bearer)
+     *   new sub + clean bearer user  → promotion (device goals become the account's)
+     *   new sub + no/invalid bearer  → fresh user (reinstall-then-sign-in)
+     *   new sub + bearer already has a DIFFERENT apple identity
+     *                                → account switch, never a rebind
+     */
+    if (url.pathname === '/auth/apple' && request.method === 'POST') {
+      if (!env.AUTH_SECRET) return json({ error: 'auth_unconfigured' }, 503, cors);
+      const body = (await request.json().catch(() => ({}))) as { identityToken?: unknown };
+      const verdict = await verifyAppleToken(env, body.identityToken);
+      if (!verdict.ok) return json({ error: verdict.error }, verdict.status, cors);
+      const sub = verdict.sub;
+
+      const findAccount = () => env.DB
+        .prepare(`SELECT user_id FROM identities WHERE provider = 'apple' AND provider_id = ?`)
+        .bind(sub)
+        .first<{ user_id: string }>();
+
+      const existing = await findAccount();
+      if (existing) {
+        await touchUser(env, existing.user_id);
+        return json({ userId: existing.user_id, token: await mintToken(env, existing.user_id), existing: true }, 200, cors);
+      }
+
+      const bearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+      let targetUser = await verifyToken(env, bearer || null);
+      if (targetUser) {
+        const other = await env.DB
+          .prepare(`SELECT provider_id FROM identities WHERE provider = 'apple' AND user_id = ?`)
+          .bind(targetUser)
+          .first<{ provider_id: string }>();
+        if (other && other.provider_id !== sub) targetUser = null; // switch, not rebind
+      }
+      if (!targetUser) {
+        const fresh = await registerDevice(env, null);
+        targetUser = fresh.userId;
+      }
+      try {
+        await env.DB
+          .prepare(`INSERT INTO identities (id, user_id, provider, provider_id) VALUES (?, ?, 'apple', ?)`)
+          .bind(crypto.randomUUID(), targetUser, sub)
+          .run();
+      } catch {
+        // UNIQUE(provider, provider_id) race: someone attached this sub between
+        // our SELECT and INSERT — that row wins, fall through to login.
+        const raced = await findAccount();
+        if (raced) {
+          return json({ userId: raced.user_id, token: await mintToken(env, raced.user_id), existing: true }, 200, cors);
+        }
+        return json({ error: 'identity_attach_failed' }, 500, cors);
+      }
+      return json({ userId: targetUser, token: await mintToken(env, targetUser), existing: false }, 200, cors);
     }
 
     if (url.pathname === '/health' && request.method === 'GET') {

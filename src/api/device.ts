@@ -9,6 +9,8 @@ const KEY = 'qleck-identity';
 export interface DeviceIdentity {
   userId: string;
   token: string;
+  /** 'apple' once signed in; absent for anonymous device identities. */
+  provider?: 'apple';
 }
 
 const PROD_URL = 'https://qleck-api.richmondcampano93.workers.dev';
@@ -64,6 +66,13 @@ export async function getIdentity(): Promise<DeviceIdentity> {
     })().finally(() => { inflight = null; });
   }
   return inflight;
+}
+
+/** Swap the in-memory identity after a sign-in (storage is written by the
+ *  caller). Everything using getIdentity() picks the account up immediately. */
+export function adoptIdentity(identity: DeviceIdentity): void {
+  cached = identity;
+  inflight = null;
 }
 
 /**

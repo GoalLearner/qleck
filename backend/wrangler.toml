@@ -34,3 +34,6 @@ DAILY_IP_LIMIT = "450"
 #   *.netlify.app   = the tester build (both the assigned name and the
 #                     qleck-beta alias, so renaming the site does not break it)
 CORS_ORIGINS = "http://localhost:8090,https://qleck-beta.netlify.app,https://symphonious-gecko-f4b59d.netlify.app,https://superlative-babka-03b86d.netlify.app"
+# Sign in with Apple: the iOS app's bundle identifier — the identity token's
+# audience for the native flow. Must match app.json ios.bundleIdentifier.
+APPLE_BUNDLE_ID = "com.qleck.app"

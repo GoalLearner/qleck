@@ -23,6 +23,10 @@ export interface Env {
   HARNESS_SECRET?: string;
   // Signs anonymous device tokens (P2a identity). Worker secret in prod.
   AUTH_SECRET?: string;
+  // Sign in with Apple: the iOS bundle id (token `aud`), and a JWKS override
+  // so tests can point verification at a locally served fake key set.
+  APPLE_BUNDLE_ID?: string;
+  APPLE_JWKS_URL?: string;
 }
 
 // Provider-neutral shapes so coach.ts never imports an SDK type.

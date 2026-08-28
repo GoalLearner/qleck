@@ -2,7 +2,8 @@
 // shape (owner call, 2026-08-24): the mock badges/friends/crews/stat rows came
 // off; real community (friends, cheers, doing goals together) returns via
 // ROADMAP P6 on a real backend.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -163,6 +164,14 @@ function LogOutRow({ onLogout, goalCount }: { onLogout: () => void; goalCount: n
   const { signOut } = useRally();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // An Apple-backed identity makes logout recoverable; anonymous stays a
+  // one-way door and the copy has to say so.
+  const [isAccount, setIsAccount] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem('qleck-identity')
+      .then(raw => { if (raw) setIsAccount((JSON.parse(raw) as { provider?: string }).provider === 'apple'); })
+      .catch(() => {});
+  }, [confirming]);
 
   const doLogOut = async () => {
     if (busy) return;
@@ -193,9 +202,11 @@ function LogOutRow({ onLogout, goalCount }: { onLogout: () => void; goalCount: n
     }}>
       <Text style={{ fontSize: 15, fontFamily: fonts.bold, color: colors.ink }}>Log out?</Text>
       <Text style={{ fontSize: 13, lineHeight: 19, fontFamily: fonts.regular, color: colors.inkSoft }}>
-        {goalCount > 0
-          ? `This clears this device, so your ${goalCount} ${goalCount === 1 ? 'goal' : 'goals'} and streak will be gone from the app. Real sign-in is still on the way, so there's no way to log back in and get them.`
-          : 'This clears this device and starts you over from a blank slate.'}
+        {isAccount
+          ? 'Your goals are saved to your Apple account — sign back in with Apple any time and they come right back.'
+          : goalCount > 0
+            ? `This clears this device, so your ${goalCount} ${goalCount === 1 ? 'goal' : 'goals'} and streak will be gone from the app. On this platform there's no sign-in yet, so there's no way to log back in and get them.`
+            : 'This clears this device and starts you over from a blank slate.'}
       </Text>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <Pressable

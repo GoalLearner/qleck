@@ -6,6 +6,8 @@
 // already exists" address. Phase 2 swaps these branches for the real
 // magic-link / password API — the screens and copy stay put.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
+import { appleAuth } from '../api/account';
 import type { Protocol } from '../api/coachTypes';
 import type { AcceptedPlan } from './useCoachFlow';
 
@@ -118,6 +120,43 @@ export function useOnboardingFlow({
     allowNotifications: permNotif,
     allowMotion: permSteps,
   };
+
+  /* ── Sign in with Apple (iOS — the real account) ────────────────────
+   * The only async in this hook. Native-only: web keeps the anonymous flow.
+   * A first sign-in PROMOTES the device's anonymous user (goals kept) and
+   * continues to profile setup; an existing account skips straight home —
+   * its profile hydrates from /me.
+   */
+  const [appleBusy, setAppleBusy] = useState(false);
+  const [appleErr, setAppleErr] = useState('');
+  const appleSignIn = useCallback(async () => {
+    if (appleBusy || Platform.OS !== 'ios') return;
+    setAppleErr('');
+    setAppleBusy(true);
+    try {
+      const Apple = await import('expo-apple-authentication');
+      const cred = await Apple.signInAsync({
+        requestedScopes: [Apple.AppleAuthenticationScope.FULL_NAME],
+      });
+      if (!cred.identityToken) throw new Error('no_identity_token');
+      // The token's sub is the account; cred.fullName/user are never trusted
+      // for identity — the name only pre-fills the profile field as a courtesy
+      // (Apple hands it over exactly once).
+      const result = await appleAuth(cred.identityToken);
+      if (cred.fullName?.givenName && !name.trim()) {
+        setName([cred.fullName.givenName, cred.fullName.familyName].filter(Boolean).join(' '));
+      }
+      if (result.existing) nav('home');
+      else nav('profile');
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      if (e.code === 'ERR_REQUEST_CANCELED') { /* user closed the sheet — not an error */ }
+      else setAppleErr('Sign-in hit a snag — try again in a moment.');
+    } finally {
+      setAppleBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appleBusy, name]);
 
   const nav = useCallback((next: OnbScreen | 'home') => {
     // The canvas ends on a mock "day-one home" teaser; the real app hands off
@@ -282,6 +321,7 @@ export function useOnboardingFlow({
   }, []);
 
   return {
+    appleSignIn, appleBusy, appleErr,
     // screen + navigation
     screen, nav,
     // welcome carousel

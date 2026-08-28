@@ -6,6 +6,7 @@ import {
 } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
 import { localDate, resetIdentity } from '../api/device';
+import { fetchMe, saveMe } from '../api/account';
 import { resetDeviceId } from '../api/coach';
 import { planIsOver, planStats, type CheckIn } from '../lib/protocolTime';
 import {
@@ -190,6 +191,17 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
         await flushGoalOutbox();
         await flushOutbox();
         await refresh();
+        // Real accounts (P3): the server's profile wins over the local cache,
+        // so a login on a fresh device gets its name and handle back.
+        const me = await fetchMe().catch(() => null);
+        if (me?.displayName || me?.handle) {
+          setProfile(prev => ({
+            ...prev,
+            fullName: me.displayName ?? prev.fullName,
+            firstName: me.displayName ? me.displayName.split(' ')[0] : prev.firstName,
+            handle: me.handle ?? prev.handle,
+          }));
+        }
       } catch { /* offline: cache already applied */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -221,6 +233,11 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   const applyOnboarding = useCallback((result: OnboardingResult) => {
     setProfile(prev => profileFromOnboarding(prev, result));
+    // The account's profile lives server-side too (P3): name + handle survive
+    // devices. Fire-and-forget; the local cache still applies immediately.
+    if (result.name.trim() || result.username.trim()) {
+      saveMe(result.name.trim(), result.username.trim()).catch(() => {});
+    }
     if (result.protocol && result.goal) {
       addGoal({
         goalText: result.goal,
@@ -431,7 +448,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     // so the NEXT account's goals and profile are cached. They will re-write
     // these keys with the cleared state, which is the same thing this removal
     // does — belt and braces, not a race.
-    await AsyncStorage.multiRemove(['qleck-goals', 'qleck-profile']).catch(() => {});
+    await AsyncStorage.multiRemove(['qleck-goals', 'qleck-profile', 'qleck-checkin-outbox', 'qleck-checkins']).catch(() => {});
     await clearGoalOutbox();
     await resetIdentity();
     resetDeviceId();

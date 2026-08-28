@@ -1,5 +1,5 @@
 {
-  "name": "ig-init",
+  "name": "qleck",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
@@ -14,6 +14,7 @@
     "@react-navigation/native": "^7.2.5",
     "@react-navigation/native-stack": "^7.16.0",
     "expo": "~56.0.8",
+    "expo-apple-authentication": "~56.0.4",
     "expo-audio": "~56.0.13",
     "expo-clipboard": "~56.0.4",
     "expo-constants": "~56.0.24",

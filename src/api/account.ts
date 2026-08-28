@@ -1,6 +1,7 @@
 // Account surface (P3): Sign in with Apple + the profile that survives
 // devices. The Apple identity IS the account — no passwords anywhere.
 import { apiBase, getIdentity, type DeviceIdentity } from './device';
+import { getDeviceId } from './coach';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface AppleAuthResult {
@@ -49,6 +50,20 @@ export async function fetchMe(): Promise<Me | null> {
   const res = await fetch(apiBase() + '/me', { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) return null;
   return (await res.json()) as Me;
+}
+
+/**
+ * Erase the account server-side - goals, check-ins, profile and the Apple
+ * link all go, plus this device's coach transcripts. Throws on failure so
+ * the UI can say nothing was deleted; the caller signs out locally after.
+ */
+export async function deleteAccount(): Promise<void> {
+  const { token } = await getIdentity();
+  const res = await fetch(apiBase() + '/me', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}`, 'X-Qleck-Device': getDeviceId() },
+  });
+  if (!res.ok) throw new Error(`delete_account_failed_${res.status}`);
 }
 
 /** Fire-and-forget friendly; throws on failure so callers may retry. */

@@ -102,6 +102,21 @@ export default {
         return json({ ok: true }, 200, cors);
       }
 
+      /* Account deletion (App Review 5.1.1(v), and plain decency): one call
+       * erases the user row - identities, goals, protocols, scheduled reps
+       * and check-ins all cascade - plus this device's coach transcripts,
+       * which key on the device id rather than the user. Tokens are
+       * stateless HMAC, so a second call on the same token is a clean 200
+       * over an already-empty row, never an error. */
+      if (url.pathname === '/me' && request.method === 'DELETE') {
+        const deviceId = request.headers.get('X-Qleck-Device') ?? '';
+        if (/^[0-9a-fA-F-]{16,64}$/.test(deviceId)) {
+          await env.DB.prepare(`DELETE FROM coach_sessions WHERE device_id = ?`).bind(deviceId).run();
+        }
+        await env.DB.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run();
+        return json({ ok: true }, 200, cors);
+      }
+
       // Wrapped so a D1 constraint (a raced protocol version, say) comes back
       // as a readable JSON error WITH cors headers — an unhandled throw here
       // returns a bare 500 the browser can only see as a network failure.

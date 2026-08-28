@@ -4,6 +4,7 @@
 // ROADMAP P6 on a real backend.
 import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { deleteAccount } from '../api/account';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -147,6 +148,7 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
         </Card>
 
         <LogOutRow onLogout={onLogout} goalCount={goals.length} />
+        <DeleteAccountRow onDone={onLogout} />
       </ScrollView>
     </FadeInUp>
   );
@@ -227,6 +229,84 @@ function LogOutRow({ onLogout, goalCount }: { onLogout: () => void; goalCount: n
         >
           <Text style={{ fontSize: 14, fontFamily: fonts.bold, color: '#fff' }}>
             {busy ? 'Logging out…' : 'Log out'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+
+/**
+ * App Review 5.1.1(v): an app with accounts must let the user delete the
+ * account in-app - and it should be true anyway. Same two-step confirm
+ * pattern as LogOutRow (Alert.alert stays banned: no-op on web). The
+ * server call goes first; only a confirmed erase clears local state, so a
+ * network failure deletes nothing and says so.
+ */
+function DeleteAccountRow({ onDone }: { onDone: () => void }) {
+  const { signOut } = useRally();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const doDelete = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      await deleteAccount();
+    } catch {
+      setBusy(false);
+      setFailed(true);
+      return;
+    }
+    try { await signOut(); } catch { /* server side is gone; local clear is best-effort */ }
+    onDone();
+  };
+
+  if (!confirming) {
+    return (
+      <Pressable onPress={() => setConfirming(true)} style={{ marginTop: 12, marginHorizontal: 14, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 13, fontFamily: fonts.semibold, color: colors.inkFaint }}>Delete account</Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={{
+      marginTop: 12, marginHorizontal: 14, padding: 16, borderRadius: radii.card,
+      borderWidth: 1.5, borderColor: colors.dangerBorder, gap: 12,
+    }}>
+      <Text style={{ fontSize: 15, fontFamily: fonts.bold, color: colors.danger }}>Delete your account?</Text>
+      <Text style={{ fontSize: 13, lineHeight: 19, fontFamily: fonts.regular, color: colors.inkSoft }}>
+        This permanently erases your account and everything in it - goals, streaks, check-ins and your
+        profile - from Qleck's servers. There is no undo, and signing back in starts from nothing.
+      </Text>
+      {failed ? (
+        <Text style={{ fontSize: 12, fontFamily: fonts.semibold, color: colors.danger }}>
+          Couldn't reach the server - nothing was deleted. Try again in a moment.
+        </Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Pressable
+          onPress={() => { setConfirming(false); setFailed(false); }}
+          style={{
+            flex: 1, height: 46, borderRadius: radii.pill, borderWidth: 1.5,
+            borderColor: colors.outline, alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontSize: 14, fontFamily: fonts.bold, color: colors.ink }}>Keep my account</Text>
+        </Pressable>
+        <Pressable
+          onPress={doDelete}
+          style={{
+            flex: 1, height: 46, borderRadius: radii.pill, backgroundColor: colors.danger,
+            alignItems: 'center', justifyContent: 'center', opacity: busy ? 0.6 : 1,
+          }}
+        >
+          <Text style={{ fontSize: 14, fontFamily: fonts.bold, color: '#fff' }}>
+            {busy ? 'Deleting...' : 'Delete forever'}
           </Text>
         </Pressable>
       </View>

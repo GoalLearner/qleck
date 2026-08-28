@@ -326,6 +326,19 @@ export function reforecastOdds(
   return { original, current, drifted: original - current >= 5 };
 }
 
+/**
+ * The tier puts the number in plain words — a bare "80%" tells a user
+ * nothing about whether that is good. Bands follow the coach's own rubric:
+ * 78+ is what it will greenlight, 70-77 is its borderline band, below 70
+ * only exists when the user chose the sprint pace with eyes open.
+ */
+export function oddsTier(pct: number): { label: string; short: string } {
+  if (pct >= 88) return { label: 'Strong odds', short: 'strong' };
+  if (pct >= 78) return { label: 'Solid odds', short: 'solid' };
+  if (pct >= 70) return { label: 'A real stretch', short: 'stretch' };
+  return { label: 'A bold bet', short: 'bold' };
+}
+
 /** A milestone counts as reached at this week-adherence or better. */
 const MILESTONE_BAR = 0.8;
 

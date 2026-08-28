@@ -18,7 +18,7 @@ import YouAvatar from '../components/YouAvatar';
 import { goalDot, goalTitle, kindLook } from '../components/protocolViews';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
-import { phaseForWeek, planEndDate, reforecastOdds, repsForDate, weekOf, type Reforecast } from '../lib/protocolTime';
+import { oddsTier, phaseForWeek, planEndDate, reforecastOdds, repsForDate, weekOf, type Reforecast } from '../lib/protocolTime';
 import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -156,7 +156,7 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
         {m.rf ? (
           <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: m.rf.drifted ? colors.inviteBg : colors.successBg }}>
             <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: m.rf.drifted ? colors.inviteAccent : colors.success }}>
-              {m.rf.drifted ? `${m.rf.original}→${m.rf.current}%` : `${m.rf.current}%`} if you show up
+              {m.rf.drifted ? `was ${m.rf.original} · now ${m.rf.current}%` : `${oddsTier(m.rf.current).label} · ${m.rf.current}%`}
             </Text>
           </View>
         ) : null}
@@ -287,7 +287,7 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
         </View>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.onNavySoft, marginTop: 10 }}>
           {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
-          {m.rf ? ` · ${m.rf.drifted ? `${m.rf.original}→${m.rf.current}` : m.rf.current}% if you show up` : ''}
+          {m.rf ? ` · ${m.rf.current}% — ${m.rf.drifted ? `slipping, was ${m.rf.original}%` : oddsTier(m.rf.current).label.toLowerCase()} — if you do the reps` : ''}
         </Text>
       </View>
 

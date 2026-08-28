@@ -33,7 +33,7 @@ import type { ProtocolPhase } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { celebrateDay, celebrateGoal, hapticCheck } from '../lib/celebrate';
 import {
-  allCheckIns, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, phaseForWeek, reforecastOdds, repsForDate, streakDays, type CheckIn, type DayRep, type WeekDay, weekOf, weekdayName,
+  allCheckIns, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type CheckIn, type DayRep, type WeekDay, weekOf, weekdayName,
 } from '../lib/protocolTime';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -413,13 +413,65 @@ function useGroupFolding() {
 
 // Just the goal name and the count — no phase, no method detail (owner call
 // 2026-08-24: less information, keep it simple; the Goals tab holds the rest).
+/**
+ * QOACH'S CALL, given a real home. The tiny header chips only carry a number;
+ * this card is where the number is EXPLAINED — what it measures, and whether
+ * it is good — once, so every smaller mention inherits the meaning.
+ */
+function OddsCard({ perGoal, byGoal, today, multi }: {
+  perGoal: GoalToday[]; byGoal: Record<string, CheckIn[]>; today: string; multi: boolean;
+}) {
+  const rows = perGoal
+    .map(g => ({ g, rf: reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, byGoal[g.goal.id] ?? [], today) }))
+    .filter((r): r is { g: GoalToday; rf: NonNullable<ReturnType<typeof reforecastOdds>> } => r.rf !== null);
+  if (rows.length === 0) return null;
+  return (
+    <SideCard>
+      <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel, marginBottom: 10 }}>
+        QOACH'S CALL
+      </Text>
+      <View style={{ gap: 12 }}>
+        {rows.map(({ g, rf }) => {
+          const tier = oddsTier(rf.current);
+          return (
+            <View key={g.goal.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ minWidth: 52, alignItems: 'center' }}>
+                <Text style={{ fontFamily: fonts.serif, fontSize: 26, color: rf.drifted ? colors.inviteAccent : colors.ink }}>
+                  {rf.current}
+                  <Text style={{ fontSize: 14, color: colors.muted }}>%</Text>
+                </Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 13, color: rf.drifted ? colors.inviteAccent : colors.success }}>
+                  {rf.drifted ? `Slipping — was ${rf.original}%` : tier.label}
+                </Text>
+                {multi ? (
+                  <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 11, color: colors.muted, marginTop: 1 }}>
+                    {goalTitle(g.goal.statement, g.goal.protocol)}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, lineHeight: 16.5, color: colors.muted, marginTop: 10 }}>
+        {rows.some(r => r.rf.drifted)
+          ? 'The odds this lands, updated as you go — bank reps and it climbs back.'
+          : 'The odds this lands — if you do the reps as written. It moves with what you do.'}
+      </Text>
+    </SideCard>
+  );
+}
+
 /** Single-goal Today has no group header, so the odds join the section label:
  *  "84% · BUILD THE GROOVE" (or "84→71% · ..." while drifted). */
 function singleHeaderLabel(g: GoalToday, byGoal: Record<string, CheckIn[]>, today: string): string {
   const rf = reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, byGoal[g.goal.id] ?? [], today);
   const phase = g.phase.title.toUpperCase();
   if (!rf) return phase;
-  return `${rf.drifted ? `${rf.original}→${rf.current}` : rf.current}% · ${phase}`;
+  if (rf.drifted) return `WAS ${rf.original} · NOW ${rf.current}% · ${phase}`;
+  return `${oddsTier(rf.current).label.toUpperCase()} · ${rf.current}% · ${phase}`;
 }
 
 function GroupHeader({ g, checkIns, today, open, onToggle, headerRef }: {
@@ -440,8 +492,10 @@ function GroupHeader({ g, checkIns, today, open, onToggle, headerRef }: {
       </Text>
       <View style={{ flex: 1 }} />
       {rf ? (
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: rf.drifted ? colors.inviteAccent : colors.success }}>
-          {rf.drifted ? `${rf.original}→${rf.current}%` : `${rf.current}%`}
+        <Text numberOfLines={1} style={{ fontFamily: fonts.extrabold, fontSize: 11.5, color: rf.drifted ? colors.inviteAccent : colors.success }}>
+          {rf.drifted
+            ? `was ${rf.original} · now ${rf.current}%`
+            : `${oddsTier(rf.current).label} · ${rf.current}%`}
         </Text>
       ) : null}
       <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: g.dot }}>{g.done}/{g.reps.length}</Text>
@@ -775,6 +829,8 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
         {/* right column: the living sidebar */}
         <View style={{ width: 264, gap: 12 }}>
           <ProgressRingCard done={m.done} total={m.total} />
+
+          <OddsCard perGoal={m.perGoal} byGoal={byGoal} today={m.today} multi={m.perGoal.length > 1} />
 
           <SideCard>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>

@@ -15,7 +15,7 @@
 // celebration moment (the canvas' "ease this week" card ships then, when the
 // revise flow gets a client).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useAppearance } from '../state/ThemeContext';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
@@ -99,51 +99,51 @@ function repMetric(rep: DayRep, loggedValue?: number | null): string {
 }
 
 interface QtyControls {
-  value: number;
+  text: string;
+  setText: (t: string) => void;
   unit: string;
-  inc: () => void;
-  dec: () => void;
+  placeholder: string;
   log: () => void;
 }
 
-/** −/value/+ and Log it. `stacked` lays it out full-width on its own row, which
- *  is the only way it fits a phone card; the desktop keeps it inline. */
-function Stepper({ qty, stacked }: { qty: QtyControls; stacked: boolean }) {
-  const round = (
-    <>
-      <Pressable
-        onPress={qty.dec}
-        hitSlop={6}
-        style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outlineStrong, alignItems: 'center', justifyContent: 'center' }}
-      >
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: colors.ink }}>−</Text>
-      </Pressable>
-      <Text
-        style={{
-          minWidth: stacked ? 0 : 58, flex: stacked ? 1 : undefined, textAlign: 'center',
-          fontFamily: fonts.extrabold, fontSize: 15, color: colors.ink,
-        }}
-      >
-        {qty.value} {qty.unit}
-      </Text>
-      <Pressable
-        onPress={qty.inc}
-        hitSlop={6}
-        style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outlineStrong, alignItems: 'center', justifyContent: 'center' }}
-      >
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 17, color: colors.ink }}>+</Text>
-      </Pressable>
-    </>
-  );
-
+/** A typed number and Log it. The steppers are gone (owner call 2026-08-28):
+ *  a measurement step ("glute circumference") needs the REAL number — 92.5,
+ *  not a count nudged around a target — and the value lands in check-ins for
+ *  the coach's future re-forecasts. Blank still logs the step's own target,
+ *  so "just do what the plan says" stays one tap. `stacked` lays it out
+ *  full-width on its own row, the only way it fits a phone card. */
+function QtyInput({ qty, stacked }: { qty: QtyControls; stacked: boolean }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: stacked ? 1 : undefined }}>
-      {round}
+      <View
+        style={{
+          flex: stacked ? 1 : undefined, minWidth: stacked ? 0 : 130,
+          flexDirection: 'row', alignItems: 'center', gap: 6,
+          height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: colors.outlineStrong,
+          paddingHorizontal: 14, backgroundColor: colors.card,
+        }}
+      >
+        <TextInput
+          value={qty.text}
+          onChangeText={t => qty.setText(t.replace(/[^0-9.,]/g, ''))}
+          placeholder={qty.placeholder}
+          placeholderTextColor={colors.inkFaint}
+          keyboardType="decimal-pad"
+          inputMode="decimal"
+          style={{
+            flex: 1, minWidth: 34, paddingVertical: 0,
+            fontFamily: fonts.extrabold, fontSize: 15, color: colors.ink,
+          }}
+        />
+        <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.inkSoft, maxWidth: 110 }}>
+          {qty.unit}
+        </Text>
+      </View>
       <Pressable
         onPress={qty.log}
         style={{
           height: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: colors.navy,
-          alignItems: 'center', justifyContent: 'center', marginLeft: 4,
+          alignItems: 'center', justifyContent: 'center',
         }}
       >
         <Text style={{ fontFamily: fonts.extrabold, fontSize: 13.5, color: colors.creamText }}>Log it</Text>
@@ -215,12 +215,12 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false }:
           )}
         </View>
         {showStepper
-          ? (stacked ? null : <Stepper qty={qty!} stacked={false} />)
+          ? (stacked ? null : <QtyInput qty={qty!} stacked={false} />)
           : check}
       </View>
       {stackStepper && (
         <View style={{ flexDirection: 'row', marginTop: 14 }}>
-          <Stepper qty={qty!} stacked />
+          <QtyInput qty={qty!} stacked />
         </View>
       )}
     </View>
@@ -434,21 +434,30 @@ function GroupHeader({ g, open, onToggle, headerRef }: {
  * the honest number is a few taps either side of it.
  */
 function useQtyControls(checkInStep: (goalId: string, stepId: string, value?: number | null) => void) {
-  const [vals, setVals] = useState<Record<string, number>>({});
+  const [texts, setTexts] = useState<Record<string, string>>({});
   return (g: GoalToday, rep: DayRep): QtyControls | undefined => {
     const q = rep.step.quantity;
     if (rep.step.kind !== 'quantity' || !q) return undefined;
-    const stepSize = q.amount >= 20 ? 5 : 1;
     const key = `${g.goal.id}:${rep.step.id}`;
-    const value = vals[key] ?? q.amount;
-    const set = (v: number) => setVals(prev => ({ ...prev, [key]: v }));
+    const text = texts[key] ?? '';
     return {
-      value, unit: q.unit,
-      inc: () => set(Math.min(999, value + stepSize)),
-      // A cap step ("at most 10 cigarettes") can legitimately be zero — that's
-      // the win — so the floor is 0, not the step size.
-      dec: () => set(Math.max(0, value - stepSize)),
-      log: () => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, value); },
+      text,
+      setText: (t: string) => setTexts(prev => ({ ...prev, [key]: t })),
+      unit: q.unit,
+      placeholder: String(q.amount),
+      log: () => {
+        // Blank = the plan's own target (one tap keeps working); a typed
+        // number — decimals included, comma tolerated — is the real value.
+        // Zero is legitimate: on a cap step ("at most 10 cigarettes") it IS
+        // the win.
+        const parsed = Number(text.replace(',', '.'));
+        const value = text.trim() !== '' && Number.isFinite(parsed) && parsed >= 0
+          ? Math.min(parsed, 99999)
+          : q.amount;
+        hapticCheck();
+        checkInStep(g.goal.id, rep.step.id, value);
+        setTexts(prev => ({ ...prev, [key]: '' }));
+      },
     };
   };
 }

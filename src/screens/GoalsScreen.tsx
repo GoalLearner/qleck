@@ -147,6 +147,15 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
             {m.repsToday} {m.repsToday === 1 ? 'rep' : 'reps'} today
           </Text>
         </View>
+        {/* The odds this plan was accepted at — the verdict number, kept.
+            Absent on goals from before the odds existed. */}
+        {m.goal.odds !== undefined ? (
+          <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.successBg }}>
+            <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.success }}>
+              {m.goal.odds}% if you show up
+            </Text>
+          </View>
+        ) : null}
         <View style={{ flex: 1 }} />
         <View style={{ width: 90, flexDirection: 'row' }}>
           <WeekTrack weeks={m.goal.protocol.duration_weeks} week={m.week} filled />

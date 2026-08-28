@@ -10,8 +10,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.qleck.app",
-      "buildNumber": "2",
-      "usesAppleSignIn": true
+      "buildNumber": "3",
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {

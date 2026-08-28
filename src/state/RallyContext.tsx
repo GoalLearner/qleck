@@ -38,6 +38,8 @@ export const DEFAULT_PROFILE: UserProfile = {
 // temporal layer needs. Mirrors the server's goals table.
 export interface ActiveGoal {
   id: string;
+  /** The odds the plan was accepted at (chosen pace), when known. */
+  odds?: number;
   startedOn: string;
   statement: string;
   durationWeeks: number;
@@ -142,6 +144,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const toActive = (g: RemoteGoal): ActiveGoal => ({
     id: g.id, startedOn: g.started_on, statement: g.statement,
     durationWeeks: g.duration_weeks, protocol: g.protocol,
+    odds: g.success_probability ?? undefined,
   });
 
   /** Re-read goals + their check-ins from the server. Called on launch and
@@ -158,6 +161,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
       ...queued.filter(q => !remoteIds.has(q.id)).map(q => ({
         id: q.id, startedOn: q.startedOn, statement: q.statement,
         durationWeeks: q.durationWeeks, protocol: q.protocol,
+        odds: q.successProbability ?? undefined,
       })),
     ];
     setGoals(active);
@@ -208,6 +212,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     setGoals(prev => [...prev, {
       id, startedOn: localDate(), statement: plan.statement,
       durationWeeks: plan.durationWeeks, protocol: plan.protocol,
+      odds: plan.odds,
     }]);
     // Queued durably, then sent in the background — a failed request retries
     // on the next launch instead of quietly losing the plan.

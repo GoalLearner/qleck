@@ -16,6 +16,8 @@ export interface GoalRecord {
   timezone: string | null;
   protocol: Protocol;
   protocol_version: number;
+  /** The chosen pace's odds at lock-in (1-97), null for pre-v19 goals. */
+  success_probability: number | null;
 }
 
 export interface CreateGoalBody {
@@ -23,6 +25,7 @@ export interface CreateGoalBody {
   goalText?: unknown;
   statement?: unknown;
   durationWeeks?: unknown;
+  successProbability?: unknown;
   startedOn?: unknown;     // YYYY-MM-DD local date
   timezone?: unknown;
   protocol?: unknown;
@@ -32,7 +35,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID_RE = /^[0-9a-fA-F-]{36}$/;
 
 export function parseCreateGoal(body: CreateGoalBody):
-  | { ok: true; id: string; goalText: string; statement: string; durationWeeks: number; startedOn: string; timezone: string | null; protocol: Protocol }
+  | { ok: true; id: string; goalText: string; statement: string; durationWeeks: number; startedOn: string; timezone: string | null; successProbability: number | null; protocol: Protocol }
   | { ok: false; error: string } {
   const id = String(body.id ?? '');
   if (!UUID_RE.test(id)) return { ok: false, error: 'invalid_goal_id' };
@@ -46,9 +49,14 @@ export function parseCreateGoal(body: CreateGoalBody):
   const startedOn = String(body.startedOn ?? '');
   if (!DATE_RE.test(startedOn)) return { ok: false, error: 'invalid_started_on' };
   const timezone = body.timezone ? String(body.timezone).slice(0, 64) : null;
+  // Same trust rule as the verdict itself: a number outside the band is
+  // dropped, never clamped. Absence is a fine state for the Goals tab.
+  const spRaw = Number(body.successProbability);
+  const successProbability =
+    Number.isInteger(spRaw) && spRaw >= 1 && spRaw <= 97 ? spRaw : null;
   const errors = validateProtocol(body.protocol);
   if (errors.length > 0) return { ok: false, error: 'invalid_protocol: ' + errors[0] };
-  return { ok: true, id, goalText, statement, durationWeeks, startedOn, timezone, protocol: body.protocol as Protocol };
+  return { ok: true, id, goalText, statement, durationWeeks, startedOn, timezone, successProbability, protocol: body.protocol as Protocol };
 }
 
 /** Rebuild the normalized latest-version step rows for a goal. */
@@ -111,10 +119,10 @@ export async function createGoal(
   await env.DB.batch([
     env.DB
       .prepare(
-        `INSERT OR IGNORE INTO goals (id, user_id, goal_text, statement, duration_weeks, started_on, timezone)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO goals (id, user_id, goal_text, statement, duration_weeks, started_on, timezone, success_probability)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(input.id, userId, input.goalText, input.statement, input.durationWeeks, input.startedOn, input.timezone),
+      .bind(input.id, userId, input.goalText, input.statement, input.durationWeeks, input.startedOn, input.timezone, input.successProbability),
     env.DB
       .prepare(
         `INSERT INTO protocols (id, goal_id, version, schema_version, json)

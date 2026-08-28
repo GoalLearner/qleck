@@ -27,6 +27,8 @@ export interface AcceptedPlan {
   goalText: string;        // what the user typed
   statement: string;       // what the coach accepted
   durationWeeks: number;
+  /** The chosen pace's success_probability, when the verdict carried one. */
+  odds?: number;
   protocol: Protocol;
 }
 
@@ -126,16 +128,17 @@ export function useCoachFlow() {
 
   const retry = useCallback(() => { retryAction.current?.(); }, []);
 
+  /** The odds of whatever pace was chosen — what the reveal chip shows and
+   *  what the goal record keeps. */
+  const chosenOdds =
+    verdict?.pace_options?.find(o => o.key === pace)?.success_probability ?? verdict?.success_probability;
+
   const acceptedPlan: AcceptedPlan | null =
     protocol && verdict
       // durationWeeks comes from the PROTOCOL: a sprint or relaxed pace means
       // the verdict's headline weeks and the generated plan's weeks differ.
-      ? { goalText, statement: verdict.goal_statement, durationWeeks: protocol.duration_weeks, protocol }
+      ? { goalText, statement: verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: chosenOdds, protocol }
       : null;
-
-  /** The odds of whatever pace was chosen — what the reveal chip shows. */
-  const chosenOdds =
-    verdict?.pace_options?.find(o => o.key === pace)?.success_probability ?? verdict?.success_probability;
 
   return {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,

@@ -15,6 +15,7 @@ export interface RemoteGoal {
   started_on: string;
   protocol: Protocol;
   protocol_version: number;
+  success_probability?: number | null;
 }
 
 function mintId(): string {
@@ -54,6 +55,7 @@ export interface PendingGoal {
   durationWeeks: number;
   startedOn: string;
   timezone: string | null;
+  successProbability: number | null;
   protocol: Protocol;
   /** Set when the server refused the payload outright (4xx). Kept in the
    *  queue so the goal stays visible, but not retried — a rejection will be
@@ -129,6 +131,7 @@ export async function saveGoal(plan: AcceptedPlan, goalText: string, id?: string
     durationWeeks: plan.durationWeeks,
     startedOn: localDate(),
     timezone,
+    successProbability: plan.odds ?? null,
     protocol: plan.protocol,
   };
   await writeGoalOutbox([...(await readGoalOutbox()), item]);

@@ -39,7 +39,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "check:time": "node src/lib/protocolTime.check.mjs",
-    "check:diff": "node src/lib/protocolDiff.check.mjs"
+    "check:diff": "node src/lib/protocolDiff.check.mjs",
+    "check:forecast": "node src/lib/reforecast.check.mjs"
   },
   "private": true
 }

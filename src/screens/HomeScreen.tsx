@@ -15,7 +15,11 @@
 // celebration moment (the canvas' "ease this week" card ships then, when the
 // revise flow gets a client).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
+// TextInput is aliased: babel-preset-expo's web import-rewrite emitted a
+// bare `TextInput.default` reference for the plain named import in THIS
+// module (and only this one), which threw at runtime. The alias sidesteps
+// whatever the rewrite trips on.
+import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, TextInput as RNTextInput, View, useWindowDimensions } from 'react-native';
 import { useAppearance } from '../state/ThemeContext';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
@@ -29,9 +33,7 @@ import type { ProtocolPhase } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { celebrateDay, celebrateGoal, hapticCheck } from '../lib/celebrate';
 import {
-  allCheckIns, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip,
-  phaseForWeek, repsForDate, streakDays, weekdayName, weekOf,
-  type CheckIn, type DayRep, type WeekDay,
+  allCheckIns, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, phaseForWeek, reforecastOdds, repsForDate, streakDays, type CheckIn, type DayRep, type WeekDay, weekOf, weekdayName,
 } from '../lib/protocolTime';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -125,7 +127,7 @@ function QtyInput({ qty, stacked }: { qty: QtyControls; stacked: boolean }) {
           paddingHorizontal: 14, backgroundColor: colors.card,
         }}
       >
-        <TextInput
+        <RNTextInput
           value={qty.text}
           onChangeText={t => qty.setText(t.replace(/[^0-9.,]/g, ''))}
           placeholder={qty.placeholder}
@@ -471,6 +473,50 @@ function useQtyControls(checkInStep: (goalId: string, stepId: string, value?: nu
   };
 }
 
+/** The re-forecast moment (canvas 5's promise made true): when the last two
+ *  completed weeks slipped, the accepted odds drift down — derived, never
+ *  stored — and this strip says so without guilt, with the way back named.
+ *  It disappears on its own as banked reps pull the number home. */
+function ReforecastStrip({ goal, checkIns, today }: { goal: ActiveGoal; checkIns: CheckIn[]; today: string }) {
+  const navigation = useNavigation<any>();
+  const rf = reforecastOdds(goal.odds, goal.protocol, goal.startedOn, checkIns, today);
+  if (!rf || !rf.drifted) return null;
+  return (
+    <View
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        backgroundColor: colors.inviteBg, borderWidth: 1, borderColor: colors.inviteBorder,
+        borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12,
+      }}
+    >
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1.3, color: colors.inviteAccent }}>
+          QOACH RE-FORECAST
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 3 }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 16, color: colors.ink }}>
+            {rf.original} → {rf.current}%
+          </Text>
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.inkSoft }}>if you show up</Text>
+        </View>
+        <Text style={{ marginTop: 3, fontFamily: fonts.semibold, fontSize: 12, lineHeight: 17, color: colors.inkSoft }}>
+          The plan still works — the showing up slipped. Bank reps and the number climbs back, or bend the plan.
+        </Text>
+      </View>
+      <Pressable
+        onPress={() => navigation.navigate('AdjustPlan', { goalId: goal.id })}
+        style={{
+          paddingHorizontal: 14, height: 38, borderRadius: 19,
+          borderWidth: 1.5, borderColor: colors.inviteAccent,
+          alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: colors.inviteAccent }}>Adjust</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 /* ── the phone loop (canvas §1, grouped when goals run concurrently) ────── */
 
 function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
@@ -521,6 +567,9 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
                     open={fold.isOpen(g)}
                     onToggle={() => fold.toggle(g)}
                   />
+                )}
+                {(!multi || fold.isOpen(g)) && (
+                  <ReforecastStrip goal={g.goal} checkIns={byGoal[g.goal.id] ?? []} today={m.today} />
                 )}
                 {(!multi || fold.isOpen(g)) && g.reps.map(rep => (
                   <RepCard
@@ -677,6 +726,9 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
                     open={fold.isOpen(g)}
                     onToggle={() => fold.toggle(g)}
                   />
+                  {fold.isOpen(g) && (
+                    <ReforecastStrip goal={g.goal} checkIns={byGoal[g.goal.id] ?? []} today={m.today} />
+                  )}
                   {fold.isOpen(g) && g.reps.map(rep => (
                     <RepCard
                       key={rep.step.id}

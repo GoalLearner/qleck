@@ -18,7 +18,7 @@ import YouAvatar from '../components/YouAvatar';
 import { goalDot, goalTitle, kindLook } from '../components/protocolViews';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
-import { phaseForWeek, planEndDate, repsForDate, weekOf } from '../lib/protocolTime';
+import { phaseForWeek, planEndDate, reforecastOdds, repsForDate, weekOf, type Reforecast } from '../lib/protocolTime';
 import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -113,6 +113,8 @@ interface GoalModel {
   nowIdx: number;
   phase: ProtocolPhase;
   repsToday: number;
+  /** Accepted odds re-forecast against actual adherence; null without odds. */
+  rf: Reforecast | null;
 }
 
 function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
@@ -147,12 +149,14 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
             {m.repsToday} {m.repsToday === 1 ? 'rep' : 'reps'} today
           </Text>
         </View>
-        {/* The odds this plan was accepted at — the verdict number, kept.
-            Absent on goals from before the odds existed. */}
-        {m.goal.odds !== undefined ? (
-          <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.successBg }}>
-            <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.success }}>
-              {m.goal.odds}% if you show up
+        {/* The accepted odds, re-forecast against how the plan is actually
+            going (derived, never stored). Green while holding; amber with the
+            drop spelled out when recent weeks slipped. Absent on goals from
+            before the odds existed. */}
+        {m.rf ? (
+          <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: m.rf.drifted ? colors.inviteBg : colors.successBg }}>
+            <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: m.rf.drifted ? colors.inviteAccent : colors.success }}>
+              {m.rf.drifted ? `${m.rf.original}→${m.rf.current}%` : `${m.rf.current}%`} if you show up
             </Text>
           </View>
         ) : null}
@@ -348,6 +352,7 @@ export default function GoalsScreen() {
       dot: goalDot(i),
       nowIdx: Math.max(0, goal.protocol.phases.findIndex(p => p.id === phase.id)),
       repsToday: repsForDate(goal.protocol, goal.startedOn, today, checkInsByGoal[goal.id] ?? []).length,
+      rf: reforecastOdds(goal.odds, goal.protocol, goal.startedOn, checkInsByGoal[goal.id] ?? [], today),
     };
   });
   const sel = models.find(m => m.goal.id === selId) ?? null;

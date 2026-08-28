@@ -273,6 +273,59 @@ export interface PlanStats {
   milestones: MilestoneOutcome[];
 }
 
+export interface Reforecast {
+  /** The odds the plan was accepted at. */
+  original: number;
+  /** Adherence-adjusted odds today. Never above original — the number was
+   *  conditional on showing up, so showing up keeps it, never raises it. */
+  current: number;
+  /** current is meaningfully below original (5+ points). */
+  drifted: boolean;
+}
+
+/**
+ * The re-forecast: what the accepted odds are worth given how the plan is
+ * actually going. Derived at read time from check-ins — never stored — like
+ * every other run-derived number in this file.
+ *
+ * Judged on the last TWO COMPLETED plan-weeks, deliberately:
+ * - week-granular matches the promise in the UI copy ("skip weeks and Qoach
+ *   revises it") and avoids punishing a slow morning mid-week;
+ * - a two-week window means the number CLIMBS BACK as reps get banked — the
+ *   product's "never miss twice" stance as arithmetic — and an eased revision
+ *   lowers future expectations, so adjusting the plan also recovers it;
+ * - adherence at 85%+ holds the original untouched: one missed day is noise.
+ *
+ * Null when there is nothing honest to say: no stored odds, the plan is over
+ * or not started, no completed week yet, or fewer than 4 expected reps in the
+ * window (small denominators judge nobody).
+ */
+export function reforecastOdds(
+  original: number | undefined,
+  protocol: Protocol,
+  startedOn: string,
+  checkIns: CheckIn[],
+  today: string,
+): Reforecast | null {
+  if (original === undefined) return null;
+  if (today < startedOn || planIsOver(startedOn, protocol.duration_weeks, today)) return null;
+  const hold: Reforecast = { original, current: original, drifted: false };
+  const lastDone = Math.min(weekOfUncapped(startedOn, today) - 1, protocol.duration_weeks);
+  if (lastDone < 1) return hold;
+  const weeks = planStats(protocol, startedOn, checkIns).weeks
+    .filter(w => w.week >= lastDone - 1 && w.week <= lastDone);
+  const expected = weeks.reduce((n, w) => n + w.expected, 0);
+  if (expected < 4) return hold;
+  const banked = weeks.reduce((n, w) => n + w.banked, 0);
+  const adherence = banked / expected;
+  if (adherence >= 0.85) return hold;
+  // 85% adherence keeps the full number; 25% and below sits on a 0.45 floor;
+  // linear in between. The floor keeps the message "worth saving", not "dead".
+  const factor = 0.45 + 0.55 * Math.max(0, Math.min(1, (adherence - 0.25) / 0.6));
+  const current = Math.max(25, Math.min(original, Math.round(original * factor)));
+  return { original, current, drifted: original - current >= 5 };
+}
+
 /** A milestone counts as reached at this week-adherence or better. */
 const MILESTONE_BAR = 0.8;
 

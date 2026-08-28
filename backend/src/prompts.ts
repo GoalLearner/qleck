@@ -16,6 +16,12 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v23: the attempt floor — the user may insist on their ORIGINAL ask when it
+// prices at 20%+ (owner call: freedom to try, eyes open); the coach then
+// builds the strongest honest protocol for the original, never re-litigating
+// the counter. Verdicts carry original_duration_weeks so the attempt targets
+// the ask's own timeline. Below 20% the coach still refuses to build it, and
+// the UI says the floor out loud.
 // v22: the playbooks carry their non-negotiables (deloads and the 10% rule
 // for endurance, measured taper baselines, spaced REVIEW for learning,
 // morning light for circadian shifts, resistance training mandatory in a
@@ -55,7 +61,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 22;
+export const PROMPT_VERSION = 23;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -147,7 +153,7 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
    2c. Score self-reports with a coach's skepticism: unusually maximal claims ("unlimited time", "I never fail") are planned around but never push the number up — cap the greenlight at 88 when capacity claims are untested; and a habit they have never attempted has NO failure history, which is unknown, not favorable.
    3. Add 3 (once) if they are rebuilding something they have done before, or the runway is genuinely generous for the gap.
    4. Cap at 95; 97 is the absolute ceiling — life happens to every plan.
-   DECISION RULE: run the procedure on the goal AS STATED first. 78 and above — you may greenlight. Below 70 — you MUST counter_offer instead. 70-77 is the borderline band: prefer a counter_offer that buys the number up to 80+ (longer runway, smaller first target); a greenlight is a bet you would personally take, and borderline bets get renegotiated, not blessed. ALWAYS emit original_probability, on every verdict: for feasible it EQUALS success_probability (the ask is the plan); for counter_offer it is the procedure applied to the ask exactly as stated, with no floor — 3% is a legitimate answer, and the honest gap between the two numbers is the argument for your counter; success_probability is then the procedure applied to YOUR counter-offered version, which must come out 78+ (that is what makes it worth offering).
+   DECISION RULE: run the procedure on the goal AS STATED first. 78 and above — you may greenlight. Below 70 — you MUST counter_offer instead. 70-77 is the borderline band: prefer a counter_offer that buys the number up to 80+ (longer runway, smaller first target); a greenlight is a bet you would personally take, and borderline bets get renegotiated, not blessed. For counter_offer, ALSO emit original_duration_weeks: the ORIGINAL ask's own timeline in whole weeks when it names or implies one ("marathon in 3 weeks" → 3); when it names none, the honest minimum runway an attempt would need. ALWAYS emit original_probability, on every verdict: for feasible it EQUALS success_probability (the ask is the plan); for counter_offer it is the procedure applied to the ask exactly as stated, with no floor — 3% is a legitimate answer, and the honest gap between the two numbers is the argument for your counter; success_probability is then the procedure applied to YOUR counter-offered version, which must come out 78+ (that is what makes it worth offering).
    PACE OPTIONS — on a feasible verdict, ALSO emit pace_options: the same goal at 2-3 honest paces, each priced by the same procedure. The user picks one before the plan is built.
    - "steady" (always present): your recommended plan — IDENTICAL duration_weeks and success_probability to the verdict's top-level fields.
    - "sprint" (include when a meaningfully shorter runway is still physically plausible): compress the runway by roughly 25-40%. Price it honestly with the same procedure and NO greenlight floor — it should usually land 50-70; if an honest sprint would fall below 50, pick a gentler sprint or omit it. Its note sells the trade straight: what discipline it demands, what one slip costs.
@@ -221,6 +227,10 @@ export const VERDICT_TOOL = {
       original_probability: {
         type: 'number',
         description: 'The same honest percent for the ORIGINAL ask as stated. For feasible verdicts this equals success_probability; for counter_offer it is usually much lower — that gap is why you countered.',
+      },
+      original_duration_weeks: {
+        type: 'number',
+        description: "counter_offer only: the ORIGINAL ask's own timeline in whole weeks (its stated one, or the honest minimum an attempt would need).",
       },
       success_factor_notes: {
         type: 'array',

@@ -521,12 +521,15 @@ function FeasibleVerdict({
 }
 
 /** Canvas 5b — the counter-offer as a negotiation: one dial, two pills. */
+const ATTEMPT_FLOOR = 20;
+
 function CounterVerdict({
-  v, goalText, onBuild, onReset,
+  v, goalText, onBuild, onBuildOriginal, onReset,
 }: {
   v: Verdict;
   goalText: string;
   onBuild: () => void;
+  onBuildOriginal: () => void;
   onReset: () => void;
 }) {
   const { width } = useWindowDimensions();
@@ -535,6 +538,10 @@ function CounterVerdict({
   const succ = v.success_probability;
   const orig = v.original_probability;
   const hasPair = succ !== undefined && orig !== undefined;
+  // The owner's rule: at 20%+ the user may insist on the original, eyes
+  // open; below it the coach will not build the plan and the UI says the
+  // floor out loud instead of hiding the option.
+  const canAttempt = hasPair && (orig as number) >= ATTEMPT_FLOOR;
   const asked = hasPair && view === 'asked';
   const dialColor = asked ? night.warn : night.accent;
 
@@ -621,13 +628,15 @@ function CounterVerdict({
       <View style={{ minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}>
         <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18.5, color: night.textSoft, textAlign: 'center' }}>
           {asked
-            ? `As stated, the odds aren't on your side — that's why Qoach countered. These pills only compare: the deal below builds Qoach's ${succ}% version, and the original isn't a plan it will put its name on.`
+            ? canAttempt
+              ? `Qoach's honest read on your original — it still recommends the ${succ}% version, but at ${orig}% the choice is yours.`
+              : `Qoach only builds plans it can price at ${ATTEMPT_FLOOR}% or better — as asked, this is ${orig}%. The deal below builds its ${succ}% version instead.`
             : 'Rebuilt so the odds are on your side.'}
         </Text>
       </View>
       {hasPair ? (
         <Text style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost, paddingTop: 8 }}>
-          PILLS COMPARE THE TWO — THE DEAL BUILDS QOACH'S VERSION
+          {canAttempt ? 'PICK A SIDE — THE BUTTON BUILDS THE ONE YOU CHOSE' : `PILLS COMPARE THE TWO — BELOW ${ATTEMPT_FLOOR}% QOACH ONLY BUILDS ITS VERSION`}
         </Text>
       ) : null}
     </View>
@@ -641,7 +650,14 @@ function CounterVerdict({
         "{v.assessment}"
       </Text>
       <View style={{ marginTop: 6 }}>
-        <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={onBuild} />
+        {canAttempt && view === 'asked' ? (
+          <>
+            <PrimaryButton label={`Attempt my original — ${orig}% odds`} onPress={onBuildOriginal} />
+            <TextButton label={`Take the deal instead — ${succ}%`} onPress={onBuild} height={44} />
+          </>
+        ) : (
+          <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={onBuild} />
+        )}
         <TextButton label="Change my goal" onPress={onReset} height={46} />
       </View>
     </View>
@@ -666,7 +682,14 @@ function CounterVerdict({
                 "{v.assessment}"
               </Text>
               <View>
-                <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={onBuild} />
+                {canAttempt && view === 'asked' ? (
+          <>
+            <PrimaryButton label={`Attempt my original — ${orig}% odds`} onPress={onBuildOriginal} />
+            <TextButton label={`Take the deal instead — ${succ}%`} onPress={onBuild} height={44} />
+          </>
+        ) : (
+          <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={onBuild} />
+        )}
                 <TextButton label="Change my goal" onPress={onReset} height={46} />
               </View>
             </>
@@ -1300,6 +1323,7 @@ export default function FirstGoalScreen({
         v={coach.verdict}
         goalText={coach.goalText}
         onBuild={coach.buildPlan}
+        onBuildOriginal={coach.buildOriginal}
         onReset={coach.reset}
       />
     );
@@ -1310,7 +1334,7 @@ export default function FirstGoalScreen({
     return (
       <ProtocolReveal
         protocol={coach.protocol}
-        statement={coach.verdict.goal_statement}
+        statement={coach.chosenStatement ?? coach.verdict.goal_statement}
         odds={coach.chosenOdds}
         onLock={lockIn}
         onRestart={coach.reset}

@@ -398,7 +398,20 @@ export default {
         const verdict = JSON.parse(session.verdict) as Verdict;
         const pace: PaceKey | undefined =
           body.pace === 'sprint' || body.pace === 'steady' || body.pace === 'relaxed' ? body.pace : undefined;
-        const result = await generateProtocol(env, { ...meta, sessionId: session.id }, session, verdict, pace);
+        // The attempt floor (owner call): the user may insist on the ORIGINAL
+        // ask of a counter-offer, but only when the coach prices it at 20% or
+        // better — below that the coach will not put its name on a plan, and
+        // the client states the floor rather than hiding the option. Enforced
+        // HERE because the client is never the thing holding the line.
+        const ATTEMPT_FLOOR = 20;
+        const variant = body.variant === 'original' ? 'original' as const : undefined;
+        if (variant) {
+          const orig = verdict.decision === 'counter_offer' ? verdict.original_probability : undefined;
+          if (typeof orig !== 'number' || orig < ATTEMPT_FLOOR) {
+            return json({ error: 'below_attempt_floor', floor: ATTEMPT_FLOOR, original: orig ?? null }, 403, cors);
+          }
+        }
+        const result = await generateProtocol(env, { ...meta, sessionId: session.id }, session, verdict, pace, variant);
         if (!result.protocol) {
           return json({ error: 'protocol_generation_failed', details: result.errors }, 502, cors);
         }
@@ -485,6 +498,9 @@ function sanitizeOdds(v: Verdict): void {
   }
   v.success_probability = sp;
   v.original_probability = op;
+  const od = Number(v.original_duration_weeks);
+  v.original_duration_weeks =
+    v.decision === 'counter_offer' && Number.isFinite(od) && od >= 1 && od <= 52 ? Math.round(od) : undefined;
 
   // Pace options: 2-3 honest paces, or nothing. Steady is force-aligned to
   // the verdict's own (already sanitized) numbers so the recommended pill can

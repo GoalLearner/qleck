@@ -69,6 +69,8 @@ export interface Verdict {
   success_probability?: number;
   /** counter_offer only: the same honest read on the ORIGINAL ask. */
   original_probability?: number;
+  /** counter_offer only: the ORIGINAL ask's own timeline in weeks. */
+  original_duration_weeks?: number;
   /** Parallel to success_factors: one line each on how the factor moves the
    *  odds. Absent on verdicts stored before prompt v18. */
   success_factor_notes?: string[];
@@ -353,11 +355,20 @@ export async function generateProtocol(
   session: SessionRow,
   verdict: Verdict,
   pace?: PaceKey,
+  variant?: 'original',
 ): Promise<{ protocol?: Protocol; errors?: string[] }> {
   // The chosen pace re-times the plan: same goal, same facts, different
   // runway. Steady IS the verdict, so only sprint/relaxed change anything.
   const paceOpt = pace && pace !== 'steady' ? verdict.pace_options?.find(o => o.key === pace) : undefined;
   const paceWeeks = paceOpt?.duration_weeks ?? verdict.duration_weeks;
+  // The attempt: the user heard the counter and chose their ORIGINAL ask
+  // anyway (only reachable when it prices at the 20% floor or better — the
+  // route enforces that). The target flips to the original statement and its
+  // own timeline; the coaching job becomes making those odds as big as they
+  // can honestly get.
+  const attempting = variant === 'original' && verdict.decision === 'counter_offer';
+  const targetStatement = attempting ? (verdict.original_request ?? session.goal_text) : verdict.goal_statement;
+  const targetWeeks = attempting ? verdict.original_duration_weeks : paceWeeks;
   const transcript: TranscriptEntry[] = JSON.parse(session.transcript);
   const qa = transcript
     .filter(t => t.answer !== undefined)
@@ -370,7 +381,10 @@ export async function generateProtocol(
         `Accepted verdict:\n${JSON.stringify(verdict)}\n\n` +
         `Original goal:\n${goalAsData(session.goal_text)}\n\n` +
         (qa ? `Clarifying Q&A:\n${qa}\n\n` : '') +
-        `Generate the protocol for "${verdict.goal_statement}" over ${paceWeeks} weeks.` +
+        `Generate the protocol for "${targetStatement}"${targetWeeks ? ` over ${targetWeeks} weeks` : ' over its own stated timeline'}.` +
+        (attempting
+          ? ` The user heard your counter-offer and chose to attempt their ORIGINAL ask anyway, eyes open, at your honest ${verdict.original_probability ?? '<50'}% odds. Respect the choice: build the strongest possible protocol for the ORIGINAL ask on its own timeline, designed to push those odds as high as they can honestly go. coach_notes honors the boldness and names what has to go right — never scold, never re-litigate the counter.`
+          : '') +
         (paceOpt
           ? paceOpt.key === 'sprint'
             ? ` The user chose the time-crunch pacing (${paceWeeks} weeks at ${paceOpt.success_probability}% odds) — tighter than your recommended pace. Week one still starts almost too easy; the later phases carry the compression, and the plan should say out loud where the discipline has to hold.`
@@ -414,7 +428,7 @@ export async function generateProtocol(
     // joins the same retry loop — a dropped pillar reads to the model as one
     // more validation error to fix, which is exactly what it is.
     if (errors.length === 0) {
-      errors.push(...physiquePillarErrors(`${verdict.goal_statement} ${session.goal_text}`, repaired as Protocol));
+      errors.push(...physiquePillarErrors(`${targetStatement} ${session.goal_text}`, repaired as Protocol));
     }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: repaired as Protocol };

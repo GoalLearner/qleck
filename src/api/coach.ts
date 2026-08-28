@@ -102,6 +102,9 @@ export function answerCoachQuestion(sessionId: string, answer: string): Promise<
   return post<CoachTurnResponse>(`/coach/sessions/${sessionId}/messages`, { answer });
 }
 
-export function generateProtocol(sessionId: string, pace?: string): Promise<ProtocolResponse> {
-  return post<ProtocolResponse>(`/coach/sessions/${sessionId}/protocol`, pace ? { pace } : {});
+export function generateProtocol(sessionId: string, pace?: string, variant?: 'original'): Promise<ProtocolResponse> {
+  return post<ProtocolResponse>(`/coach/sessions/${sessionId}/protocol`, {
+    ...(pace ? { pace } : {}),
+    ...(variant ? { variant } : {}),
+  });
 }

@@ -100,15 +100,33 @@ export function useCoachFlow() {
   // and decides which odds the reveal chip carries.
   const [pace, setPace] = useState<PaceKey>('steady');
 
+  // Which side of a counter-offer got built: Qoach's version (default) or
+  // the user's ORIGINAL ask (the 20%+ attempt the owner granted them).
+  const [variant, setVariant] = useState<'offer' | 'original'>('offer');
+
   const buildPlan = useCallback(() => {
     const id = sessionId.current;
     if (!id) return;
+    setVariant('offer');
     setPhase('building');
     generateProtocol(id, pace).then(
       res => { setProtocol(res.protocol); setPhase('protocol'); },
       err => fail(err, buildPlan),
     );
   }, [fail, pace]);
+
+  /** The attempt: build the ORIGINAL ask, eyes open. Server enforces the
+   *  20% floor; this only exists on counter-offers that clear it. */
+  const buildOriginal = useCallback(() => {
+    const id = sessionId.current;
+    if (!id) return;
+    setVariant('original');
+    setPhase('building');
+    generateProtocol(id, undefined, 'original').then(
+      res => { setProtocol(res.protocol); setPhase('protocol'); },
+      err => fail(err, buildOriginal),
+    );
+  }, [fail]);
 
   /** Back to a blank intake — new goal, new session. */
   const reset = useCallback(() => {
@@ -121,6 +139,7 @@ export function useCoachFlow() {
     setVerdict(null);
     setRefusal(null);
     setPace('steady');
+    setVariant('offer');
     setProtocol(null);
     setError(null);
     setPhase('intake');
@@ -128,21 +147,27 @@ export function useCoachFlow() {
 
   const retry = useCallback(() => { retryAction.current?.(); }, []);
 
-  /** The odds of whatever pace was chosen — what the reveal chip shows and
-   *  what the goal record keeps. */
+  /** The odds of whatever was actually built — the chosen pace, or the
+   *  original ask's honest number when the user insisted on the attempt. */
   const chosenOdds =
-    verdict?.pace_options?.find(o => o.key === pace)?.success_probability ?? verdict?.success_probability;
+    variant === 'original'
+      ? verdict?.original_probability
+      : verdict?.pace_options?.find(o => o.key === pace)?.success_probability ?? verdict?.success_probability;
+
+  /** The statement of whatever was built — mirrors chosenOdds. */
+  const chosenStatement =
+    variant === 'original' ? (verdict?.original_request ?? goalText) : verdict?.goal_statement;
 
   const acceptedPlan: AcceptedPlan | null =
     protocol && verdict
       // durationWeeks comes from the PROTOCOL: a sprint or relaxed pace means
       // the verdict's headline weeks and the generated plan's weeks differ.
-      ? { goalText, statement: verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: chosenOdds, protocol }
+      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: chosenOdds, protocol }
       : null;
 
   return {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
-    pace, setPace, chosenOdds,
+    pace, setPace, chosenOdds, chosenStatement, buildOriginal,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan,
   };
 }

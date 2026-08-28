@@ -98,7 +98,7 @@ export const GOAL_FIXTURES = [
   },
 
   {
-    id: 'gain-muscle', category: 'realistic', protocol: true, minQuestions: 3,
+    id: 'gain-muscle', category: 'realistic', protocol: true, physique: true, minQuestions: 3,
     goal: 'I want to gain 5 lbs of lean muscle.',
     answers: [
       'Lifting about a year, 3 days a week.',
@@ -110,7 +110,7 @@ export const GOAL_FIXTURES = [
   },
 
   {
-    id: 'lose-weight-moderate', category: 'realistic', protocol: true, minQuestions: 3,
+    id: 'lose-weight-moderate', category: 'realistic', protocol: true, physique: true, minQuestions: 3,
     goal: 'I want to lose 8 kg steadily over the next 4 months.',
     answers: [
       'I weigh 92 kg, about 178 cm.',
@@ -124,7 +124,7 @@ export const GOAL_FIXTURES = [
   // Regression (owner-found, 2026-08-24): a RANGE quick-pick answer must be
   // honored — no near-verbatim re-ask, no "you decide" chips on stat questions.
   {
-    id: 'lose-10-lbs-range', category: 'realistic', protocol: true, minQuestions: 3,
+    id: 'lose-10-lbs-range', category: 'realistic', protocol: true, physique: true, minQuestions: 3,
     goal: 'Lose 10 lbs',
     answers: [
       '75-90 kg / 165-200 lbs',

@@ -178,6 +178,49 @@ export function reconcileDuration(p: unknown): unknown {
  * of problems; empty list = valid. Never trust model output that hasn't
  * passed this.
  */
+/**
+ * Physique pillar validation (prompt v22's hard rule, enforced).
+ *
+ * The prompt demands that body-composition goals carry the full proven
+ * playbook — training, progression, energy balance, protein, sleep — but at
+ * sampling temperature the model drops a pillar roughly half the time when
+ * the step cap squeezes. Same trust rule as everything else: the prompt is
+ * the request, the validator is the guarantee; a failure here feeds the
+ * generation retry with exactly what to fix.
+ *
+ * The detector is deliberately conservative — explicit weight-change or
+ * body-composition language only — because a false positive would demand
+ * nonsense pillars of a non-physique goal and doom both attempts.
+ */
+const PHYSIQUE_RE = /(lose|gain|drop|shed|build|put on|add)\s+(about |around |~)?\d+\s*(lbs?|pounds?|kg|kilos?|inch(es)?)|muscle|physique|recomp|body\s?comp(osition)?|glutes?|tone\s?up|bulk(ing)?|body fat/i;
+
+const PILLARS: [string, RegExp][] = [
+  ['training (a gym/resistance/workout step)', /gym|lift|strength|resistance|workout|session|weights|circuit|train/i],
+  ['progression (a logbook step: write sets down, beat last week)', /log|logbook|write.{0,20}(set|weight|lift)|progress|add (a )?(rep|weight)|heavier|beat (the|your|last)/i],
+  ['energy balance (a concrete surplus or deficit eating behavior)', /deficit|surplus|calorie|portion|fullness|plate|extra (meal|shake)|eat (to|less|more|at)/i],
+  ['protein (ideally grams from reported bodyweight)', /protein/i],
+  ['sleep (a checkable bedtime step)', /sleep|bed(time)?|asleep/i],
+];
+
+export function physiquePillarErrors(goalStatement: string, p: Protocol): string[] {
+  if (!PHYSIQUE_RE.test(goalStatement)) return [];
+  const errs: string[] = [];
+  // Phase 1 specifically: the rule is that every pillar has a presence from
+  // week one — "training starts once the eating settles" is the exact staging
+  // the rule exists to prevent, and a whole-protocol scan would bless it.
+  const text = (p.phases[0]?.steps ?? [])
+    .map(st => `${st.title} ${st.details} ${st.week_progression ?? ''}`)
+    .join(' ');
+  for (const [name, re] of PILLARS) {
+    if (!re.test(text)) errs.push(`physique goal: phase 1 is missing the ${name} pillar`);
+  }
+  const p1 = p.phases[0]?.steps.length ?? 0;
+  if (p1 < 5) {
+    errs.push(`physique goal: phase 1 has ${p1} steps but needs at least 5, one per pillar (training, progression logbook, energy balance, protein, sleep)`);
+  }
+  return errs;
+}
+
 export function validateProtocol(p: unknown): string[] {
   const errs: string[] = [];
   const proto = p as Protocol;

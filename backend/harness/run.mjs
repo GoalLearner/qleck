@@ -151,8 +151,29 @@ async function runGoalFixture(f) {
       if (pLeak) { pass = false; }
     }
   }
+  // Physique pillar audit (prompt v21): the plan must carry the whole
+  // hypertrophy/fat-loss playbook — training, a progression rule, energy
+  // balance, protein, sleep — and phase 1 must hold at least five steps.
+  let pillarsOk = null;
+  if (f.physique && protocol) {
+    const text = protocol.phases
+      .flatMap(ph => ph.steps)
+      .map(st => `${st.title} ${st.details ?? ''} ${st.week_progression ?? ''}`)
+      .join(' \n ')
+      .toLowerCase();
+    const p1 = protocol.phases[0]?.steps.length ?? 0;
+    const missing = [];
+    if (p1 < 5) missing.push(`phase1_steps=${p1}`);
+    if (!/session|workout|train|lift|gym/.test(text)) missing.push('training');
+    if (!/progress|overload|add (a )?rep|add weight|heavier|log (every|each)|write.*(set|weight)/.test(text)) missing.push('progression');
+    if (!/surplus|deficit|calorie|extra (meal|shake)|energy balance|eat (to|in|more|less)/.test(text)) missing.push('energy');
+    if (!/protein/.test(text)) missing.push('protein');
+    if (!/sleep|bed|recovery|rest day/.test(text)) missing.push('sleep');
+    pillarsOk = missing.length === 0 ? true : missing.join(',');
+  }
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
+    pillarsOk,
     pass, leak, protocolOk, questions, dupQuestion, badChip, minChips, probability, probOk, paceOk, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
@@ -254,6 +275,8 @@ const bars = {
     goalResults.every(r => r.probOk),
   'feasible verdicts offer 2-3 ordered paces':
     goalResults.every(r => r.paceOk),
+  'physique protocols cover the pillars':
+    goalResults.every(r => r.pillarsOk === null || r.pillarsOk === true),
   [`every question ships ${MIN_CHIPS}+ chips`]:
     goalResults.every(r => r.minChips === null || r.minChips >= MIN_CHIPS),
 };

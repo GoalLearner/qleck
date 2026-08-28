@@ -6,7 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, physiquePillarErrors, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
 
 // Server-enforced negotiation band: at least 3 clarifying questions, at most 5.
 // Both ends work the same way — the tool the coach must not use is simply
@@ -381,7 +381,10 @@ export async function generateProtocol(
 
   let lastErrors: string[] = [];
   let lastOutput: unknown = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Three attempts, not two: the physique pillar audit made validation
+  // meaningfully stricter, and a third try (~$0.003) converts most
+  // two-strike failures into a delivered plan instead of a user-facing 502.
+  for (let attempt = 0; attempt < 3; attempt++) {
     const messages: ChatMessage[] =
       attempt === 0
         ? baseMessages
@@ -402,10 +405,17 @@ export async function generateProtocol(
       tools: [protocolTool(PROTOCOL_TOOL_SCHEMA)],
       toolChoice: { type: 'tool', name: 'emit_protocol' },
       maxTokens: 8192,
+      temperature: 0.4,
     });
     if (result.refused) return { errors: ['api_refusal'] };
     const repaired = reconcileDuration(result.toolInput);
     const errors = validateProtocol(repaired);
+    // Structural validity first; if that holds, the physique pillar audit
+    // joins the same retry loop — a dropped pillar reads to the model as one
+    // more validation error to fix, which is exactly what it is.
+    if (errors.length === 0) {
+      errors.push(...physiquePillarErrors(`${verdict.goal_statement} ${session.goal_text}`, repaired as Protocol));
+    }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: repaired as Protocol };
     lastErrors = errors;

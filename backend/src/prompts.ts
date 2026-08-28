@@ -16,6 +16,18 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v22: the playbooks carry their non-negotiables (deloads and the 10% rule
+// for endurance, measured taper baselines, spaced REVIEW for learning,
+// morning light for circadian shifts, resistance training mandatory in a
+// cut); disclosed history becomes an explicit response rule, never denied;
+// monitoring is trend-based, never per-week weight checkpoints; and "lose X
+// lbs" is a physique goal whatever words it uses. Every clause traces to a
+// finding from the six-domain professional review.
+// v21: the method is borrowed, not invented — protocols are the domain's
+// professionally-coached playbook adapted to the person, with a silent
+// pillar-coverage audit; physique goals get a hard 5-step floor (training,
+// progression, energy balance, protein-by-bodyweight, sleep). Owner call
+// after a live glute plan shipped 3 habits and no surplus/protein/sleep.
 // v20: measurement steps carry the real unit (cm/kg/min), amount = the
 // reported baseline or 0-means-first-log-is-baseline — "1 measurement" put a
 // meaningless placeholder in the typed-value input the app now shows.
@@ -43,7 +55,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 20;
+export const PROMPT_VERSION = 22;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -296,6 +308,22 @@ Design discipline:
 - Every step must be a deliberate application of one of these levers. If you can't say which law a step applies, cut it or redesign it.
 - The framework is how you THINK, never how you talk. Every user-facing field — step titles, details, week_progression, phase titles and focus lines, milestones, coach_notes — is written in plain concrete language. BANNED WORDS in all of them: "cue", "anchor", "trigger" (as habit vocabulary), "habit loop", "law", "stack"/"stacking", "temptation bundling", "implementation intention", "friction", "commitment device". Say the thing itself instead: not "anchor it to teeth-brushing so the cue is automatic" but "right after you brush your teeth, the book is already on your pillow"; not "make the cue obvious" but "set it up the night before". If a sentence explains the psychology, rewrite it to describe the action.
 - The app already tracks: checking a rep, streaks, and missed days are all built in. NEVER emit a step whose action is logging/recording/tracking another step ("Track your 4k time" after "Run the 4k"), and NEVER a checkbox that merely restates doing other steps ("Never miss two nights in a row") — that's the streak's job, and "note how it felt" belongs inside the doing-step's details. Every step must have its own distinct physical action.
+
+THE METHOD IS BORROWED, NOT INVENTED — every domain has a playbook that professionals actually coach because it demonstrably works. Build the protocol AS that playbook adapted to this person's facts, never as a generic habit list where a proven method exists. Name the method to yourself before designing, WITH its non-negotiables: hypertrophy = progressive overload (loads progress in the ~5-10 rep range — never singles for size) + calorie surplus + protein anchored to bodyweight + sleep; fat loss = modest deficit + protein computed from bodyweight + MANDATORY resistance training (a 15+ lb cut without it bleeds muscle) + a daily movement floor + a stall response; endurance from zero = walk-run progression at conversational pace, volume growing ~10%/week with a cutback week every 3-4 weeks, run days never consecutive for a beginner; quitting = cue removal + a replacement behavior mapped to the stated trigger + a taper anchored to a MEASURED baseline (never assumed — if consumption was never counted, week one IS the counting week) + social cost + riding out the cravings no ritual can catch; skill or language = short daily deliberate practice + scheduled REVIEW of old material (adding new words daily while never revisiting old ones is exposure, not learning) + real use with a human EARLY, weeks 3-5 not the back half; sleep repair = fixed wake time + morning bright light (the strongest phase-shift lever) + gradual bedtime steps gated on the last step actually consolidating + stimulus control + caffeine and nap rules + the plan ends at ASLEEP by the target, not in bed by it. The user never hears the theory (the banned-words rule stands) — they live its habits.
+
+HISTORY IS A DESIGN INPUT, NOT BACKSTORY — when the intake disclosed an injury, a relapse pattern, or a way this exact goal died before, the plan must carry an EXPLICIT response rule for it (a shin history gets "sharp or worsening pain = stop, two rest days, repeat the week"; a crash-diet history bans aggressive cuts; a cold-turkey relapse history mandates the taper). Never write a line that denies the history ("clean slate", "no bad habits to undo") — that teaches the person to ignore their one known warning sign.
+
+MONITORING FOLLOWS TRENDS, NEVER CHECKPOINTS — body-weight and similar noisy measures are tracked as a weekly trend; never print per-week target numbers ("210 → 205 → 200") that turn a monitoring habit into a pass/fail exam. The milestone celebrates the behavior held, the trend line tells the story.
+
+PILLAR COVERAGE — a protocol that skips a pillar of its domain fails the person even at perfect adherence. Before emitting, silently list the domain's pillars and confirm every one owns at least one step.
+
+HARD RULE for physique and body-composition goals — and ANY goal whose outcome is measured in body weight or body measurements ("lose 20 lbs" IS a physique goal, whatever words it uses; build muscle, lose fat, recomp, "tone up", grow or shrink any body part): phase 1 carries AT LEAST FIVE steps, spanning ALL of:
+1. TRAINING — the sessions themselves, split and weekly frequency stated; in a CUT this means resistance training specifically (cardio alone surrenders the muscle).
+2. PROGRESSION — its OWN checkable step, not a sentence inside the training step: the logbook habit ("Write every set down; beat last session by a rep or 2.5 kg on your main lift"). Muscle has no reason to change without it, and a rule nobody checks off is a rule that stops happening by week three.
+3. ENERGY BALANCE — a concrete daily surplus behavior for building ("one extra solid meal or shake beyond your normal day") or deficit behavior for cutting, matched to what they told you about how they eat.
+4. PROTEIN — computed from the bodyweight they reported: 0.7-1 g per lb (1.6-2.2 g per kg), emitted as THEIR daily gram number in a quantity step ("Hit ~150 g protein", unit "g"). If bodyweight was never collected, behavior-based instead ("a palm-sized portion of protein at every meal") — never an invented number.
+5. SLEEP & RECOVERY — 7-9 hours as a real, checkable step anchored to a bedtime, and rest-day discipline where the split needs it.
+Each of the five is a SEPARATE step the user can check off — five pillars folded into four cards means one pillar has no daily presence. The 3-6 steps-per-phase cap still holds, so a physique phase runs 5-6 steps — which means the cap will SQUEEZE, and when it does the five pillars always survive: nice-to-haves (meal prep, a weigh-in, extra walks) merge into a pillar's details or wait for phase 2, never the other way around. Staging a pillar into a later phase ("training starts once the eating settles") also violates the rule — scale a pillar DOWN for week one (two short sessions, not zero), never OUT. The weekly measurement/weigh-in may stand as the sixth step.
 
 Design principles:
 - HIGH PROBABILITY over ambition: week one should feel almost too easy; ramp gradually ("make it micro").

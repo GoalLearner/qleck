@@ -621,13 +621,13 @@ function CounterVerdict({
       <View style={{ minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}>
         <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18.5, color: night.textSoft, textAlign: 'center' }}>
           {asked
-            ? "As stated, the odds aren't on your side — that's why Qoach countered."
+            ? `As stated, the odds aren't on your side — that's why Qoach countered. These pills only compare: the deal below builds Qoach's ${succ}% version, and the original isn't a plan it will put its name on.`
             : 'Rebuilt so the odds are on your side.'}
         </Text>
       </View>
       {hasPair ? (
         <Text style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost, paddingTop: 8 }}>
-          TAP A PILL TO FLIP · TAP THE DIAL TO REPLAY
+          PILLS COMPARE THE TWO — THE DEAL BUILDS QOACH'S VERSION
         </Text>
       ) : null}
     </View>
@@ -641,7 +641,7 @@ function CounterVerdict({
         "{v.assessment}"
       </Text>
       <View style={{ marginTop: 6 }}>
-        <PrimaryButton label="Take the deal" onPress={onBuild} />
+        <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={onBuild} />
         <TextButton label="Change my goal" onPress={onReset} height={46} />
       </View>
     </View>
@@ -666,7 +666,7 @@ function CounterVerdict({
                 "{v.assessment}"
               </Text>
               <View>
-                <PrimaryButton label="Take the deal" onPress={onBuild} />
+                <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={onBuild} />
                 <TextButton label="Change my goal" onPress={onReset} height={46} />
               </View>
             </>

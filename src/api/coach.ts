@@ -116,9 +116,11 @@ export function postAnswer(sessionId: string, key: string, value: string): Promi
   return post<{ ok: boolean }>(`/coach/sessions/${sessionId}/answers`, { key, value });
 }
 
-/** Poll the 2c pipeline: lanes stream in as scenario runs resolve. */
+/** Poll the 2c pipeline: lanes stream in as scenario runs resolve. The
+ *  timestamp defeats any URL cache (belt to the server's no-store) — iOS's
+ *  NSURLCache serving a stale snapshot froze the lanes on build 5. */
 export function getSimulation(sessionId: string): Promise<SimulationPoll> {
-  return get<SimulationPoll>(`/coach/sessions/${sessionId}/simulation`);
+  return get<SimulationPoll>(`/coach/sessions/${sessionId}/simulation?t=${Date.now()}`);
 }
 
 /** Rebuild + resimulate a config (pace switch, attempt, or an input edit). */

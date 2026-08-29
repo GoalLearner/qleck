@@ -72,6 +72,12 @@ export interface SimulationState {
   /** Stepper lock (epoch ms): a poll that arrives while another request is
    *  mid-unit skips the work and just reads. Expires on its own. */
   working_until?: number;
+  /** Generation stamp, minted by initSimulation. Every engine write is a
+   *  compare-and-swap on this value, so a detached unit whose config was
+   *  cleared by a later pace switch silently no-ops instead of resurrecting
+   *  dead data over the fresh sim (the 12:02 zombie: sprint lanes written
+   *  back onto a row a second pill tap had already cleared). */
+  epoch?: number;
   /** Dead draft-generation attempts — three of them fails the simulation
    *  (the page falls back to rubric drivers) instead of burning tokens. */
   gen_attempts?: number;

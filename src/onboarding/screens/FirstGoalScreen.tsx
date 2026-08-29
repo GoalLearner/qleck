@@ -13,7 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
 import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, TextButton, Title } from '../ui';
 import { OddsChip, OddsDial } from '../OddsDial';
-import { SimVerdict } from '../SimVerdict';
+import { SimVerdict, simPhaseLabel, type SimPhase } from '../SimVerdict';
 import type { SimulationState } from '../../api/coachTypes';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
@@ -440,6 +440,9 @@ function FeasibleVerdict({
   const { width } = useWindowDimensions();
   const wide = width >= 820;
   const [driver, setDriver] = useState(-1);
+  // The header's right label derives from the sim's phase — the ONE source
+  // (design handoff: header and lanes must never disagree again).
+  const [simPhase, setSimPhase] = useState<SimPhase>('boot');
 
   // The paces, when the verdict offers them: the same goal at 2-3 runways,
   // each with its own honestly-priced odds. Steady is the coach's pick and
@@ -465,7 +468,7 @@ function FeasibleVerdict({
         borderRadius: 24, paddingHorizontal: 22, paddingVertical: 18,
       }}
     >
-      <OddsCardHeader left="QOACH'S CALL" right="TAP DIAL TO REPLAY" />
+      <OddsCardHeader left="QOACH'S CALL" right={simActive ? simPhaseLabel(simPhase) : 'TAP DIAL TO REPLAY'} />
       {paces ? (
         <View style={{ flexDirection: 'row', gap: 5, backgroundColor: night.hairline, borderRadius: 999, padding: 5, marginTop: 10 }}>
           {paces.map(o => {
@@ -503,6 +506,7 @@ function FeasibleVerdict({
             quickPicks={quickPicks ?? {}}
             missingRequired={missingRequired ?? []}
             onEditInput={onEditInput!}
+            onPhase={setSimPhase}
           />
         ) : (
           <OddsDial

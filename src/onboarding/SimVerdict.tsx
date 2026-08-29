@@ -1,13 +1,20 @@
 // The simulated verdict (canvas turn 6, "Verdict, earned"): the dial waits
 // for the scenario lanes. Runs race a dashed finish as the backend resolves
-// them; fails stop cold with a marker; the lanes settle into a receipt strip
-// and only then does the dial fill with the BLENDED number. Tap a receipt
-// bar for that run's step-by-step; factors carry kill/carry tags and trace
-// to answers; the drawer edits an input and replays everything with a
-// before/after delta. Ported to Electric Night tokens (the canvas draws the
-// cream theme of the same page).
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, Text, View } from 'react-native';
+// them; fails stop cold with a marker; the lanes HOLD until the user taps —
+// the probability never arrives uninvited — then settle into a receipt strip
+// and the dial fills with the BLENDED number. Tap a receipt bar for that
+// run's step-by-step; factors carry kill/carry tags and trace to answers;
+// the drawer edits an input and replays everything with a before/after
+// delta. Ported to Electric Night tokens (the canvas draws the cream theme
+// of the same page).
+//
+// ONE `phase` ENUM DRIVES EVERYTHING (design handoff sim_verdict_fix):
+//   boot → lanes → hold → settle → done, replay loops back to lanes.
+// Header label, caption, lane visibility and dial visibility all derive from
+// it, so no two parts of the card can ever disagree about what is happening
+// — the TestFlight bug was a header saying "done" over lanes stuck at idle.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, Easing, Pressable, Text, View } from 'react-native';
 import { night, nightFonts } from './theme';
 import { NightInput } from './ui';
 import { OddsDial } from './OddsDial';
@@ -16,37 +23,77 @@ import type { ScenarioRun, SimulationState } from '../api/coachTypes';
 const MONO = 'ui-monospace, Menlo, monospace';
 const FAIL = '#E07A6A';           // the canvas' #c96f5f, lifted for night
 const AMBER = '#F7B32B';
+// The spec's draw curve, verbatim: cubic-bezier(.3,.6,.4,1).
+const DRAW_EASING = Easing.bezier(0.3, 0.6, 0.4, 1);
+
+export type SimPhase = 'boot' | 'lanes' | 'hold' | 'settle' | 'done';
+
+/** The header label for a phase — exported so the card header can never
+ *  free-hand its own version of the state. */
+export function simPhaseLabel(phase: SimPhase): string {
+  switch (phase) {
+    case 'boot':
+    case 'lanes': return 'SIMULATING — TAP TO SKIP';
+    case 'hold': return "TAP FOR QOACH'S CALL";
+    case 'settle': return '';
+    case 'done': return 'TAP DIAL TO REPLAY';
+  }
+}
 
 /* ── one lane ──────────────────────────────────────────────────────────── */
 
-function Lane({ run, settled, railW }: { run: ScenarioRun; settled: boolean; railW: number }) {
-  // idle → running (1.4s fill, undecided ink) → hit (snap green, ✓ pops) /
-  // failed (stops at fail_week ÷ steps, dot + mono marker). Spec 6c.
+function Lane({ run, railW, delayMs, snap, onResolved }: {
+  run: ScenarioRun;
+  railW: number;
+  /** Stagger for lanes present at run start (380 + i×250); 0 for lanes that
+   *  stream in later — their arrival is their stagger. */
+  delayMs: number;
+  /** Skip-tap / reduced motion: paint the final state immediately. */
+  snap: boolean;
+  onResolved: (key: string) => void;
+}) {
+  // idle → running (undecided ink; hit 1500ms to 100%, fail
+  // max(700, 1600×endFrac) to its fraction) → resolved (color earned at
+  // resolve: green ✓ pop or red dot + mono marker). Spec 6c timings.
   const anim = useRef(new Animated.Value(0)).current;
   const [done, setDone] = useState(false);
   const steps = run.weeks.length || 1;
   const endFrac = run.hit ? 1 : Math.max(0.08, Math.min(0.96, (run.fail_week ?? steps) / steps));
   useEffect(() => {
-    Animated.timing(anim, {
-      toValue: endFrac, duration: settled ? 0 : 1400,
-      easing: Easing.out(Easing.cubic), useNativeDriver: false,
-    }).start(() => setDone(true));
-  }, [anim, endFrac, settled]);
-  const fillColor = done || settled ? (run.hit ? night.accent : FAIL) : night.textFaint;
+    if (snap) {
+      anim.setValue(endFrac);
+      setDone(true);
+      onResolved(run.key);
+      return;
+    }
+    const duration = run.hit ? 1500 : Math.max(700, Math.round(1600 * endFrac));
+    const t = Animated.timing(anim, {
+      toValue: endFrac, duration, delay: delayMs,
+      easing: DRAW_EASING, useNativeDriver: false,
+    });
+    t.start(({ finished }) => {
+      // A snap/replay can interrupt the timing — only an actually finished
+      // draw resolves here (the snap path resolves itself above).
+      if (finished) { setDone(true); onResolved(run.key); }
+    });
+    return () => t.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snap]);
+  const fillColor = done ? (run.hit ? night.accent : FAIL) : night.textFaint;
   const width = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.max(1, railW)] });
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, height: 26 }}>
-      <Text style={{ width: 70, textAlign: 'right', fontFamily: MONO, fontSize: 8, letterSpacing: 0.6, color: done || settled ? night.textSoft : night.textFaint }}>
+      <Text style={{ width: 70, textAlign: 'right', fontFamily: MONO, fontSize: 8, letterSpacing: 0.6, color: done ? night.textSoft : night.textFaint }}>
         {run.short}
       </Text>
       <View style={{ flex: 1, height: 26, marginRight: 16, justifyContent: 'center' }}>
         <View style={{ position: 'absolute', left: 0, right: 0, height: 3, borderRadius: 2, backgroundColor: night.hairline }} />
         <View style={{ position: 'absolute', right: 0, top: 4, bottom: 4, borderLeftWidth: 2, borderStyle: 'dashed', borderLeftColor: night.border }} />
         <Animated.View style={{ position: 'absolute', left: 0, height: 3, borderRadius: 2, backgroundColor: fillColor, width }} />
-        {(done || settled) && run.hit ? (
+        {done && run.hit ? (
           <Text style={{ position: 'absolute', right: -15, fontFamily: MONO, fontSize: 10, fontWeight: '700', color: night.accent }}>✓</Text>
         ) : null}
-        {(done || settled) && !run.hit ? (
+        {done && !run.hit ? (
           <>
             <View style={{ position: 'absolute', left: `${endFrac * 100}%`, marginLeft: -3, width: 7, height: 7, borderRadius: 4, backgroundColor: FAIL }} />
             {run.mark ? (
@@ -66,7 +113,7 @@ function Lane({ run, settled, railW }: { run: ScenarioRun; settled: boolean; rai
 export function SimVerdict({
   sim, prevSim, editedKey, rubricOdds, sprinting,
   answers, quickPicks, missingRequired,
-  onEditInput,
+  onEditInput, onPhase,
 }: {
   sim: SimulationState | null;
   prevSim: SimulationState | null;
@@ -77,34 +124,105 @@ export function SimVerdict({
   quickPicks: Record<string, string[]>;
   missingRequired: string[];
   onEditInput: (key: string, value: string) => void;
+  /** The card header derives its right-side label from this — one source. */
+  onPhase?: (phase: SimPhase) => void;
 }) {
   const [railW, setRailW] = useState(0);
-  const [phase, setPhase] = useState<'lanes' | 'settle' | 'done'>('lanes');
+  const [phase, setPhase] = useState<SimPhase>('boot');
+  const [runId, setRunId] = useState(0);       // bumps remount lanes for replay
+  const [snapAll, setSnapAll] = useState(false); // skip-tap / reduced motion
+  const [resolved, setResolved] = useState<Record<string, true>>({});
   const [detail, setDetail] = useState<number>(-1);
   const [factorOpen, setFactorOpen] = useState<number>(-1);
   const [drawer, setDrawer] = useState(false);
   const [drawerSel, setDrawerSel] = useState<Record<string, string>>({});
   const [compare, setCompare] = useState(false);
-  const settleT = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  // Stagger applies to lanes already present when a run starts (replay, or a
+  // sim that arrives complete via verdict memory); streamed arrivals start
+  // at 0 — their arrival is their stagger.
+  const staggerKeys = useRef<string[]>([]);
+  // Phase-advance timer — in a ref, re-armed only when the driving facts
+  // change, cleared on unmount or explicit transition. Never from a plain
+  // re-render (design README cause #2: timers killed by lifecycle).
+  const phaseT = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fade = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled?.().then(v => { if (alive) setReduceMotion(!!v); }).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener?.('reduceMotionChanged', v => setReduceMotion(!!v));
+    return () => { alive = false; sub?.remove?.(); };
+  }, []);
 
   const lanes = sim?.lanes ?? [];
   const planned = sim?.planned ?? [];
   const running = sim ? sim.status === 'generating' || sim.status === 'simulating' : true;
   const doneStatus = sim?.status === 'done';
   const stepUnit = sim?.granularity === 'days' ? 'D' : 'W';
+  const allResolved = lanes.length > 0 && lanes.every(l => resolved[l.key]);
+  const snap = snapAll || reduceMotion;
 
-  // Lanes → hold ~1.4s after the last resolves → settle → dial.
+  const onLaneResolved = useCallback((key: string) => {
+    setResolved(cur => (cur[key] ? cur : { ...cur, [key]: true }));
+  }, []);
+
+  const clearPhaseT = () => { if (phaseT.current) { clearTimeout(phaseT.current); phaseT.current = null; } };
+
+  // ── the machine ──
+  // boot → lanes: first lane data has arrived and the rail is measured
+  // (README cause #4 — never animate toward an unmeasured width).
   useEffect(() => {
-    if (doneStatus && phase === 'lanes') {
-      settleT.current = setTimeout(() => setPhase('settle'), 1700);
+    if (phase === 'boot' && lanes.length > 0 && railW > 0) {
+      staggerKeys.current = lanes.map(l => l.key);
+      setPhase('lanes');
     }
+  }, [phase, lanes.length, railW, lanes]);
+  // lanes → hold: 500ms after the last lane resolves (420ms after a skip);
+  // reduced motion goes immediately.
+  useEffect(() => {
+    if (phase === 'lanes' && doneStatus && allResolved) {
+      clearPhaseT();
+      if (reduceMotion) { setPhase('hold'); return; }
+      phaseT.current = setTimeout(() => setPhase('hold'), snapAll ? 420 : 500);
+    }
+    return undefined;
+  }, [phase, doneStatus, allResolved, snapAll, reduceMotion]);
+  // settle → done: lanes fade 450ms, dial 470ms later.
+  useEffect(() => {
     if (phase === 'settle') {
-      settleT.current = setTimeout(() => setPhase('done'), 500);
+      clearPhaseT();
+      if (reduceMotion) { fade.setValue(0); setPhase('done'); return; }
+      Animated.timing(fade, { toValue: 0, duration: 450, easing: Easing.out(Easing.quad), useNativeDriver: false }).start();
+      phaseT.current = setTimeout(() => setPhase('done'), 470);
     }
-    return () => { if (settleT.current) clearTimeout(settleT.current); };
-  }, [doneStatus, phase]);
-  // A re-run resets the theater.
-  useEffect(() => { if (running && phase !== 'lanes') { setPhase('lanes'); setDetail(-1); } }, [running, phase]);
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, reduceMotion]);
+  // A re-run (pace switch / drawer edit) cleared the sim: reset the theater.
+  useEffect(() => {
+    if (running && phase !== 'boot') {
+      clearPhaseT();
+      fade.setValue(1);
+      setPhase('boot'); setRunId(r => r + 1); setSnapAll(false); setResolved({}); setDetail(-1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running]);
+  useEffect(() => () => clearPhaseT(), []); // unmount only
+  useEffect(() => { onPhase?.(phase); }, [phase, onPhase]);
+
+  /** The stage tap — the spec's whole interaction model. */
+  const onStageTap = () => {
+    if (phase === 'lanes') { setSnapAll(true); return; }              // skip
+    if (phase === 'hold') { setDetail(-1); setPhase('settle'); return; } // Qoach's call
+    if (phase === 'done') {                                            // replay
+      clearPhaseT();
+      fade.setValue(1);
+      staggerKeys.current = lanes.map(l => l.key);
+      setSnapAll(false); setResolved({}); setDetail(-1); setRunId(r => r + 1);
+      setPhase('lanes');
+    }
+  };
 
   const hits = lanes.filter(l => l.hit && !l.invalid).length;
   const valid = lanes.filter(l => !l.invalid).length;
@@ -113,12 +231,17 @@ export function SimVerdict({
   const hasContingency = lanes.some(l => l.cg);
 
   const judge = useMemo(() => {
-    if (!doneStatus) return `Running ${planned.length || 6} honest futures of your plan — the dial waits for them.`;
+    if (phase === 'boot' || phase === 'lanes' || running) {
+      return `Running ${planned.length || 6} honest futures of your plan — the dial waits for them.`;
+    }
+    if (phase === 'hold' || phase === 'settle') {
+      return `${hits} of ${valid} land. Take your time with the lanes — tap when you're ready for Qoach's call.`;
+    }
     const worst = lanes.find(l => !l.hit && !l.invalid);
     let why = worst?.first_failure_reason ? worst.first_failure_reason.split('—')[0].trim() : '';
     if (why.length > 110) why = why.slice(0, why.lastIndexOf(' ', 110)) + '…';
     return `${hits} of ${valid} land. Judged ${blended}, not ${rubric}${why ? ` — ${why.charAt(0).toLowerCase()}${why.slice(1)}` : ''}${why.endsWith('…') ? '' : '.'}`;
-  }, [doneStatus, hits, valid, blended, rubric, lanes, planned.length]);
+  }, [phase, running, hits, valid, blended, rubric, lanes, planned.length]);
 
   // Factors from the sim, decorated with kill/carry tags + trace + linkage.
   const factors = useMemo(() => {
@@ -154,14 +277,26 @@ export function SimVerdict({
 
   return (
     <View>
-      {/* the race / the dial */}
-      <View style={{ height: 238, justifyContent: 'center' }} onLayout={e => setRailW(Math.max(0, e.nativeEvent.layout.width - 95 - 16))}>
+      {/* the race / the dial — one tappable stage, phase-driven */}
+      <Pressable
+        onPress={onStageTap}
+        style={{ height: 238, justifyContent: 'center' }}
+        onLayout={e => setRailW(Math.max(0, e.nativeEvent.layout.width - 95 - 16))}
+      >
         {phase !== 'done' ? (
-          <View style={{ gap: 6, opacity: phase === 'settle' ? 0.25 : 1 }}>
-            {(planned.length ? planned : Array.from({ length: 6 }, (_, i) => ({ key: String(i), name: '', short: '·' }))).map((p, i) => {
+          <Animated.View style={{ gap: 6, opacity: fade }}>
+            {(planned.length ? planned : Array.from({ length: 6 }, (_, i) => ({ key: String(i), name: '', short: '·' }))).map(p => {
               const run = lanes.find(l => l.key === p.key);
-              return run ? (
-                <Lane key={p.key} run={run} settled={false} railW={railW} />
+              const si = staggerKeys.current.indexOf(p.key);
+              return run && phase !== 'boot' && railW > 0 ? (
+                <Lane
+                  key={`${runId}-${p.key}`}
+                  run={run}
+                  railW={railW}
+                  delayMs={si >= 0 ? 380 + si * 250 : 0}
+                  snap={snap}
+                  onResolved={onLaneResolved}
+                />
               ) : (
                 <View key={p.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, height: 26 }}>
                   <Text style={{ width: 70, textAlign: 'right', fontFamily: MONO, fontSize: 8, letterSpacing: 0.6, color: night.textGhost }}>{p.short}</Text>
@@ -176,7 +311,7 @@ export function SimVerdict({
               <Text style={{ fontFamily: MONO, fontSize: 7.5, color: night.textGhost }}>{stepUnit}1</Text>
               <Text style={{ fontFamily: MONO, fontSize: 7.5, color: night.textGhost }}>{stepUnit}{sim?.steps ?? ''} · TARGET</Text>
             </View>
-          </View>
+          </Animated.View>
         ) : (
           <View style={{ alignItems: 'center' }}>
             <OddsDial
@@ -184,10 +319,11 @@ export function SimVerdict({
               color={sprinting ? night.warn : night.accent}
               condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
               size={236}
+              onPress={onStageTap}
             />
           </View>
         )}
-      </View>
+      </Pressable>
 
       {/* receipt strip */}
       {phase === 'done' ? (
@@ -221,7 +357,7 @@ export function SimVerdict({
             <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.accent }}>→</Text>
             <Text style={{ fontFamily: nightFonts.display, fontSize: 17, color: night.accent }}>{sim.odds.blended}</Text>
             <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.6, color: night.textMuted }}>CHANGED: {editedKey.toUpperCase()}</Text>
-            <Pressable onPress={() => setCompare(c => !c)} style={{ borderWidth: 1, borderColor: 'rgba(242,245,244,0.2)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
+            <Pressable onPress={() => setCompare(c => !c)} style={{ borderWidth: 1, borderColor: night.border, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
               <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.6, color: night.textSoft }}>{compare ? 'HIDE' : 'COMPARE'}</Text>
             </Pressable>
           </View>
@@ -248,7 +384,7 @@ export function SimVerdict({
       </View>
 
       {/* run detail */}
-      {det ? (
+      {phase === 'done' && det ? (
         <View style={{ marginTop: 10, backgroundColor: night.surface, borderWidth: 1, borderColor: det.hit ? night.accentFaint : 'rgba(224,122,106,0.4)', borderRadius: 16, padding: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
             <Text style={{ fontFamily: MONO, fontSize: 10, letterSpacing: 0.8, color: night.text, fontWeight: '700' }}>{det.short}</Text>

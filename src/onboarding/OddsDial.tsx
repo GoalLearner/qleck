@@ -57,18 +57,22 @@ function useSweep(target: number) {
 }
 
 export function OddsDial({
-  value, color, condLabel, size = 300, showTicks = true,
+  value, color, condLabel, size = 300, showTicks = true, onPress,
 }: {
   value: number;
   color: string;
   condLabel: string;
   size?: number;
   showTicks?: boolean;
+  /** Override the tap. The simulated verdict passes its full lane replay —
+   *  without this the dial's own sweep-replay swallows the press and the
+   *  spec's "tap dial to replay" never reaches the lanes. */
+  onPress?: () => void;
 }) {
   const { shown, replay } = useSweep(value);
   const h = size * 0.81; // viewBox 200×162
   return (
-    <Pressable onPress={replay} style={{ alignSelf: 'center' }}>
+    <Pressable onPress={onPress ?? replay} style={{ alignSelf: 'center' }}>
       <Svg width={size} height={h} viewBox="0 0 200 162">
         <Path d={ARC_D} fill="none" stroke={night.hairline} strokeWidth={12} strokeLinecap="round" />
         <Path

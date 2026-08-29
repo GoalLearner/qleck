@@ -911,13 +911,28 @@ function rubricOddsFor(verdict: Verdict, config: SimConfig): number {
   return verdict.success_probability ?? 75;
 }
 
-async function persistSim(env: Env, sessionId: string, sim: SimulationState): Promise<void> {
-  await env.DB
-    .prepare(`UPDATE coach_sessions SET simulation = ?, updated_at = datetime('now') WHERE id = ?`)
-    .bind(JSON.stringify(sim), sessionId)
-    .run()
-    .catch(() => {});
+/** Write the sim state. With `guardEpoch`, the write is a compare-and-swap:
+ *  it lands only while the row still holds a sim of that generation — a
+ *  detached unit outlived by a pace switch (which cleared and re-minted the
+ *  sim) silently no-ops instead of resurrecting its dead config. A cleared
+ *  row (simulation NULL) also rejects the guarded write. */
+async function persistSim(env: Env, sessionId: string, sim: SimulationState, guardEpoch?: number): Promise<void> {
+  // COALESCE(…, 0) lets sims initialized before the epoch existed finish
+  // under guard 0; the explicit NOT NULL keeps every guarded write off a
+  // cleared row.
+  const q = guardEpoch !== undefined
+    ? env.DB
+        .prepare(`UPDATE coach_sessions SET simulation = ?, updated_at = datetime('now') WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
+        .bind(JSON.stringify(sim), sessionId, guardEpoch)
+    : env.DB
+        .prepare(`UPDATE coach_sessions SET simulation = ?, updated_at = datetime('now') WHERE id = ?`)
+        .bind(JSON.stringify(sim), sessionId);
+  await q.run().catch(() => {});
 }
+
+/** The same CAS clause for the engine's sibling columns (draft, verdict):
+ *  those writes belong to a sim generation too. */
+const EPOCH_GUARD = `AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`;
 
 const CONTINGENCY_TOOL = {
   name: 'add_contingencies',
@@ -1011,6 +1026,8 @@ export async function simStep(
   let sim: SimulationState;
   try { sim = JSON.parse(simRaw) as SimulationState; } catch { return 'idle'; }
   if (sim.status === 'done' || sim.status === 'failed') return sim.status === 'done' ? 'done' : 'failed';
+  // Every write this unit makes is CAS'd on the generation it started from.
+  const epoch = sim.epoch ?? 0;
 
   const verdict = session.verdict ? (JSON.parse(session.verdict) as Verdict) : null;
   if (!verdict) return 'idle';
@@ -1023,26 +1040,38 @@ export async function simStep(
 
   // Unit 1: the draft.
   if (!session.draft_protocol) {
+    // Record the attempt BEFORE generating (lock kept). A draft whose
+    // validation loop outlives the post-response grace dies mid-generation
+    // WITHOUT reaching any persist — the owner's 12:02 session burned 16
+    // model calls that way, invisible to a fuse that only counted completed
+    // failures. Pre-counting makes death itself count: the fourth kick fails
+    // the sim over to the rubric fallback instead of grinding forever.
+    const attempts = (sim.gen_attempts ?? 0) + 1;
+    if (attempts > 3) {
+      await persistSim(env, session.id, { ...sim, status: 'failed', error: 'generation_failed', working_until: undefined }, epoch);
+      return 'failed';
+    }
+    await persistSim(env, session.id, { ...sim, gen_attempts: attempts }, epoch);
+    sim.gen_attempts = attempts;
     const gen = await generateProtocol(env, meta, session, verdict, config.pace, config.variant ?? undefined);
     if (!gen.protocol) {
-      // Count the whiff. Three dead drafts means generation for this goal is
-      // genuinely failing — surface 'failed' so the page falls back to the
-      // rubric drivers instead of re-burning tokens on every poll forever.
-      const attempts = (sim.gen_attempts ?? 0) + 1;
       if (attempts >= 3) {
-        await persistSim(env, session.id, { ...sim, status: 'failed', error: 'generation_failed', gen_attempts: attempts, working_until: undefined });
+        await persistSim(env, session.id, { ...sim, status: 'failed', error: 'generation_failed', working_until: undefined }, epoch);
         return 'failed';
       }
-      await persistSim(env, session.id, { ...sim, status: 'generating', gen_attempts: attempts, working_until: undefined });
+      await persistSim(env, session.id, { ...sim, status: 'generating', working_until: undefined }, epoch);
       return 'worked';
     }
     session.draft_protocol = JSON.stringify(gen.protocol);
     await env.DB
-      .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ?`)
-      .bind(session.draft_protocol, session.id)
+      .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ? ${EPOCH_GUARD}`)
+      .bind(session.draft_protocol, session.id, epoch)
       .run()
       .catch(() => {});
-    await persistSim(env, session.id, { ...sim, status: 'simulating', working_until: undefined });
+    // A regenerated draft with lanes already present (an orphaned row a crash
+    // or race left behind) invalidates those lanes — runs must always have
+    // raced the draft that produced them.
+    await persistSim(env, session.id, { ...sim, status: 'simulating', lanes: [], working_until: undefined }, epoch);
     return 'worked';
   }
 
@@ -1060,7 +1089,7 @@ export async function simStep(
     const batch = missing.slice(0, 2);
     const runs = await Promise.all(batch.map(t => runScenario(env, meta, t, ctx, draft, statement)));
     const lanes = [...sim.lanes, ...runs];
-    await persistSim(env, session.id, { ...sim, status: 'simulating', lanes, working_until: undefined });
+    await persistSim(env, session.id, { ...sim, status: 'simulating', lanes, working_until: undefined }, epoch);
     return 'worked';
   }
 
@@ -1077,8 +1106,8 @@ export async function simStep(
   if (contingencyAdded) {
     session.draft_protocol = JSON.stringify(hardened);
     await env.DB
-      .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ?`)
-      .bind(session.draft_protocol, session.id)
+      .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ? ${EPOCH_GUARD}`)
+      .bind(session.draft_protocol, session.id, epoch)
       .run()
       .catch(() => {});
   }
@@ -1091,8 +1120,8 @@ export async function simStep(
     }
     verdict.factors = factors;
     await env.DB
-      .prepare(`UPDATE coach_sessions SET verdict = ? WHERE id = ?`)
-      .bind(JSON.stringify(verdict), session.id)
+      .prepare(`UPDATE coach_sessions SET verdict = ? WHERE id = ? ${EPOCH_GUARD}`)
+      .bind(JSON.stringify(verdict), session.id, epoch)
       .run()
       .catch(() => {});
   }
@@ -1102,7 +1131,7 @@ export async function simStep(
     granularity: g.granularity, steps: g.steps,
     ...(withUnit?.state_unit ? { state_unit: withUnit.state_unit } : {}),
     working_until: undefined,
-  });
+  }, epoch);
   return 'done';
 }
 
@@ -1120,6 +1149,8 @@ export async function initSimulation(
     config: { pace: config.pace, variant: config.variant },
     lanes: [],
     planned: templates.map(t => ({ key: t.key, name: t.name, short: t.short })),
+    // Generation stamp — every engine write CASes on this (see persistSim).
+    epoch: Date.now() * 1000 + Math.floor(Math.random() * 1000),
   };
   session.simulation = JSON.stringify(sim);
   await persistSim(env, session.id, sim);

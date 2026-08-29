@@ -47,7 +47,10 @@ function corsHeaders(env: Env, origin: string | null): Record<string, string> {
 function json(body: unknown, status: number, cors: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...cors },
+    // no-store matters: iOS's NSURLCache may otherwise serve a CACHED copy of
+    // the simulation poll — the client then watches a frozen snapshot while
+    // believing it is polling, and the poll-driven engine never gets kicked.
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...cors },
   });
 }
 
@@ -487,8 +490,8 @@ export default {
             const lockUntil = now + 120_000;
             const locked = { ...sim, working_until: lockUntil };
             await env.DB
-              .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ?`)
-              .bind(JSON.stringify(locked), session.id)
+              .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
+              .bind(JSON.stringify(locked), session.id, sim.epoch ?? 0)
               .run();
             session.simulation = JSON.stringify(locked);
             const stepMeta = { ...meta, sessionId: session.id };
@@ -507,8 +510,8 @@ export default {
                 const cur = after?.simulation ? (JSON.parse(after.simulation) as SimulationState) : null;
                 if (cur?.working_until === lockUntil && (cur.status === 'generating' || cur.status === 'simulating')) {
                   await env.DB
-                    .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ?`)
-                    .bind(JSON.stringify({ ...cur, working_until: undefined }), session.id)
+                    .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
+                    .bind(JSON.stringify({ ...cur, working_until: undefined }), session.id, cur.epoch ?? 0)
                     .run();
                 }
               } catch { /* isolate death → the lock expires on its own */ }

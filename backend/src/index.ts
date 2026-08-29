@@ -54,6 +54,65 @@ function json(body: unknown, status: number, cors: Record<string, string>): Resp
   });
 }
 
+/**
+ * The engine's detached driver: take the lock, run one bounded unit, and
+ * CHAIN into the next while the wall budget allows — a lanes unit flows
+ * straight into the finalize instead of waiting out a poll round. Every
+ * unit persists its own progress; the lock (CAS'd on the sim's epoch, and
+ * checked via meta.changes) re-arms between chained units, so a concurrent
+ * poll's driver can never double the work. Called from the simulation poll,
+ * from verdict time, and from /prepare — one engine, three doorbells.
+ */
+async function driveSim(
+  env: Env,
+  meta: { deviceId: string; ip: string; synthetic?: boolean },
+  sessionId: string,
+  deviceId: string,
+): Promise<void> {
+  const t0 = Date.now();
+  for (let unit = 0; unit < 4; unit++) {
+    const session = await loadSession(env, sessionId, deviceId);
+    if (!session?.simulation) return;
+    let sim: SimulationState;
+    try { sim = JSON.parse(session.simulation) as SimulationState; } catch { return; }
+    if (sim.status !== 'generating' && sim.status !== 'simulating') return;
+    const now = Date.now();
+    if (sim.working_until && now <= sim.working_until) return; // someone else is on it
+    if (unit > 0 && now - t0 > 20_000) return; // let the next poll's driver carry on
+    const lockUntil = now + 120_000;
+    const locked = { ...sim, working_until: lockUntil };
+    const res = await env.DB
+      .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
+      .bind(JSON.stringify(locked), sessionId, sim.epoch ?? 0)
+      .run()
+      .catch(() => null);
+    if (!res || (res.meta?.changes ?? 0) < 1) return; // lost the lock race
+    session.simulation = JSON.stringify(locked);
+    let r: 'worked' | 'done' | 'failed' | 'idle' = 'idle';
+    try {
+      r = await simStep(env, { ...meta, sessionId }, session);
+    } catch { /* per-unit persistence — release below, the next poll retries */ }
+    if (r === 'worked') continue; // its persist cleared the lock; chain
+    if (r === 'done' || r === 'failed') return; // final state persisted
+    // idle or a throw may have left our lock — release it (only if still
+    // exactly ours) so the retry costs one poll, not the whole window.
+    try {
+      const after = await env.DB
+        .prepare(`SELECT simulation FROM coach_sessions WHERE id = ?`)
+        .bind(sessionId)
+        .first<{ simulation: string | null }>();
+      const cur = after?.simulation ? (JSON.parse(after.simulation) as SimulationState) : null;
+      if (cur?.working_until === lockUntil && (cur.status === 'generating' || cur.status === 'simulating')) {
+        await env.DB
+          .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
+          .bind(JSON.stringify({ ...cur, working_until: undefined }), sessionId, cur.epoch ?? 0)
+          .run();
+      }
+    } catch { /* the lock expires on its own */ }
+    return;
+  }
+}
+
 async function loadSession(env: Env, id: string, deviceId: string): Promise<SessionRow | null> {
   const row = await env.DB
     .prepare(`SELECT * FROM coach_sessions WHERE id = ? AND device_id = ?`)
@@ -471,11 +530,9 @@ export default {
         // client aborts dies WITH its in-request work while stranding the
         // lock (froze build 5 the second time — iOS times polls out at
         // ~60s; a strength draft runs longer). So the poll responds in
-        // milliseconds and detaches ONE bounded unit (draft, or two lanes,
-        // or the finalize) via waitUntil under an expiring lock. Every unit
-        // persists, each fits the post-response grace window, and the
-        // client's ordinary 2s polling walks the pipeline to done. Never
-        // await model work inside this handler.
+        // milliseconds and detaches driveSim, which locks, runs a bounded
+        // unit, and chains into the next while its wall budget allows.
+        // Never await model work inside this handler.
         let sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : null;
         if (!sim && session.status === 'verdict' && session.verdict) {
           const v = JSON.parse(session.verdict) as Verdict;
@@ -487,36 +544,7 @@ export default {
         if (sim && (sim.status === 'generating' || sim.status === 'simulating')) {
           const now = Date.now();
           if (!sim.working_until || now > sim.working_until) {
-            const lockUntil = now + 120_000;
-            const locked = { ...sim, working_until: lockUntil };
-            await env.DB
-              .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
-              .bind(JSON.stringify(locked), session.id, sim.epoch ?? 0)
-              .run();
-            session.simulation = JSON.stringify(locked);
-            const stepMeta = { ...meta, sessionId: session.id };
-            ctx.waitUntil((async () => {
-              try {
-                await simStep(env, stepMeta, session);
-              } catch { /* per-unit persistence — the release below retries it */ }
-              try {
-                // A unit that died before persisting leaves our lock behind;
-                // release it (only if still exactly ours) so the retry costs
-                // one poll, not the whole lock window.
-                const after = await env.DB
-                  .prepare(`SELECT simulation FROM coach_sessions WHERE id = ?`)
-                  .bind(session.id)
-                  .first<{ simulation: string | null }>();
-                const cur = after?.simulation ? (JSON.parse(after.simulation) as SimulationState) : null;
-                if (cur?.working_until === lockUntil && (cur.status === 'generating' || cur.status === 'simulating')) {
-                  await env.DB
-                    .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
-                    .bind(JSON.stringify({ ...cur, working_until: undefined }), session.id, cur.epoch ?? 0)
-                    .run();
-                }
-              } catch { /* isolate death → the lock expires on its own */ }
-            })());
-            sim = locked; // respond now; progress arrives on the next poll
+            ctx.waitUntil(driveSim(env, meta, session.id, deviceId));
           }
         }
         const verdict = session.verdict ? (JSON.parse(session.verdict) as Verdict) : null;
@@ -554,10 +582,13 @@ export default {
         session.draft_protocol = null;
         session.simulation = null;
         const config: SimConfig = { pace, variant };
-        // Init only — the client's polls drive every model-calling unit
-        // through the locked engine in GET /simulation. A second engine here
-        // would race it into duplicate drafts.
-        ctx.waitUntil(initSimulation(env, session, config));
+        // Init, then a head start: driveSim locks before working, so this
+        // and the polls' drivers can never double the work — the new pace's
+        // draft begins ~2-4s before the first poll would have kicked it.
+        ctx.waitUntil((async () => {
+          await initSimulation(env, session, config);
+          await driveSim(env, meta, session.id, deviceId);
+        })());
         return json({ sessionId: session.id, ok: true, preparing: config }, 202, cors);
       }
 
@@ -897,8 +928,13 @@ async function runCoachTurn(
     if (result.verdict.decision === 'feasible' || result.verdict.decision === 'counter_offer') {
       session.transcript = JSON.stringify(transcript);
       const simSession = { ...session, status: 'verdict', verdict: JSON.stringify(result.verdict) };
-      // Init only (see GET /simulation): the poll engine owns all model work.
-      ctx.waitUntil(initSimulation(env, simSession, { pace: 'steady', variant: null }));
+      // Init, then a head start on the draft while the user reads the
+      // verdict text — driveSim's lock keeps this and the polls' drivers
+      // from ever doubling the work.
+      ctx.waitUntil((async () => {
+        await initSimulation(env, simSession, { pace: 'steady', variant: null });
+        await driveSim(env, meta, session.id, meta.deviceId);
+      })());
     }
     const structureOut = sessionStructure(session);
     return json({

@@ -1080,13 +1080,15 @@ export async function simStep(
   const have = new Set(sim.lanes.map(l => l.key));
   const missing = templates.filter(t => !have.has(t.key));
 
-  // Unit 2: up to two lanes per call.
+  // Unit 2: every missing lane, in parallel. The calls run concurrently so
+  // the unit's wall time is one scenario (~10-20s), not a sum — batching two
+  // per poll cost the user two extra poll rounds (~25s) for nothing.
   if (missing.length > 0) {
     const ctx: TemplateCtx = { domain, durationWeeks: draft.duration_weeks, answers: structure.answers };
     const statement = config.variant === 'original'
       ? (verdict.original_request ?? session.goal_text)
       : verdict.goal_statement;
-    const batch = missing.slice(0, 2);
+    const batch = missing;
     const runs = await Promise.all(batch.map(t => runScenario(env, meta, t, ctx, draft, statement)));
     const lanes = [...sim.lanes, ...runs];
     await persistSim(env, session.id, { ...sim, status: 'simulating', lanes, working_until: undefined }, epoch);

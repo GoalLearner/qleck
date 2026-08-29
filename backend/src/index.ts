@@ -20,7 +20,7 @@
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
 import { verifyAppleToken } from './apple';
-import { classifyGoal, coachTurn, enrichStructure, generateProtocol, prepareSimulation, reviseProtocol, sessionStructure, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
+import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, prepareSimulation, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
@@ -457,7 +457,45 @@ export default {
       if (simMatch && request.method === 'GET') {
         const session = await loadSession(env, simMatch[1], deviceId);
         if (!session) return json({ error: 'session_not_found' }, 404, cors);
-        const sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : null;
+        // The poll IS the engine on production: ctx.waitUntil gets killed
+        // ~30s after a response (build 5's lanes froze mid-simulating on
+        // exactly this), so each poll performs one bounded unit of pipeline
+        // work in-request under an expiring lock, and the client's ordinary
+        // 2s polling walks the whole thing to done.
+        let sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : null;
+        if (!sim && session.status === 'verdict' && session.verdict) {
+          const v = JSON.parse(session.verdict) as Verdict;
+          if (v.decision === 'feasible' || v.decision === 'counter_offer') {
+            await initSimulation(env, session, { pace: 'steady', variant: null });
+            sim = JSON.parse(session.simulation!) as SimulationState;
+          }
+        }
+        if (sim && (sim.status === 'generating' || sim.status === 'simulating')) {
+          const now = Date.now();
+          if (!sim.working_until || now > sim.working_until) {
+            const locked = { ...sim, working_until: now + 120_000 };
+            await env.DB
+              .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ?`)
+              .bind(JSON.stringify(locked), session.id)
+              .run();
+            session.simulation = JSON.stringify(locked);
+            await simStep(env, { ...meta, sessionId: session.id }, session).catch(() => {});
+            const fresh = await loadSession(env, simMatch[1], deviceId);
+            if (fresh) { session.simulation = fresh.simulation; session.verdict = fresh.verdict; session.draft_protocol = fresh.draft_protocol; }
+            sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : sim;
+            if (sim?.working_until && Date.now() <= sim.working_until) {
+              // The unit failed before clearing its lock — release it so the
+              // next poll retries instead of waiting out the full window.
+              const unlocked = { ...sim, working_until: undefined };
+              await env.DB
+                .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ?`)
+                .bind(JSON.stringify(unlocked), session.id)
+                .run()
+                .catch(() => {});
+              sim = unlocked;
+            }
+          }
+        }
         const verdict = session.verdict ? (JSON.parse(session.verdict) as Verdict) : null;
         return json({
           sessionId: session.id,

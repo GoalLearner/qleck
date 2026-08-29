@@ -69,6 +69,9 @@ export interface SimulationState {
   state_unit?: string;
   lanes: ScenarioRun[];
   planned: { key: string; name: string; short: string }[];
+  /** Stepper lock (epoch ms): a poll that arrives while another request is
+   *  mid-unit skips the work and just reads. Expires on its own. */
+  working_until?: number;
   odds?: { rubric: number; pass_rate: number; blended: number };
   factors?: { key: string; direction: 'up' | 'down'; weight: number }[];
   error?: string;

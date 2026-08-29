@@ -30,6 +30,9 @@ export interface ProtocolStep {
   derived_from?: string[];
   /** Only when a REQUIRED input stayed missing after the interview. */
   assumption?: string;
+  /** The unresolved manifest key the assumption stands in for — what the
+   *  correction UI posts to /answers. Required alongside assumption. */
+  assumption_key?: string;
 }
 
 export interface ProtocolPhase {
@@ -136,6 +139,10 @@ export const PROTOCOL_TOOL_SCHEMA = {
                 assumption: {
                   type: 'string',
                   description: "ONLY when a named required input stayed missing after the interview: the plain-words assumption the number rests on ('assumed 200 lb bodyweight').",
+                },
+                assumption_key: {
+                  type: 'string',
+                  description: "REQUIRED alongside assumption: the unresolved input's key this assumption stands in for (e.g. 'bodyweight').",
                 },
                 week_progression: { type: 'string' },
               },
@@ -261,6 +268,13 @@ export function provenanceErrors(
       if (!numeric) continue;
       const df = Array.isArray(st.derived_from) ? st.derived_from.filter(k => typeof k === 'string' && k.trim()) : [];
       const assumption = typeof st.assumption === 'string' && st.assumption.trim() ? st.assumption.trim() : null;
+      const assumptionKey = typeof st.assumption_key === 'string' && st.assumption_key.trim() ? st.assumption_key.trim() : null;
+      if (assumption && !assumptionKey) {
+        errs.push(`step "${st.title}" carries an assumption without assumption_key — name the unresolved input it stands in for`);
+      }
+      if (assumption && assumptionKey && !assumableKeys.includes(assumptionKey)) {
+        errs.push(`step "${st.title}" assumes "${assumptionKey}" but that input is ${assumptionKey in answers ? 'COLLECTED (' + answers[assumptionKey] + ') — derive from it and drop the assumption' : 'not an unresolved required input'}`);
+      }
       if (df.length === 0 && !assumption) {
         errs.push(`step "${st.title}" carries a numeric target but neither derived_from nor assumption — every number must cite the collected answer keys it derives from (or 'goal_text' / 'standard_practice')`);
         continue;
@@ -273,9 +287,60 @@ export function provenanceErrors(
       if (assumption && df.length === 0 && assumableKeys.length === 0) {
         errs.push(`step "${st.title}" rests on an assumption ("${assumption}") but every required input was collected — cite derived_from instead of assuming`);
       }
+      // The canonical case that started all of this: a gram-number protein
+      // target while bodyweight IS collected must credit the bodyweight —
+      // "standard_practice" only covers the multiplier, not the input.
+      if (
+        'bodyweight' in answers && !assumption &&
+        /protein/i.test(`${st.title} ${st.details ?? ''}`) &&
+        st.quantity && /^g(rams?)?$/i.test(st.quantity.unit ?? '') && st.quantity.amount >= 40 &&
+        !df.includes('bodyweight')
+      ) {
+        errs.push(`step "${st.title}" prescribes protein grams while bodyweight was collected — derived_from must include "bodyweight"`);
+      }
     }
   }
   return errs;
+}
+
+/** The omission-dodge guard: when bodyweight went uncollected on a domain
+ *  whose playbook anchors nutrition to it, the protein prescription must
+ *  still exist — carried by an explicit assumption — rather than quietly
+ *  disappearing so nothing needs the missing key. */
+export function exhaustedKeyErrors(
+  p: Protocol,
+  domain: string | null,
+  assumableKeys: string[],
+  answers: Record<string, string> = {},
+): string[] {
+  if (!domain || !['strength', 'body_composition'].includes(domain)) return [];
+  // Mirror case: bodyweight IS known — the protein pillar must be the gram
+  // number computed from it, cited. Text-only protein hides the derivation
+  // the user just supplied (this is the post-correction regeneration path).
+  if ('bodyweight' in answers) {
+    const gramStep = p.phases
+      .flatMap(ph => ph.steps)
+      .find(st =>
+        /protein/i.test(`${st.title} ${st.details ?? ''}`) &&
+        st.quantity && typeof st.quantity.amount === 'number' && st.quantity.amount >= 40);
+    if (!gramStep) {
+      return [`bodyweight was collected (${answers['bodyweight']}) but the plan has no gram-number protein step — prescribe the daily grams computed from it (quantity unit "g", derived_from including "bodyweight")`];
+    }
+    return [];
+  }
+  if (!assumableKeys.includes('bodyweight')) return [];
+  const proteinNumeric = p.phases
+    .flatMap(ph => ph.steps)
+    .find(st =>
+      /protein/i.test(`${st.title} ${st.details ?? ''}`) &&
+      st.quantity && typeof st.quantity.amount === 'number' && st.quantity.amount >= 40);
+  if (!proteinNumeric) {
+    return [`bodyweight is unresolved but the plan carries no gram-number protein step — prescribe the standard number from a stated ASSUMED bodyweight (quantity in g, assumption: "assumed ~170 lb bodyweight"); the app lets the user correct it. Behavior-based protein hides the gap instead of advertising it.`];
+  }
+  if (!proteinNumeric.assumption || !proteinNumeric.assumption.trim()) {
+    return [`the protein step "${proteinNumeric.title}" derives from an uncollected bodyweight — it must carry assumption ("assumed ~170 lb bodyweight")`];
+  }
+  return [];
 }
 
 export function validateProtocol(p: unknown): string[] {

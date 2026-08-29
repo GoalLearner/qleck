@@ -11,7 +11,7 @@
 
 export type Domain =
   | 'strength' | 'endurance' | 'body_composition' | 'skill' | 'money'
-  | 'career' | 'creative' | 'social' | 'habit_change' | 'academic' | 'other';
+  | 'career' | 'creative' | 'audience' | 'social' | 'habit_change' | 'academic' | 'other';
 
 export interface ManifestField {
   key: string;
@@ -74,6 +74,16 @@ export const MANIFESTS: Record<Domain, ManifestField[]> = {
     F('prior_attempts', false, 'past unfinished projects and where they stalled → the guardrail the plan needs'),
     F('accountability', false, 'who sees the work in progress → whether shipping pressure exists'),
   ],
+  audience: [
+    F('platform', true, 'which platform → the growth playbook differs completely (TikTok pace vs newsletter pace)', ['TikTok', 'YouTube', 'Instagram', 'Newsletter/other']),
+    F('current_followers', true, 'current follower/subscriber count → the true gap and honest growth-rate math'),
+    F('current_avg_views', true, 'typical views/opens per post → reach per rep, which drives how many reps the target needs'),
+    F('posting_cadence', true, 'current posting rhythm → the realistic ramp from today, not from zero', ['Rarely', '1-2 a week', '3-5 a week', 'Daily']),
+    F('hours_per_week', true, 'production hours available → what cadence is sustainable', ['Under 3 h', '3-6 h', '6-10 h', '10+ h']),
+    F('niche', false, 'content niche → format and hook advice'),
+    F('best_performing_content', false, 'what has already worked → double down before experimenting'),
+    F('prior_growth_attempts', false, 'past pushes and how they ended → the burnout guardrail the plan needs'),
+  ],
   social: [
     F('current_frequency', true, 'how often they currently see people → the realistic starting cadence'),
     F('existing_circle', true, 'whether the people exist already or must be met → completely different plans', ['Friends I rarely see', 'A few acquaintances', 'Starting fresh somewhere new', 'Mix of both']),
@@ -81,9 +91,9 @@ export const MANIFESTS: Record<Domain, ManifestField[]> = {
     F('schedule_windows', false, 'free evenings/weekends → when reps can be scheduled'),
   ],
   habit_change: [
-    F('current_baseline', true, 'measured current frequency/amount (cigarettes/day, drinks/week, hours scrolling) → the taper math anchors here; if never counted, week one counts'),
-    F('triggers', true, 'when and where it mostly fires → cue removal and replacement design'),
-    F('past_quit_attempts', true, 'past attempts and how they ended → cold-turkey vs taper choice'),
+    F('current_baseline', true, 'measured current frequency/amount (cigarettes/day, steps/day, hours scrolling) → taper or ramp math anchors here; if never counted, week one counts'),
+    F('context', true, 'for BREAKING a habit: when and where it mostly fires; for STARTING one: the part of the day it attaches to → replacement or slot design'),
+    F('past_attempts', true, 'past attempts at this change and how they ended → what the plan does differently'),
     F('support_context', false, 'who knows / who is around it daily → social cost and environment design'),
   ],
   academic: [

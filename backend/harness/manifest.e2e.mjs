@@ -102,11 +102,27 @@ const GOALS = [
     id: 'tiktok-10k',
     goal: 'Get 10k TikTok followers',
     routes: [
-      [/current(ly)?|followers now|where.*(account|following)|output|post/i, 'At 800 followers, posting maybe twice a week'],
+      [/views|opens|reach|perform/i, 'Videos average about 400 views'],
+      [/followers|current(ly)?|where.*account|standing/i, 'At 800 followers right now'],
+      [/cadence|how often.*post|posting|rhythm/i, 'Posting about twice a week'],
       [/hours|time|capacity|per week/i, 'Can put in 8 hours a week'],
-      [/scope|niche|content|what kind|videos/i, 'Cooking videos, 60-second recipes'],
-      [/tried|before|attempts?|stall/i, 'Posted daily for 3 weeks in January, burned out'],
-      [/accountab|equipment|camera/i, 'Just my phone and a ring light'],
+      [/platform|where.*post|which app/i, 'TikTok only'],
+      [/niche|content|what kind|videos/i, 'Cooking videos, 60-second recipes'],
+      [/tried|before|attempts?|stall|burn/i, 'Posted daily for 3 weeks in January, burned out'],
+    ],
+  },
+  {
+    id: 'hostile-refusal',
+    goal: 'Add 50 lbs to my squat',
+    hostile: true,
+    routes: [
+      [/squat.*(now|max|current|best)|current.*squat|1rm|one[- ]rep|working/i, 'Squat is at 225 lbs for a heavy single'],
+      [/weigh|body\s*weight|how heavy/i, "I'd rather not say my weight, skip that"],
+      [/how long|years|training (age|history)|experience|lifting/i, "Can't remember, whatever, does it matter?"],
+      [/days|often|sessions|schedule|week/i, 'I can squat 3 days a week'],
+      [/injur|pain|limit/i, 'Left knee clicks on deep squats sometimes'],
+      [/equipment|gym|rack/i, 'Full power rack at my gym'],
+      [/derail|stall|past|before/i, 'Never really pushed squats before, bench guy'],
     ],
   },
   {
@@ -191,13 +207,43 @@ for (const g of GOALS) {
       if (!numeric) continue;
       numerics++;
       const target = st.quantity ? `${st.quantity.amount} ${st.quantity.unit}` : `${st.duration_minutes} min`;
-      if (st.derived_from?.length) { cited++; console.log(`    ✓ ${target.padEnd(14)} "${st.title.slice(0, 44)}" ← ${st.derived_from.join(', ')}`); }
-      else if (st.assumption) { assumed++; console.log(`    ~ ${target.padEnd(14)} "${st.title.slice(0, 44)}" ASSUMED: ${st.assumption}`); }
+      if (st.assumption) { assumed++; console.log(`    ~ ${target.padEnd(14)} "${st.title.slice(0, 44)}" ASSUMED: ${st.assumption}${st.derived_from?.length ? ` (+ ${st.derived_from.join(', ')})` : ''}`); }
+      else if (st.derived_from?.length) { cited++; console.log(`    ✓ ${target.padEnd(14)} "${st.title.slice(0, 44)}" ← ${st.derived_from.join(', ')}`); }
       else { uncited++; console.log(`    ✗ ${target.padEnd(14)} "${st.title.slice(0, 44)}" NO PROVENANCE`); }
     }
   }
   console.log(`  validator: PASSED (saved). numerics ${numerics}: ${cited} cited, ${assumed} assumed, ${uncited} uncited`);
   if (uncited > 0) failures++;
+
+  if (g.hostile) {
+    // The owner's hostile contract: interview stops at/before the hard cap,
+    // generation still runs, assumptions appear ONLY on exhausted keys, and
+    // the response exposes them in a correctable shape.
+    const asm = proto.body.assumptions ?? [];
+    const keys = proto.body.correctable_keys ?? [];
+    const okTurns = n <= 6;
+    console.log(`  hostile questions asked:`);
+    qs.forEach((q, i) => console.log(`    ${i + 1}. ${q.slice(0, 110)}`));
+    const okAssumed = assumed >= 1 && asm.length >= 1;
+    const okKeys = keys.length >= 1;
+    console.log(`  hostile: turns ${n} (<=6 ${okTurns}) | assumptions ${JSON.stringify(asm)} | correctable ${JSON.stringify(keys)}`);
+    if (!okTurns || !okAssumed || !okKeys) { failures++; console.log('  hostile FAIL'); }
+    else {
+      // "Tap to correct": supply bodyweight, regenerate, the assumption dies.
+      const fix = await post(dev, `/coach/sessions/${id}/answers`, { key: 'bodyweight', value: '200 lbs' });
+      const re = await post(dev, `/coach/sessions/${id}/protocol`, {});
+      const reAsm = (re.body.assumptions ?? []).filter(a => /weight/i.test(a.assumption));
+      const cites = [];
+      for (const ph of re.body.protocol?.phases ?? []) {
+        for (const st of ph.steps ?? []) {
+          if (st.derived_from?.includes('bodyweight')) cites.push(`${st.title.slice(0, 40)}`);
+        }
+      }
+      const okFix = fix.body.ok && re.body.protocol && reAsm.length === 0;
+      console.log(`  correction: answers ok=${fix.body.ok} regenerate=${fix.body.regenerate} | bodyweight-assumptions left: ${reAsm.length} | now cites bodyweight: ${JSON.stringify(cites)}`);
+      if (!okFix) { failures++; console.log('  correction FAIL'); }
+    }
+  }
 }
 console.log(failures === 0 ? '\nALL GOALS CLEAN' : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

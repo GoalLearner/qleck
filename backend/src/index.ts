@@ -21,6 +21,7 @@ import { checkQuota, provider, providerReady, type Env } from './ai';
 import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
 import { verifyAppleToken } from './apple';
 import { classifyGoal, coachTurn, enrichStructure, generateProtocol, reviseProtocol, sessionStructure, type PaceKey, type PaceOption, type SessionRow, type Verdict } from './coach';
+import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
@@ -403,13 +404,46 @@ export default {
         return await runCoachTurn(env, cors, meta, session, answer);
       }
 
+      /* POST /coach/sessions/:id/answers — correct or supply a structured
+       * answer after the interview (pre-2b fix 3: "Assumed 200 lb — tap to
+       * correct"). Clears any stored protocol so the next /protocol call
+       * regenerates from the corrected key. */
+      const ansMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/answers$/);
+      if (ansMatch) {
+        const session = await loadSession(env, ansMatch[1], deviceId);
+        if (!session) return json({ error: 'session_not_found' }, 404, cors);
+        const structure = sessionStructure(session);
+        if (!structure.domain) return json({ error: 'unclassified_session' }, 409, cors);
+        const key = String(body.key ?? '').trim();
+        const value = String(body.value ?? '').trim().slice(0, 200);
+        const field = MANIFESTS[structure.domain].find(f => f.key === key);
+        if (!field) return json({ error: 'unknown_key', legal: MANIFESTS[structure.domain].map(f => f.key) }, 400, cors);
+        if (!value) return json({ error: 'empty_value' }, 400, cors);
+        const merged = { ...structure.answers, [key]: value };
+        const backToVerdict = session.status === 'protocol';
+        await env.DB
+          .prepare(
+            `UPDATE coach_sessions SET answers = ?, protocol = NULL,
+             status = CASE WHEN status = 'protocol' THEN 'verdict' ELSE status END,
+             updated_at = datetime('now') WHERE id = ?`,
+          )
+          .bind(JSON.stringify(merged), session.id)
+          .run();
+        return json({
+          sessionId: session.id, ok: true, answers: merged,
+          missing_required: missingRequired(structure.domain, merged).map(f => f.key),
+          regenerate: backToVerdict,
+        }, 200, cors);
+      }
+
       /* POST /coach/sessions/:id/protocol — generate for a verdict session. */
       const protoMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol$/);
       if (protoMatch) {
         const session = await loadSession(env, protoMatch[1], deviceId);
         if (!session) return json({ error: 'session_not_found' }, 404, cors);
         if (session.status === 'protocol' && session.protocol) {
-          return json({ sessionId: session.id, type: 'protocol', protocol: JSON.parse(session.protocol) }, 200, cors);
+          const cached = JSON.parse(session.protocol) as Protocol;
+          return json({ sessionId: session.id, type: 'protocol', protocol: cached, ...assumptionPayload(session, cached) }, 200, cors);
         }
         if (session.status !== 'verdict' || !session.verdict) {
           return json({ error: 'no_verdict_yet', status: session.status }, 409, cors);
@@ -438,7 +472,7 @@ export default {
           .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, updated_at = datetime('now') WHERE id = ?`)
           .bind(JSON.stringify(result.protocol), session.id)
           .run();
-        return json({ sessionId: session.id, type: 'protocol', protocol: result.protocol }, 200, cors);
+        return json({ sessionId: session.id, type: 'protocol', protocol: result.protocol, ...assumptionPayload(session, result.protocol) }, 200, cors);
       }
 
       /* POST /coach/sessions/:id/revise — "Adjust my plan" on a protocol session. */
@@ -486,6 +520,29 @@ export default {
       .run();
   },
 };
+
+/**
+ * The renderable shape of a protocol's assumptions (pre-2b fix 3): which
+ * steps rest on assumed values, and which manifest keys the user can supply
+ * to replace them ("Assumed 200 lb — tap to correct" posts the key to
+ * /answers, then re-requests /protocol).
+ */
+function assumptionPayload(session: SessionRow, protocol: Protocol): {
+  assumptions: { step_id: string; title: string; assumption: string; key: string | null }[];
+  correctable_keys: string[];
+} {
+  const assumptions: { step_id: string; title: string; assumption: string; key: string | null }[] = [];
+  for (const ph of protocol.phases ?? []) {
+    for (const st of ph.steps ?? []) {
+      if (typeof st.assumption === 'string' && st.assumption.trim()) {
+        assumptions.push({ step_id: st.id, title: st.title, assumption: st.assumption.trim(), key: st.assumption_key ?? null });
+      }
+    }
+  }
+  const structure = sessionStructure(session);
+  const correctable = structure.domain ? missingRequired(structure.domain, structure.answers).map(f => f.key) : [];
+  return { assumptions, correctable_keys: correctable };
+}
 
 /** Shared: run one coach turn and persist the resulting session state. */
 /**

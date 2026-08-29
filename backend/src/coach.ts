@@ -6,7 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, physiquePillarErrors, provenanceErrors, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, isDomain, missingRequired, type Domain } from './manifests';
 
 // Server-enforced negotiation band: at least 3 clarifying questions, at most 5.
@@ -160,7 +160,7 @@ export async function classifyDomain(
       : '';
     const result = await callModel(env, { ...meta, kind: 'classify_domain' }, {
       model: modelsFor(env).classifier,
-      system: 'You classify a personal goal into a coaching domain. strength = lift/press/pull numbers; endurance = run/ride/swim distance or pace; body_composition = lose/gain weight, muscle, physique; skill = learn an ability or language; money = save/pay off/earn amounts; career = roles, promotions, jobs; creative = write/make/ship creative work, including growing an audience or followers for it (TikTok/YouTube/newsletter growth is creative, NOT social); social = real-life friendships, meeting people; habit_change = quit/cut down/start a daily behavior; academic = grades, exams, degrees; other = none of these. Vague self-improvement wishes with no plannable outcome are concrete=false. When a Clarified-so-far context accompanies the goal, judge the goal AS CLARIFIED: a vague headline whose clarification names a specific plannable outcome ("be happier" clarified to "see friends twice a week") IS concrete — classify the clarified outcome.',
+      system: 'You classify a personal goal into a coaching domain. strength = lift/press/pull numbers; endurance = run/ride/swim distance or pace; body_composition = lose/gain weight, muscle, physique; skill = learn an ability or language; money = save/pay off/earn amounts; career = roles, promotions, jobs; creative = write/make/ship creative work (a novel, an EP, a portfolio); audience = growing followers, subscribers, views or reach on any platform (TikTok/YouTube/Instagram/newsletter growth is audience, not creative or social); social = real-life friendships, meeting people; habit_change = quit/cut down/start a daily behavior; academic = grades, exams, degrees; other = none of these. Vague self-improvement wishes with no plannable outcome are concrete=false. When a Clarified-so-far context accompanies the goal, judge the goal AS CLARIFIED: a vague headline whose clarification names a specific plannable outcome ("be happier" clarified to "see friends twice a week") IS concrete — classify the clarified outcome.',
       messages: [{ role: 'user', content: `Goal:\n${goalAsData(goalText)}${ctx}` }],
       tools: [CLASSIFY_DOMAIN_TOOL],
       toolChoice: { type: 'tool', name: CLASSIFY_DOMAIN_TOOL.name },
@@ -384,6 +384,18 @@ export async function coachTurn(
   const mustVerdict = atCeiling || nothingLeftToAsk;
 
   const steer: ChatMessage[] = [];
+  // The verdict's factors must cite collected keys — which the model can
+  // only do if it SEES them by name. Shown on every turn where the verdict
+  // tool is available.
+  const answerKeys = Object.keys(structure.answers);
+  if (!forceAsk && answerKeys.length > 0) {
+    steer.push({
+      role: 'user',
+      content:
+        `[app note] STRUCTURED ANSWERS collected so far (these key names are what verdict factors cite — when 2+ exist, at least 2 factors MUST cite them rather than goal_text):\n` +
+        answerKeys.map(k => `- ${k}: ${structure.answers[k]}`).join('\n'),
+    });
+  }
   if (!mustVerdict && needsConcreteness) {
     steer.push({
       role: 'user',
@@ -501,9 +513,41 @@ export async function coachTurn(
     return { type: 'question', question: q }; // guard failed open: original question
   }
   if (result.toolName === VERDICT_TOOL.name) {
-    const verdict = result.toolInput as Verdict;
+    let verdict = result.toolInput as Verdict;
     if (verdict.decision === 'declined') {
       return { type: 'refused', refusal: { category: 'declined', message: verdict.assessment } };
+    }
+    // Factor-quality guard (pre-2b fix 2): when 2+ REQUIRED keys were
+    // collected, at least 2 factors must cite collected keys, not goal_text.
+    // One corrective re-issue; on a second miss the original stands (the
+    // sanitizer will keep whatever legal factors it has — fail open).
+    const requiredCollected = structure.domain
+      ? MANIFESTS[structure.domain].filter(f => f.required && f.key in structure.answers).length
+      : 0;
+    const keyFactorCount = (v: Verdict) =>
+      (v.factors ?? []).filter(f => f && typeof f.key === 'string' && f.key !== 'goal_text' && f.key in structure.answers).length;
+    if (requiredCollected >= 2 && keyFactorCount(verdict) < 2) {
+      const refactor = await callModel(env, { ...meta, kind: 'coach_turn' }, {
+        model: modelsFor(env).coach,
+        system: COACH_SYSTEM,
+        messages: [
+          ...coachMessages(session, pendingAnswer),
+          ...steer,
+          {
+            role: 'user',
+            content:
+              `[factor guard] Your verdict's factors leaned on goal_text. Re-issue the SAME verdict — identical decision, statement, duration, probabilities and paces — changing ONLY factors: at least 2 must cite these collected answer keys: ${answerKeys.join(', ')}.`,
+          },
+        ],
+        tools: [VERDICT_TOOL],
+        toolChoice: { type: 'tool', name: VERDICT_TOOL.name },
+        maxTokens: 2048,
+        temperature: 0.2,
+      });
+      if (refactor.toolName === VERDICT_TOOL.name) {
+        const rv = refactor.toolInput as Verdict;
+        if (rv.decision === verdict.decision && keyFactorCount(rv) >= 2) verdict = rv;
+      }
     }
     // Sufficiency veto: the model verdicted while the auditor said facts were
     // still missing. Reuse the gate's answer rather than paying for a second
@@ -634,8 +678,18 @@ export async function generateProtocol(
     // joins the same retry loop — a dropped pillar reads to the model as one
     // more validation error to fix, which is exactly what it is.
     if (errors.length === 0) {
+      // No unresolved inputs -> no assumptions, period. A model that keeps an
+      // assumption string next to a real citation ("assumed 200 lb" beside
+      // derived_from: [bodyweight]) is decorating; strip it rather than
+      // burning a retry. With unresolved inputs, assumptions stand.
+      if (assumableKeys.length === 0) {
+        for (const ph of (repaired as Protocol).phases ?? []) {
+          for (const st of ph.steps ?? []) delete st.assumption;
+        }
+      }
       errors.push(...physiquePillarErrors(`${targetStatement} ${session.goal_text}`, repaired as Protocol));
       errors.push(...provenanceErrors(repaired as Protocol, structure.answers, assumableKeys));
+      errors.push(...exhaustedKeyErrors(repaired as Protocol, session.domain, assumableKeys, structure.answers));
     }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: repaired as Protocol };

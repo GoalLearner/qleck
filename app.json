@@ -31,12 +31,17 @@
     "plugins": [
       "expo-font",
       "expo-audio",
-      "expo-apple-authentication"
-    ],
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#f5f2ea"
-    }
+      "expo-apple-authentication",
+      "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#f5f2ea"
+        }
+      ]
+    ]
   }
 }

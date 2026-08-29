@@ -108,6 +108,27 @@ function Lane({ run, railW, delayMs, snap, onResolved }: {
   );
 }
 
+/** A warm-up runner sweeping an empty track — the loading cue for the
+ *  drafting stretch (owner: "the user will not wait" without one). Each
+ *  lane's dot loops at its own slight offset, so the stage reads as live
+ *  work rather than a stall. */
+function SweepDot({ index }: { index: number }) {
+  const x = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.delay(index * 210),
+      Animated.timing(x, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
+      Animated.timing(x, { toValue: 0, duration: 0, useNativeDriver: false }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [x, index]);
+  const left = x.interpolate({ inputRange: [0, 1], outputRange: ['0%', '96%'] });
+  return (
+    <Animated.View style={{ position: 'absolute', left, width: 6, height: 6, borderRadius: 3, backgroundColor: night.textFaint }} />
+  );
+}
+
 /* ── the block ─────────────────────────────────────────────────────────── */
 
 export function SimVerdict({
@@ -232,6 +253,13 @@ export function SimVerdict({
 
   const judge = useMemo(() => {
     if (phase === 'boot' || phase === 'lanes' || running) {
+      // Name the real stage — an unnamed 30-second wait reads as a stall.
+      if (!sim || sim.status === 'generating') {
+        return `Qoach is drafting the plan these futures will race — about half a minute, then they run.`;
+      }
+      if (sim.status === 'simulating' && lanes.length < (planned.length || 1)) {
+        return `Plan drafted — racing ${planned.length} honest futures, ${lanes.length} back…`;
+      }
       return `Running ${planned.length || 6} honest futures of your plan — the dial waits for them.`;
     }
     if (phase === 'hold' || phase === 'settle') {
@@ -285,7 +313,7 @@ export function SimVerdict({
       >
         {phase !== 'done' ? (
           <Animated.View style={{ gap: 6, opacity: fade }}>
-            {(planned.length ? planned : Array.from({ length: 6 }, (_, i) => ({ key: String(i), name: '', short: '·' }))).map(p => {
+            {(planned.length ? planned : Array.from({ length: 6 }, (_, i) => ({ key: String(i), name: '', short: '·' }))).map((p, i) => {
               const run = lanes.find(l => l.key === p.key);
               const si = staggerKeys.current.indexOf(p.key);
               return run && phase !== 'boot' && railW > 0 ? (
@@ -303,6 +331,7 @@ export function SimVerdict({
                   <View style={{ flex: 1, height: 26, marginRight: 16, justifyContent: 'center' }}>
                     <View style={{ position: 'absolute', left: 0, right: 0, height: 3, borderRadius: 2, backgroundColor: night.hairline }} />
                     <View style={{ position: 'absolute', right: 0, top: 4, bottom: 4, borderLeftWidth: 2, borderStyle: 'dashed', borderLeftColor: night.border }} />
+                    {reduceMotion ? null : <SweepDot index={i} />}
                   </View>
                 </View>
               );

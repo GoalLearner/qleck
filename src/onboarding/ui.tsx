@@ -3,7 +3,7 @@
 // keyframe animations — they live here once.
 import React, { useEffect, useRef } from 'react';
 import {
-  Animated, Easing, Platform, Pressable, ScrollView, StyleProp, Text, TextInput,
+  Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleProp, Text, TextInput,
   TextStyle, View, ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,8 +28,13 @@ export function Screen({
     paddingBottom: Math.max(insets.bottom, 20) + 22,
     paddingHorizontal: horizontal,
   };
-  if (!scroll) return <View style={[{ flex: 1 }, pad, style]}>{children}</View>;
-  return (
+  // iOS slides the keyboard OVER the view (web resizes instead), so every
+  // bottom-anchored composer and input on these screens vanished behind it
+  // on device. The shell owns the fix once: shrink the screen by keyboard
+  // height. Android pans natively; web renders this as a plain View.
+  const body = !scroll ? (
+    <View style={[{ flex: 1 }, pad, style]}>{children}</View>
+  ) : (
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={[{ flexGrow: 1 }, pad, style]}
@@ -39,6 +44,14 @@ export function Screen({
       {children}
     </ScrollView>
   );
+  if (Platform.OS === 'ios') {
+    return (
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+        {body}
+      </KeyboardAvoidingView>
+    );
+  }
+  return body;
 }
 
 export const Spacer = () => <View style={{ flex: 1, minHeight: 20 }} />;

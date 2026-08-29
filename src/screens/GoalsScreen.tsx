@@ -362,6 +362,8 @@ export default function GoalsScreen() {
   return (
     <FadeInUp style={{ flex: 1 }}>
       <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
         style={{ flex: 1, backgroundColor: colors.bg }}
         contentContainerStyle={{ paddingTop: Math.max(insets.top, 58) + 12, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}

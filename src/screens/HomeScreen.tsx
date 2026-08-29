@@ -951,6 +951,8 @@ export default function HomeScreen() {
   return (
     <FadeInUp style={{ flex: 1 }}>
       <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
         style={{ flex: 1, backgroundColor: colors.bg }}
         contentContainerStyle={{ flexGrow: 1, paddingTop: wide ? 26 : Math.max(insets.top, 58) + 16 }}
         showsVerticalScrollIndicator={false}

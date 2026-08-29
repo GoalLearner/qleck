@@ -158,6 +158,25 @@ async function post(dev, p, b) {
   }
 }
 
+// Front-door client for the replay leg: verdict memory is DELIBERATELY
+// harness-exempt, so this one test must knock without the secret.
+async function postPlain(dev, p, b) {
+  const r = await fetch(BASE + p, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Qleck-Device': dev },
+    body: JSON.stringify(b), signal: AbortSignal.timeout(240_000),
+  });
+  return { status: r.status, body: await r.json() };
+}
+
+async function getJson(dev, path) {
+  const r = await fetch(BASE + path, {
+    headers: { 'X-Qleck-Device': dev, ...(secret ? { 'X-Qleck-Harness': secret } : {}) },
+    signal: AbortSignal.timeout(30_000),
+  });
+  return { status: r.status, body: await r.json() };
+}
+
 function answerFor(g, used, q) {
   for (let i = 0; i < g.routes.length; i++) {
     if (g.routes[i][0].test(q) && !used.has(i)) { used.add(i); return g.routes[i][1]; }
@@ -173,6 +192,7 @@ let failures = 0;
 for (const g of GOALS) {
   if (filter && !filter.split(',').some(f => g.id.includes(f))) continue;
   const dev = crypto.randomUUID();
+  g._dev = dev;
   const used = new Set();
   let res = await post(dev, '/coach/sessions', { goalText: g.goal });
   const id = res.body.sessionId;
@@ -193,7 +213,32 @@ for (const g of GOALS) {
   console.log(`  domain: ${res.body.domain}   questions: ${n}   decision: ${v.decision}   odds: ${v.success_probability}%`);
   console.log(`  answers: ${JSON.stringify(res.body.answers)}`);
   console.log(`  factors: ${JSON.stringify(v.factors ?? null)}`);
+
+  // 2c: the background pipeline — poll until lanes + blend land.
+  const preOdds = v.success_probability;
+  let sim = null;
+  for (let tries = 0; tries < 100; tries++) {
+    await new Promise(r2 => setTimeout(r2, 3000));
+    const poll = await getJson(dev, `/coach/sessions/${id}/simulation`).catch(() => null);
+    sim = poll?.body?.simulation ?? null;
+    if (sim && (sim.status === 'done' || sim.status === 'failed')) break;
+  }
+  if (!sim || sim.status !== 'done') {
+    console.log(`  SIMULATION FAIL: ${sim ? sim.status + ' ' + (sim.error ?? '') : 'no state'}`);
+    failures++;
+  } else {
+    for (const lane of sim.lanes) {
+      const tail = lane.invalid ? 'INVALID' : lane.hit ? 'hit' : `miss <- ${lane.first_failure_key}: ${String(lane.first_failure_reason).slice(0, 64)}`;
+      console.log(`    lane ${lane.key.padEnd(18)} ${tail}`);
+    }
+    const o = sim.odds;
+    const delta = o.blended - preOdds;
+    console.log(`  odds: rubric ${o.rubric} | pass_rate ${o.pass_rate} | blended ${o.blended} (pre-2c ${preOdds}, delta ${delta >= 0 ? '+' : ''}${delta})${Math.abs(delta) > 20 ? '  !! MOVED >20' : ''}`);
+  }
+  const tAccept = Date.now();
   const proto = await post(dev, `/coach/sessions/${id}/protocol`, {});
+  const acceptMs = Date.now() - tAccept;
+  console.log(`  accept: ${acceptMs}ms ${acceptMs < 3000 ? '(draft fast path OK)' : '(SLOW - synchronous fallback?)'}${proto.body.simulation ? ' + simulation attached' : ''}`);
   if (!proto.body.protocol) {
     console.log(`  FAIL: protocol ${proto.status}: ${JSON.stringify(proto.body).slice(0, 220)}`);
     failures++;
@@ -273,6 +318,40 @@ for (const g of GOALS) {
       if (!okFix) { failures++; console.log('  correction FAIL'); }
     }
   }
+}
+// Owner decision 3: a replayed verdict (same device+goal, 48h) reads STORED
+// runs. Verdict memory only replays UN-accepted verdicts (accepting a goal
+// then re-asking starts fresh, by design) — so this test interviews without
+// accepting, waits for the sim, recreates, and expects the stored lanes.
+if (!filter || filter.includes('bench') || filter.includes('replay')) {
+  const g0 = GOALS[0];
+  const dev0 = crypto.randomUUID();
+  const used0 = new Set();
+  let r0 = await postPlain(dev0, '/coach/sessions', { goalText: g0.goal });
+  let n0 = 0;
+  while (r0.body.type === 'question' && n0 < 8) { n0++; r0 = await postPlain(dev0, `/coach/sessions/${r0.body.sessionId}/messages`, { answer: answerFor(g0, used0, r0.body.question.question) }); }
+  if (r0.body.type === 'verdict') {
+    const sid0 = r0.body.sessionId;
+    let sim0 = null;
+    for (let t = 0; t < 100; t++) {
+      await new Promise(r2 => setTimeout(r2, 3000));
+      const poll = await getJson(dev0, `/coach/sessions/${sid0}/simulation`).catch(() => null);
+      sim0 = poll?.body?.simulation ?? null;
+      if (sim0 && (sim0.status === 'done' || sim0.status === 'failed')) break;
+    }
+    if (!sim0 || sim0.status !== 'done') { console.log('replay setup: sim never finished'); failures++; }
+    else {
+      const re = await postPlain(dev0, '/coach/sessions', { goalText: g0.goal });
+      if (re.body.type !== 'verdict') { console.log('replay: verdict not reused (type ' + re.body.type + ')'); failures++; }
+      else {
+        const poll = await getJson(dev0, `/coach/sessions/${re.body.sessionId}/simulation`);
+        const sim = poll.body.simulation;
+        const ok = sim && sim.status === 'done' && (sim.lanes?.length ?? 0) >= 5 && JSON.stringify(sim.lanes) === JSON.stringify(sim0.lanes);
+        console.log(`replay (verdict memory): status ${sim?.status ?? 'none'}, ${sim?.lanes?.length ?? 0} stored lanes, identical-to-original=${ok ? 'YES' : 'NO'}`);
+        if (!ok) failures++;
+      }
+    }
+  } else { console.log('replay setup: no verdict'); failures++; }
 }
 console.log(failures === 0 ? '\nALL GOALS CLEAN' : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

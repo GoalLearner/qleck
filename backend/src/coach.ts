@@ -8,6 +8,10 @@ import {
 } from './prompts';
 import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, isDomain, missingRequired, type Domain } from './manifests';
+import {
+  SCENARIO_CONCURRENCY, runScenario, summarizeRuns, templatesFor,
+  type ScenarioRun, type SimulationState, type TemplateCtx,
+} from './scenarios';
 
 // Server-enforced negotiation band: at least 3 clarifying questions, at most 5.
 // Both ends work the same way — the tool the coach must not use is simply
@@ -36,6 +40,8 @@ export interface SessionRow {
   domain: string | null;
   needs_clarification: number;
   answers: string;
+  draft_protocol?: string | null;
+  simulation?: string | null;
   /** Transient (never persisted): keys the latest extraction added. Fuels the
    *  progress gate — a 6th question must be EARNED by a productive 5th. */
   last_extract_added?: number;
@@ -877,3 +883,207 @@ export async function maintenanceProtocol(
   }
   return { errors: lastErrors };
 }
+
+/* ── 2c: the simulation pipeline (owner decisions 1-4) ─────────────────── */
+
+export interface SimConfig {
+  pace: PaceKey;
+  variant: 'original' | null;
+}
+
+function rubricOddsFor(verdict: Verdict, config: SimConfig): number {
+  if (config.variant === 'original') return verdict.original_probability ?? 40;
+  if (config.pace !== 'steady') {
+    const opt = verdict.pace_options?.find(o => o.key === config.pace);
+    if (opt?.success_probability) return opt.success_probability;
+  }
+  return verdict.success_probability ?? 75;
+}
+
+async function persistSim(env: Env, sessionId: string, sim: SimulationState): Promise<void> {
+  await env.DB
+    .prepare(`UPDATE coach_sessions SET simulation = ?, updated_at = datetime('now') WHERE id = ?`)
+    .bind(JSON.stringify(sim), sessionId)
+    .run()
+    .catch(() => {});
+}
+
+const CONTINGENCY_TOOL = {
+  name: 'add_contingencies',
+  description: 'Add 1-2 contingency steps answering the simulated failures.',
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['additions'],
+    properties: {
+      additions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['phase_id', 'step'],
+          properties: {
+            phase_id: { type: 'string', description: 'Which existing phase the step joins.' },
+            step: PROTOCOL_TOOL_SCHEMA.properties.phases.items.properties.steps.items,
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+/** One cheap call: turn the failure reasons into 1-2 contingency steps.
+ *  Additive nicety — any validation failure drops the additions and keeps
+ *  the clean draft. */
+async function hardenDraft(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  draft: Protocol,
+  lanes: ScenarioRun[],
+): Promise<Protocol> {
+  const failures = lanes.filter(l => !l.invalid && !l.hit && l.first_failure_reason);
+  if (failures.length === 0) return draft;
+  const structure = sessionStructure(session);
+  try {
+    const result = await callModel(env, { ...meta, kind: 'contingency' }, {
+      model: modelsFor(env).classifier,
+      system:
+        'You harden a protocol against the specific ways simulated runs of it died. Add AT MOST 2 contingency steps — each a concrete IF-THEN behavior ("If a payday transfer is missed, move half on each of the next two paydays"), placed in the phase where the failure bites. Steps follow every rule of the protocol schema: kinds, frequency, plain language, derived_from/standard_practice on any number, session_id if conditional on a session. Set contingency: true on each. Do not touch existing steps.',
+      messages: [{
+        role: 'user',
+        content:
+          `PROTOCOL:\n${JSON.stringify({ sessions: draft.sessions, phases: draft.phases })}\n\n` +
+          `COLLECTED ANSWERS (legal derived_from keys): ${JSON.stringify(structure.answers)}\n\n` +
+          `HOW SIMULATED RUNS DIED:\n${failures.map(f => `- [${f.key}] ${f.first_failure_reason}`).join('\n')}`,
+      }],
+      tools: [CONTINGENCY_TOOL],
+      toolChoice: { type: 'tool', name: CONTINGENCY_TOOL.name },
+      maxTokens: 1200,
+      temperature: 0.3,
+    });
+    const out = result.toolInput as { additions?: { phase_id: string; step: Protocol['phases'][0]['steps'][0] }[] } | null;
+    if (!out?.additions?.length) return draft;
+    const hardened: Protocol = JSON.parse(JSON.stringify(draft));
+    for (const add of out.additions.slice(0, 2)) {
+      const ph = hardened.phases.find(x => x.id === add.phase_id);
+      if (!ph || !add.step) continue;
+      ph.steps.push({ ...add.step, contingency: true });
+    }
+    const unresolved = structure.domain ? missingRequired(structure.domain, structure.answers).map(f => f.key) : [];
+    const errs = [
+      ...validateProtocol(hardened),
+      ...provenanceErrors(hardened, structure.answers, unresolved),
+      ...sessionErrors(hardened),
+    ];
+    return errs.length === 0 ? hardened : draft;
+  } catch {
+    return draft;
+  }
+}
+
+/**
+ * The whole 2c background pipeline for one config: generate the draft,
+ * stream scenario lanes into coach_sessions.simulation as they resolve,
+ * blend the odds, harden the draft with contingencies, and finalize the
+ * stored verdict's number. Runs under ctx.waitUntil — must never throw.
+ */
+export async function prepareSimulation(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  verdict: Verdict,
+  config: SimConfig,
+): Promise<void> {
+  const structure = sessionStructure(session);
+  const domain: Domain = structure.domain ?? 'other';
+  const templates = templatesFor(domain);
+  let sim: SimulationState = {
+    status: 'generating',
+    config: { pace: config.pace, variant: config.variant },
+    lanes: [],
+    planned: templates.map(t => ({ key: t.key, name: t.name })),
+  };
+  await persistSim(env, session.id, sim);
+  try {
+    let gen = await generateProtocol(env, meta, session, verdict, config.pace, config.variant ?? undefined);
+    if (!gen.protocol) {
+      // One more swing after a breather: background generation shares the
+      // provider with the foreground interview, and a load spike that ate
+      // all three validator attempts usually clears in seconds.
+      await new Promise(r => setTimeout(r, 10_000));
+      gen = await generateProtocol(env, meta, session, verdict, config.pace, config.variant ?? undefined);
+    }
+    if (!gen.protocol) {
+      await persistSim(env, session.id, { ...sim, status: 'failed', error: 'generation_failed' });
+      return;
+    }
+    let draft = gen.protocol;
+    await env.DB
+      .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ?`)
+      .bind(JSON.stringify(draft), session.id)
+      .run()
+      .catch(() => {});
+
+    sim = { ...sim, status: 'simulating' };
+    await persistSim(env, session.id, sim);
+
+    const ctx: TemplateCtx = { domain, durationWeeks: draft.duration_weeks, answers: structure.answers };
+    const statement = config.variant === 'original'
+      ? (verdict.original_request ?? session.goal_text)
+      : verdict.goal_statement;
+
+    // Parallel with a cap; each completion streams into the stored state so
+    // the verdict page renders lanes as they land.
+    const queue = [...templates];
+    const lanes: ScenarioRun[] = [];
+    let persistChain: Promise<void> = Promise.resolve();
+    const workers = Array.from({ length: Math.min(SCENARIO_CONCURRENCY, queue.length) }, async () => {
+      for (;;) {
+        const t = queue.shift();
+        if (!t) return;
+        const lane = await runScenario(env, meta, t, ctx, draft, statement);
+        lanes.push(lane);
+        persistChain = persistChain.then(() =>
+          persistSim(env, session.id, { ...sim, lanes: [...lanes] }));
+        await persistChain;
+      }
+    });
+    await Promise.all(workers);
+
+    const rubric = rubricOddsFor(verdict, config);
+    const { odds, factors } = summarizeRuns(lanes, rubric);
+
+    draft = await hardenDraft(env, meta, session, draft, lanes);
+    await env.DB
+      .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ?`)
+      .bind(JSON.stringify(draft), session.id)
+      .run()
+      .catch(() => {});
+
+    // Finalize: the goal's number IS the blend now (owner decision). The
+    // steady mirror follows; other paces stay rubric-provisional. Simulation
+    // factors become the verdict's factors — failure-derived, per spec.
+    if (config.variant !== 'original') {
+      verdict.success_probability = odds.blended;
+      if (config.pace === 'steady') {
+        const steadyOpt = verdict.pace_options?.find(o => o.key === 'steady');
+        if (steadyOpt) steadyOpt.success_probability = odds.blended;
+      }
+      verdict.factors = factors;
+      await env.DB
+        .prepare(`UPDATE coach_sessions SET verdict = ? WHERE id = ?`)
+        .bind(JSON.stringify(verdict), session.id)
+        .run()
+        .catch(() => {});
+    }
+
+    await persistSim(env, session.id, { ...sim, status: 'done', lanes, odds, factors });
+  } catch (err) {
+    await persistSim(env, session.id, {
+      ...sim, status: 'failed',
+      error: err instanceof Error ? err.message.slice(0, 200) : 'simulation_failed',
+    });
+  }
+}
+

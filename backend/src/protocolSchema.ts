@@ -36,6 +36,9 @@ export interface ProtocolStep {
   /** 2b: the session this step belongs to (its occurrence, or a rep
    *  conditional on it). Conditional steps MUST carry it. */
   session_id?: string;
+  /** 2c: born from a simulated failure — the plan's answer to a way the
+   *  scenario runs actually died. */
+  contingency?: boolean;
 }
 
 /** 2b: the weekly skeleton. Steps attach to sessions; a conditional rep
@@ -178,6 +181,10 @@ export const PROTOCOL_TOOL_SCHEMA = {
                 session_id: {
                   type: 'string',
                   description: "The session (from sessions[]) this step is an occurrence of or conditional on. REQUIRED for any step referencing another activity (after each session/run, pre-session meal, the day after pay). Omit for standalone daily/flexible habits.",
+                },
+                contingency: {
+                  type: 'boolean',
+                  description: 'true ONLY on steps added as a response to a simulated failure (a stall-breaker, a catch-up rule).',
                 },
                 week_progression: { type: 'string' },
               },

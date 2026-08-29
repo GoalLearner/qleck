@@ -52,9 +52,11 @@ export function providerReady(env: Env): boolean {
 
 // Model tiering (cost rail #1): cheap tier for the safety pre-classifier,
 // top tier for the coach + protocol. Tighten here server-side, never client.
+/** GEN_MODEL (env, optional) overrides the generation/coach model — the
+ *  2c A/B lever (deepseek-v4-pro vs flash) without a code change. */
 export function modelsFor(env: Env): { classifier: string; coach: string } {
   return provider(env) === 'deepseek'
-    ? { classifier: 'deepseek-chat', coach: 'deepseek-chat' }
+    ? { classifier: 'deepseek-chat', coach: (env as { GEN_MODEL?: string }).GEN_MODEL || 'deepseek-chat' }
     : { classifier: 'claude-haiku-4-5', coach: 'claude-opus-5' };
 }
 
@@ -80,7 +82,7 @@ export interface CallMeta {
   sessionId?: string;
   deviceId?: string;
   ip?: string;
-  kind: 'safety' | 'classify_domain' | 'extract_answers' | 'coach_turn' | 'verdict_turn' | 'protocol' | 'audit';
+  kind: 'safety' | 'classify_domain' | 'extract_answers' | 'coach_turn' | 'verdict_turn' | 'protocol' | 'simulate' | 'contingency' | 'audit';
   /** Which retry loop this call belongs to, when any ('validator' = the
    *  generation loop re-prompting on schema errors). Transport retries are
    *  counted inside the call itself. */

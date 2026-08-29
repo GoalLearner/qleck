@@ -31,7 +31,11 @@ export const GOAL_FIXTURES = [
     expect: ['feasible'],
   },
   {
-    id: 'read-nightly', category: 'realistic', protocol: true, maxQuestions: 3,
+    // maxQuestions 3→4 (v27): the canned answers here deliberately never
+    // answer the baseline question, and the two-ask-per-field ceiling makes
+    // one honest follow-up the CORRECT behavior — the old 3 encoded the
+    // pre-v27 model settling for a vague baseline on the first pass.
+    id: 'read-nightly', category: 'realistic', protocol: true, maxQuestions: 4,
     goal: 'Read 10 minutes before bed every night for the next month.',
     answers: [
       'I get into bed around 11 most nights.',

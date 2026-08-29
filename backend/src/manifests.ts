@@ -18,15 +18,24 @@ export interface ManifestField {
   required: boolean;
   reason: string;              // "bodyweight → protein target"
   quickPicks?: string[];       // obvious buckets, offered as chips
+  /** The plan does per-unit ARITHMETIC on this answer (grams from lbs,
+   *  gap math from dollars, growth math from counts). Bucket chips here
+   *  re-create the v24 sin — a 30-lb range makes every derived number
+   *  arbitrary — so precise fields never get quickPicks and the model is
+   *  told to ask for the specific figure. */
+  precise?: boolean;
 }
 
 const F = (key: string, required: boolean, reason: string, quickPicks?: string[]): ManifestField =>
   ({ key, required, reason, ...(quickPicks ? { quickPicks } : {}) });
+// A precise field: exact value requested, chips forbidden.
+const PF = (key: string, required: boolean, reason: string): ManifestField =>
+  ({ key, required, reason, precise: true });
 
 export const MANIFESTS: Record<Domain, ManifestField[]> = {
   strength: [
-    F('current_best', true, 'current 1RM or best recent set on the target lift → sizes the gap and the loading plan', ['New to this lift', 'Light working sets', 'Moderate — past year of work', 'Heavy — trained for years']),
-    F('bodyweight', true, 'bodyweight → protein and any nutrition target', ['Under 150 lbs / 68 kg', '150-180 lbs / 68-82 kg', '180-210 lbs / 82-95 kg', 'Over 210 lbs / 95 kg']),
+    PF('current_best', true, 'current 1RM or best recent set on the target lift (an exact weight×reps, or "never tried it") → sizes the gap and the loading plan'),
+    PF('bodyweight', true, 'bodyweight → protein and any nutrition target'),
     F('training_days_per_week', true, 'available training days → session count and split', ['2 days', '3 days', '4 days', '5+ days']),
     F('training_age', true, 'years lifting → realistic rate of strength gain', ['Under 1 year', '1-3 years', '3-5 years', '5+ years']),
     F('injuries_limits', false, 'injuries or limitations → exercise selection and loading guards', ['None', 'Minor tweaks', 'Working around one', 'Significant limits']),
@@ -40,7 +49,7 @@ export const MANIFESTS: Record<Domain, ManifestField[]> = {
     F('race_date', false, 'a fixed event date → the timeline is externally pinned'),
   ],
   body_composition: [
-    F('bodyweight', true, 'current bodyweight → protein target, deficit/surplus size, weekly change rate', ['Under 150 lbs / 68 kg', '150-180 lbs / 68-82 kg', '180-210 lbs / 82-95 kg', 'Over 210 lbs / 95 kg']),
+    PF('bodyweight', true, 'current bodyweight → protein target, deficit/surplus size, weekly change rate'),
     F('training_days_per_week', true, 'training days available → resistance-training floor the cut/bulk needs', ['2 days', '3 days', '4 days', '5+ days']),
     F('eating_pattern', true, 'how eating works today (cooking, takeout, skipped meals) → which lever the calorie change pulls', ['Mostly cook at home', 'Half cook, half takeout', 'Mostly takeout/delivery', 'Irregular — often skip meals']),
     F('past_attempts', true, 'past diets/bulks and how they ended → guardrails against the known failure mode'),
@@ -54,8 +63,8 @@ export const MANIFESTS: Record<Domain, ManifestField[]> = {
     F('deadline', false, 'a fixed date the skill is needed by → timeline is externally pinned'),
   ],
   money: [
-    F('current_amount', true, 'current saved amount → the true remaining gap', ['Under $500', '$500-2,000', '$2,000-10,000', 'Over $10,000']),
-    F('income_or_contribution_capacity', true, 'income or realistic monthly contribution → whether the target math closes', ['Under $200/mo', '$200-500/mo', '$500-1,000/mo', 'Over $1,000/mo']),
+    PF('current_amount', true, 'current saved amount → the true remaining gap'),
+    PF('income_or_contribution_capacity', true, 'income or realistic monthly contribution → whether the target math closes'),
     F('pay_cadence', true, 'pay cadence → transfer schedule anchors to real paydays', ['Weekly', 'Biweekly', 'Twice a month', 'Monthly']),
     F('target_date', true, 'target date → required contribution per pay period'),
     F('pay_day', false, 'the day pay lands (weekday, or date like the 1st/15th) → the transfer rep anchors to the real payday', ['Friday', 'Every other Friday', '1st of the month', '15th and 30th']),
@@ -77,8 +86,8 @@ export const MANIFESTS: Record<Domain, ManifestField[]> = {
   ],
   audience: [
     F('platform', true, 'which platform → the growth playbook differs completely (TikTok pace vs newsletter pace)', ['TikTok', 'YouTube', 'Instagram', 'Newsletter/other']),
-    F('current_followers', true, 'current follower/subscriber count → the true gap and honest growth-rate math', ['Under 1k', '1k-10k', '10k-100k', 'Over 100k']),
-    F('current_avg_views', true, 'typical views/opens per post → reach per rep, which drives how many reps the target needs', ['Under 500', '500-5k', '5k-50k', 'Over 50k']),
+    PF('current_followers', true, 'current follower/subscriber count → the true gap and honest growth-rate math'),
+    PF('current_avg_views', true, 'typical views/opens per post → reach per rep, which drives how many reps the target needs'),
     F('posting_cadence', true, 'current posting rhythm → the realistic ramp from today, not from zero', ['Rarely', '1-2 a week', '3-5 a week', 'Daily']),
     F('hours_per_week', true, 'production hours available → what cadence is sustainable', ['Under 3 h', '3-6 h', '6-10 h', '10+ h']),
     F('niche', false, 'content niche → format and hook advice'),
@@ -124,7 +133,15 @@ export function missingRequired(domain: Domain, answers: Record<string, string>)
 
 /** The manifest rendered for a prompt: keys, R/O, reasons, quick-picks. */
 export function manifestForPrompt(domain: Domain): string {
-  return MANIFESTS[domain]
-    .map(f => `- ${f.key} [${f.required ? 'REQUIRED' : 'optional'}]: ${f.reason}${f.quickPicks ? ` (quick-picks: ${f.quickPicks.join(' | ')})` : ''}`)
-    .join('\n');
+  return MANIFESTS[domain].map(fieldForPrompt).join('\n');
+}
+
+/** One field's prompt line — shared by the manifest block and the
+ *  missing-fields steer so the chip rules can never diverge. */
+export function fieldForPrompt(f: ManifestField): string {
+  const chips = f.quickPicks ? ` (quick-picks: ${f.quickPicks.join(' | ')})` : '';
+  const exact = f.precise
+    ? ' (EXACT VALUE — the plan does arithmetic on this: ask for the specific number with its unit, and NEVER offer ranges or buckets as suggested_answers for it; someone who truly does not know says so and gets an explicit assumption)'
+    : '';
+  return `- ${f.key} [${f.required ? 'REQUIRED' : 'optional'}]: ${f.reason}${chips}${exact}`;
 }

@@ -72,6 +72,9 @@ export interface SimulationState {
   /** Stepper lock (epoch ms): a poll that arrives while another request is
    *  mid-unit skips the work and just reads. Expires on its own. */
   working_until?: number;
+  /** Dead draft-generation attempts — three of them fails the simulation
+   *  (the page falls back to rubric drivers) instead of burning tokens. */
+  gen_attempts?: number;
   odds?: { rubric: number; pass_rate: number; blended: number };
   factors?: { key: string; direction: 'up' | 'down'; weight: number }[];
   error?: string;

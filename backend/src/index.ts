@@ -20,7 +20,7 @@
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
 import { verifyAppleToken } from './apple';
-import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, prepareSimulation, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
+import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
@@ -457,11 +457,17 @@ export default {
       if (simMatch && request.method === 'GET') {
         const session = await loadSession(env, simMatch[1], deviceId);
         if (!session) return json({ error: 'session_not_found' }, 404, cors);
-        // The poll IS the engine on production: ctx.waitUntil gets killed
-        // ~30s after a response (build 5's lanes froze mid-simulating on
-        // exactly this), so each poll performs one bounded unit of pipeline
-        // work in-request under an expiring lock, and the client's ordinary
-        // 2s polling walks the whole thing to done.
+        // The poll KICKS the engine but never carries it. Production kills
+        // both ways of holding long work: waitUntil chains die shortly after
+        // a response (froze build 5 the first time), and a request the
+        // client aborts dies WITH its in-request work while stranding the
+        // lock (froze build 5 the second time — iOS times polls out at
+        // ~60s; a strength draft runs longer). So the poll responds in
+        // milliseconds and detaches ONE bounded unit (draft, or two lanes,
+        // or the finalize) via waitUntil under an expiring lock. Every unit
+        // persists, each fits the post-response grace window, and the
+        // client's ordinary 2s polling walks the pipeline to done. Never
+        // await model work inside this handler.
         let sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : null;
         if (!sim && session.status === 'verdict' && session.verdict) {
           const v = JSON.parse(session.verdict) as Verdict;
@@ -473,27 +479,36 @@ export default {
         if (sim && (sim.status === 'generating' || sim.status === 'simulating')) {
           const now = Date.now();
           if (!sim.working_until || now > sim.working_until) {
-            const locked = { ...sim, working_until: now + 120_000 };
+            const lockUntil = now + 120_000;
+            const locked = { ...sim, working_until: lockUntil };
             await env.DB
               .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ?`)
               .bind(JSON.stringify(locked), session.id)
               .run();
             session.simulation = JSON.stringify(locked);
-            await simStep(env, { ...meta, sessionId: session.id }, session).catch(() => {});
-            const fresh = await loadSession(env, simMatch[1], deviceId);
-            if (fresh) { session.simulation = fresh.simulation; session.verdict = fresh.verdict; session.draft_protocol = fresh.draft_protocol; }
-            sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : sim;
-            if (sim?.working_until && Date.now() <= sim.working_until) {
-              // The unit failed before clearing its lock — release it so the
-              // next poll retries instead of waiting out the full window.
-              const unlocked = { ...sim, working_until: undefined };
-              await env.DB
-                .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ?`)
-                .bind(JSON.stringify(unlocked), session.id)
-                .run()
-                .catch(() => {});
-              sim = unlocked;
-            }
+            const stepMeta = { ...meta, sessionId: session.id };
+            ctx.waitUntil((async () => {
+              try {
+                await simStep(env, stepMeta, session);
+              } catch { /* per-unit persistence — the release below retries it */ }
+              try {
+                // A unit that died before persisting leaves our lock behind;
+                // release it (only if still exactly ours) so the retry costs
+                // one poll, not the whole lock window.
+                const after = await env.DB
+                  .prepare(`SELECT simulation FROM coach_sessions WHERE id = ?`)
+                  .bind(session.id)
+                  .first<{ simulation: string | null }>();
+                const cur = after?.simulation ? (JSON.parse(after.simulation) as SimulationState) : null;
+                if (cur?.working_until === lockUntil && (cur.status === 'generating' || cur.status === 'simulating')) {
+                  await env.DB
+                    .prepare(`UPDATE coach_sessions SET simulation = ? WHERE id = ?`)
+                    .bind(JSON.stringify({ ...cur, working_until: undefined }), session.id)
+                    .run();
+                }
+              } catch { /* isolate death → the lock expires on its own */ }
+            })());
+            sim = locked; // respond now; progress arrives on the next poll
           }
         }
         const verdict = session.verdict ? (JSON.parse(session.verdict) as Verdict) : null;
@@ -531,7 +546,10 @@ export default {
         session.draft_protocol = null;
         session.simulation = null;
         const config: SimConfig = { pace, variant };
-        ctx.waitUntil(prepareSimulation(env, { ...meta, sessionId: session.id }, session, verdict, config));
+        // Init only — the client's polls drive every model-calling unit
+        // through the locked engine in GET /simulation. A second engine here
+        // would race it into duplicate drafts.
+        ctx.waitUntil(initSimulation(env, session, config));
         return json({ sessionId: session.id, ok: true, preparing: config }, 202, cors);
       }
 
@@ -871,8 +889,8 @@ async function runCoachTurn(
     if (result.verdict.decision === 'feasible' || result.verdict.decision === 'counter_offer') {
       session.transcript = JSON.stringify(transcript);
       const simSession = { ...session, status: 'verdict', verdict: JSON.stringify(result.verdict) };
-      const v = result.verdict;
-      ctx.waitUntil(prepareSimulation(env, { ...meta, sessionId: session.id }, simSession, v, { pace: 'steady', variant: null }));
+      // Init only (see GET /simulation): the poll engine owns all model work.
+      ctx.waitUntil(initSimulation(env, simSession, { pace: 'steady', variant: null }));
     }
     const structureOut = sessionStructure(session);
     return json({

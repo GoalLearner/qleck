@@ -63,10 +63,17 @@ function leakIn(res) {
   return null;
 }
 
-// Near-verbatim repeat detection: word-set Jaccard overlap of consecutive
-// questions (the "asked me the same thing twice" defect, 2026-08-24).
+// Near-verbatim repeat detection: word-set Jaccard overlap of question CORES
+// (the "asked me the same thing twice" defect, 2026-08-24). Cores, because
+// the model dresses repeats in fresh preambles that dilute whole-text overlap
+// below every threshold — mirror of the server's questionCore.
+function questionCore(t) {
+  const segments = t.split(/(?<=[?])\s+|[—:;]\s+/).map(s => s.trim()).filter(Boolean);
+  const asks = segments.filter(s => s.includes('?'));
+  return (asks.length ? asks[asks.length - 1] : segments[segments.length - 1] ?? t);
+}
 function similarity(a, b) {
-  const words = t => new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
+  const words = t => new Set(questionCore(t).toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
   const A = words(a), B = words(b);
   const inter = [...A].filter(w => B.has(w)).length;
   const union = new Set([...A, ...B]).size;
@@ -90,17 +97,36 @@ async function runGoalFixture(f) {
   const askedTexts = [];
   let dupQuestion = false;
   let badChip = null;
-  // A question that arrives with no quick-picks renders as a bare text prompt.
-  // Nothing downstream errors — it just silently gets harder to answer — so
-  // the harness is the only place this can be caught.
-  let minChips = null;
+  // Chip ergonomics, owner spec 2026-08-29: a question is either TAPPABLE
+  // (3+ chips) or an EXACT-FIGURE ask (bodyweight, 1RM, dollars, followers,
+  // views — the plan does arithmetic on these, so bucket chips would make
+  // every derived number arbitrary; v24's sin through the side door). A
+  // chip-less question that is NOT an exact ask silently gets harder to
+  // answer, and a RANGE chip on an exact ask is the bug itself — the
+  // harness is the only place either can be caught.
+  const EXACT_ASK = /\b(weigh(t|ing)?|body\s?weight|1\s?rm|one[-\s]rep|best (set|lift|effort)|current (bench|squat|deadlift|lift)|saved|savings|balance|contribut|income|set aside|followers?|subscribers?|avg\.? views|average views|views per|opens per)\b/i;
+  // A STAT BUCKET is a range-shaped chip carrying an arithmetic unit
+  // (weight, money, audience counts). v27 removed every legitimate one from
+  // the manifests, so ANY sighting on ANY question is the model re-inventing
+  // the owner's "these ranges are so wide" bug. Time-capacity buckets
+  // ("Under 2 h", "Under 1 year") stay legal — those fields are categorical
+  // by spec.
+  const RANGE_SHAPE = /\b(under|over|about)\b|[0-9][^a-z]{0,3}[-–][^a-z]{0,3}[0-9]/i;
+  const STAT_UNIT = /kg\b|lbs?\b|\$|dollar|follower|subscriber|view/i;
+  let thinChipQ = null;      // a non-exact question with <3 chips
+  let statBucketChip = null; // an invented arithmetic-range chip, anywhere
   while (res.status === 200 && res.body.type === 'question' && questions < 7) {
     questions++;
     const q = res.body.question;
-    if (askedTexts.length && similarity(askedTexts[askedTexts.length - 1], q.question) > 0.75) dupQuestion = true;
+    // Against ALL prior questions, not just the last — a field chased four
+    // times in lightly reworded forms (the read-nightly regression) is a
+    // repeat even when no two adjacent askings cross the threshold.
+    if (askedTexts.some(prev => similarity(prev, q.question) > 0.75)) dupQuestion = true;
     askedTexts.push(q.question);
     const chips = q.suggested_answers ?? [];
-    minChips = minChips === null ? chips.length : Math.min(minChips, chips.length);
+    if (!EXACT_ASK.test(q.question) && chips.length < MIN_CHIPS) thinChipQ = q.question;
+    const bucket = chips.find(c => RANGE_SHAPE.test(c) && STAT_UNIT.test(c));
+    if (bucket) statBucketChip = bucket;
     const chip = chips.find(c => DELEGATION_CHIP.test(c));
     if (chip) badChip = chip;
     const answer = answers.length ? answers.shift() : GENERIC_ANSWER;
@@ -140,7 +166,7 @@ async function runGoalFixture(f) {
   // model kept choosing to ask; this is the alarm for that regression.
   if (f.maxQuestions && questions > f.maxQuestions) pass = false;
   if (dupQuestion || badChip) pass = false;
-  if (minChips !== null && minChips < MIN_CHIPS) pass = false;
+  if (thinChipQ || statBucketChip) pass = false;
 
   let protocolOk = null;
   let protocol = null;
@@ -176,7 +202,7 @@ async function runGoalFixture(f) {
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
     pillarsOk,
-    pass, leak, protocolOk, questions, dupQuestion, badChip, minChips, probability, probOk, paceOk, ms: Date.now() - t0,
+    pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -279,8 +305,10 @@ const bars = {
     goalResults.every(r => r.paceOk),
   'physique protocols cover the pillars':
     goalResults.every(r => r.pillarsOk === null || r.pillarsOk === true),
-  [`every question ships ${MIN_CHIPS}+ chips`]:
-    goalResults.every(r => r.minChips === null || r.minChips >= MIN_CHIPS),
+  [`questions tappable (${MIN_CHIPS}+ chips) or exact-figure asks`]:
+    goalResults.every(r => !r.thinChipQ),
+  'no invented stat-bucket chips (kg/lbs/$/counts)':
+    goalResults.every(r => !r.statBucketChip),
 };
 const allPass = goalResults.every(r => r.pass) && Object.values(bars).every(Boolean);
 

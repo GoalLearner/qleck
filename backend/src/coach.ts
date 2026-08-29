@@ -7,7 +7,7 @@ import {
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
 import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
-import { DOMAINS, MANIFESTS, isDomain, missingRequired, type Domain } from './manifests';
+import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
   type ScenarioRun, type SimulationState, type TemplateCtx,
@@ -98,9 +98,20 @@ export interface Verdict {
   pace_options?: PaceOption[];
 }
 
-/** Word-set Jaccard similarity — the server-side repeat detector. */
+/** The interrogative core of a coach question. The model dresses repeats in
+ *  fresh preambles ("One more thing that'll set how gently we ramp — ") and
+ *  whole-text Jaccard dilutes below every threshold; the actual ask is the
+ *  LAST question-marked segment, so compare that. Third-time training-history
+ *  chase on the 10k-steps fixture is the proof case. */
+function questionCore(t: string): string {
+  const segments = t.split(/(?<=[?])\s+|[—:;]\s+/).map(s => s.trim()).filter(Boolean);
+  const asks = segments.filter(s => s.includes('?'));
+  return (asks.length ? asks[asks.length - 1] : segments[segments.length - 1] ?? t);
+}
+
+/** Word-set Jaccard similarity over question CORES — the repeat detector. */
 function questionSimilarity(a: string, b: string): number {
-  const words = (t: string) => new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
+  const words = (t: string) => new Set(questionCore(t).toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
   const A = words(a);
   const B = words(b);
   let inter = 0;
@@ -414,8 +425,8 @@ export async function coachTurn(
     steer.push({
       role: 'user',
       content:
-        `[app note] MISSING REQUIRED FIELDS for this ${structure.domain} goal — your next question must collect one or more of these (batch related ones; quick-picks become suggested_answers). If one was already asked and answered vaguely, you may ask it ONCE more in genuinely different words — never a rephrase of the same sentence — and if it stays vague, move to the next field:\n` +
-        missing.map(f => `- ${f.key}: ${f.reason}${f.quickPicks ? ` (quick-picks: ${f.quickPicks.join(' | ')})` : ''}`).join('\n'),
+        `[app note] MISSING REQUIRED FIELDS for this ${structure.domain} goal — your next question must collect one or more of these (batch related ones; quick-picks become suggested_answers; ONLY fields marked EXACT VALUE request a specific figure and get no range/bucket chips — do not demand exact numbers for other fields). HARD CEILING: at most TWO questions per field across the whole interview, in genuinely different words — never a rephrase. If the second ask still doesn't land the answer, take the best available reading or leave it for an explicit assumption and MOVE ON to the next field:\n` +
+        missing.map(fieldForPrompt).join('\n'),
     });
   }
   const result = await callModel(env, { ...meta, kind: mustVerdict ? 'verdict_turn' : 'coach_turn' }, {
@@ -1014,10 +1025,15 @@ export async function simStep(
   if (!session.draft_protocol) {
     const gen = await generateProtocol(env, meta, session, verdict, config.pace, config.variant ?? undefined);
     if (!gen.protocol) {
-      // Persist nothing fatal — the next poll simply tries again. Three
-      // consecutive whiffs would mean the provider is down, which the
-      // request layer already surfaces its own way.
-      await persistSim(env, session.id, { ...sim, status: 'generating', working_until: undefined });
+      // Count the whiff. Three dead drafts means generation for this goal is
+      // genuinely failing — surface 'failed' so the page falls back to the
+      // rubric drivers instead of re-burning tokens on every poll forever.
+      const attempts = (sim.gen_attempts ?? 0) + 1;
+      if (attempts >= 3) {
+        await persistSim(env, session.id, { ...sim, status: 'failed', error: 'generation_failed', gen_attempts: attempts, working_until: undefined });
+        return 'failed';
+      }
+      await persistSim(env, session.id, { ...sim, status: 'generating', gen_attempts: attempts, working_until: undefined });
       return 'worked';
     }
     session.draft_protocol = JSON.stringify(gen.protocol);
@@ -1107,31 +1123,5 @@ export async function initSimulation(
   };
   session.simulation = JSON.stringify(sim);
   await persistSim(env, session.id, sim);
-}
-
-/**
- * Best-effort completion loop for environments that allow it (wrangler dev,
- * and however far production lets waitUntil run). Every unit persists, so
- * when this is killed mid-flight the client's polls finish the job.
- */
-export async function prepareSimulation(
-  env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
-  session: SessionRow,
-  verdict: Verdict,
-  config: SimConfig,
-): Promise<void> {
-  try {
-    await initSimulation(env, session, config);
-    for (let i = 0; i < 12; i++) {
-      const fresh = await env.DB
-        .prepare(`SELECT * FROM coach_sessions WHERE id = ?`)
-        .bind(session.id)
-        .first<SessionRow>();
-      if (!fresh) return;
-      const r = await simStep(env, meta, fresh);
-      if (r === 'done' || r === 'failed' || r === 'idle') return;
-    }
-  } catch { /* the poll-driven stepper finishes whatever this could not */ }
 }
 

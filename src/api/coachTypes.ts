@@ -61,6 +61,50 @@ export type CoachTurnResponse =
   | { sessionId: string; type: 'verdict'; verdict: Verdict; domain?: string | null; answers?: Record<string, string>; missing_required?: string[] }
   | { sessionId: string; type: 'refused'; refusal: CoachRefusal };
 
+/* ── 2c simulation (mirrors backend/src/scenarios.ts) ─────────────────── */
+
+export interface ScenarioWeek {
+  week: number;
+  state_value: number;
+  adherence: number;
+  event?: string;
+}
+
+export interface ScenarioRun {
+  key: string;
+  name: string;
+  short: string;
+  hit: boolean;
+  first_failure_key: string | null;
+  first_failure_reason: string | null;
+  fail_week?: number;
+  mark?: string;
+  cg?: boolean;
+  state_unit?: string;
+  weeks: ScenarioWeek[];
+  invalid?: boolean;
+}
+
+export interface SimulationState {
+  status: 'generating' | 'simulating' | 'done' | 'failed';
+  config: { pace: string; variant: string | null };
+  granularity?: 'weeks' | 'days';
+  steps?: number;
+  state_unit?: string;
+  lanes: ScenarioRun[];
+  planned: { key: string; name: string; short: string }[];
+  odds?: { rubric: number; pass_rate: number; blended: number };
+  factors?: { key: string; direction: 'up' | 'down'; weight: number }[];
+  error?: string;
+}
+
+export interface SimulationPoll {
+  sessionId: string;
+  simulation: SimulationState | null;
+  draft_ready: boolean;
+  current_odds: number | null;
+}
+
 export interface StepAssumption {
   step_id: string;
   title: string;

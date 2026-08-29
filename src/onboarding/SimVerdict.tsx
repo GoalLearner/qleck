@@ -1,0 +1,386 @@
+// The simulated verdict (canvas turn 6, "Verdict, earned"): the dial waits
+// for the scenario lanes. Runs race a dashed finish as the backend resolves
+// them; fails stop cold with a marker; the lanes settle into a receipt strip
+// and only then does the dial fill with the BLENDED number. Tap a receipt
+// bar for that run's step-by-step; factors carry kill/carry tags and trace
+// to answers; the drawer edits an input and replays everything with a
+// before/after delta. Ported to Electric Night tokens (the canvas draws the
+// cream theme of the same page).
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, Text, View } from 'react-native';
+import { night, nightFonts } from './theme';
+import { NightInput } from './ui';
+import { OddsDial } from './OddsDial';
+import type { ScenarioRun, SimulationState } from '../api/coachTypes';
+
+const MONO = 'ui-monospace, Menlo, monospace';
+const FAIL = '#E07A6A';           // the canvas' #c96f5f, lifted for night
+const AMBER = '#F7B32B';
+
+/* ── one lane ──────────────────────────────────────────────────────────── */
+
+function Lane({ run, settled, railW }: { run: ScenarioRun; settled: boolean; railW: number }) {
+  // idle → running (1.4s fill, undecided ink) → hit (snap green, ✓ pops) /
+  // failed (stops at fail_week ÷ steps, dot + mono marker). Spec 6c.
+  const anim = useRef(new Animated.Value(0)).current;
+  const [done, setDone] = useState(false);
+  const steps = run.weeks.length || 1;
+  const endFrac = run.hit ? 1 : Math.max(0.08, Math.min(0.96, (run.fail_week ?? steps) / steps));
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: endFrac, duration: settled ? 0 : 1400,
+      easing: Easing.out(Easing.cubic), useNativeDriver: false,
+    }).start(() => setDone(true));
+  }, [anim, endFrac, settled]);
+  const fillColor = done || settled ? (run.hit ? night.accent : FAIL) : 'rgba(242,245,244,0.32)';
+  const width = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.max(1, railW)] });
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, height: 26 }}>
+      <Text style={{ width: 70, textAlign: 'right', fontFamily: MONO, fontSize: 8, letterSpacing: 0.6, color: done || settled ? 'rgba(242,245,244,0.6)' : 'rgba(242,245,244,0.4)' }}>
+        {run.short}
+      </Text>
+      <View style={{ flex: 1, height: 26, marginRight: 16, justifyContent: 'center' }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, height: 3, borderRadius: 2, backgroundColor: 'rgba(242,245,244,0.07)' }} />
+        <View style={{ position: 'absolute', right: 0, top: 4, bottom: 4, borderLeftWidth: 2, borderStyle: 'dashed', borderLeftColor: 'rgba(242,245,244,0.22)' }} />
+        <Animated.View style={{ position: 'absolute', left: 0, height: 3, borderRadius: 2, backgroundColor: fillColor, width }} />
+        {(done || settled) && run.hit ? (
+          <Text style={{ position: 'absolute', right: -15, fontFamily: MONO, fontSize: 10, fontWeight: '700', color: night.accent }}>✓</Text>
+        ) : null}
+        {(done || settled) && !run.hit ? (
+          <>
+            <View style={{ position: 'absolute', left: `${endFrac * 100}%`, marginLeft: -3, width: 7, height: 7, borderRadius: 4, backgroundColor: FAIL }} />
+            {run.mark ? (
+              <Text numberOfLines={1} style={{ position: 'absolute', left: `${Math.min(endFrac, 0.5) * 100}%`, top: -6, maxWidth: '55%', fontFamily: MONO, fontSize: 7.5, letterSpacing: 0.4, color: FAIL }}>
+                {run.fail_week ? `${run.weeks.length > 7 ? 'w' : 'd'}${run.fail_week} · ${run.mark}` : run.mark}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/* ── the block ─────────────────────────────────────────────────────────── */
+
+export function SimVerdict({
+  sim, prevSim, editedKey, rubricOdds, sprinting,
+  answers, quickPicks, missingRequired,
+  onEditInput,
+}: {
+  sim: SimulationState | null;
+  prevSim: SimulationState | null;
+  editedKey: string | null;
+  rubricOdds?: number;
+  sprinting?: boolean;
+  answers: Record<string, string>;
+  quickPicks: Record<string, string[]>;
+  missingRequired: string[];
+  onEditInput: (key: string, value: string) => void;
+}) {
+  const [railW, setRailW] = useState(0);
+  const [phase, setPhase] = useState<'lanes' | 'settle' | 'done'>('lanes');
+  const [detail, setDetail] = useState<number>(-1);
+  const [factorOpen, setFactorOpen] = useState<number>(-1);
+  const [drawer, setDrawer] = useState(false);
+  const [drawerSel, setDrawerSel] = useState<Record<string, string>>({});
+  const [compare, setCompare] = useState(false);
+  const settleT = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const lanes = sim?.lanes ?? [];
+  const planned = sim?.planned ?? [];
+  const running = sim ? sim.status === 'generating' || sim.status === 'simulating' : true;
+  const doneStatus = sim?.status === 'done';
+  const stepUnit = sim?.granularity === 'days' ? 'D' : 'W';
+
+  // Lanes → hold ~1.4s after the last resolves → settle → dial.
+  useEffect(() => {
+    if (doneStatus && phase === 'lanes') {
+      settleT.current = setTimeout(() => setPhase('settle'), 1700);
+    }
+    if (phase === 'settle') {
+      settleT.current = setTimeout(() => setPhase('done'), 500);
+    }
+    return () => { if (settleT.current) clearTimeout(settleT.current); };
+  }, [doneStatus, phase]);
+  // A re-run resets the theater.
+  useEffect(() => { if (running && phase !== 'lanes') { setPhase('lanes'); setDetail(-1); } }, [running, phase]);
+
+  const hits = lanes.filter(l => l.hit && !l.invalid).length;
+  const valid = lanes.filter(l => !l.invalid).length;
+  const blended = sim?.odds?.blended;
+  const rubric = sim?.odds?.rubric ?? rubricOdds;
+  const hasContingency = lanes.some(l => l.cg);
+
+  const judge = useMemo(() => {
+    if (!doneStatus) return `Running ${planned.length || 6} honest futures of your plan — the dial waits for them.`;
+    const worst = lanes.find(l => !l.hit && !l.invalid);
+    const why = worst?.first_failure_reason ? ` — ${worst.first_failure_reason.split('—')[0].trim().toLowerCase()}` : '';
+    return `${hits} of ${valid} land. Judged ${blended}, not ${rubric}${why ? why.slice(0, 90) : ''}.`;
+  }, [doneStatus, hits, valid, blended, rubric, lanes, planned.length]);
+
+  // Factors from the sim, decorated with kill/carry tags + trace + linkage.
+  const factors = useMemo(() => {
+    const fs = sim?.factors ?? [];
+    return fs.map(f => {
+      const killed = lanes.filter(l => !l.hit && !l.invalid && l.first_failure_key === f.key);
+      const tag = f.direction === 'down'
+        ? `failed ${killed.length} of ${valid}`
+        : `carried ${hits} of ${valid}`;
+      const linked = killed.map(l => l.short).join(', ');
+      return { ...f, tag, linked };
+    });
+  }, [sim?.factors, lanes, valid, hits]);
+
+  const fmtVal = (v: number) => {
+    const u = sim?.state_unit ?? '';
+    const n = Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Math.round(v * 10) / 10;
+    return u.startsWith('$') || u.includes('$') ? `$${n}` : `${n}`;
+  };
+
+  useEffect(() => { if (detail >= lanes.length) setDetail(-1); }, [detail, lanes.length]);
+  const det = detail >= 0 && detail < lanes.length ? lanes[detail] : null;
+  const detPts = useMemo(() => {
+    if (!det) return [];
+    const w = det.weeks;
+    if (w.length <= 4) return w;
+    // The canvas shows notable points: first, eventful, fail, last.
+    const idx = new Set<number>([0, w.length - 1]);
+    w.forEach((p, i) => { if (p.event) idx.add(i); });
+    if (det.fail_week) idx.add(Math.min(w.length - 1, det.fail_week - 1));
+    return [...idx].sort((a, b) => a - b).slice(0, 5).map(i => w[i]);
+  }, [det]);
+
+  return (
+    <View>
+      {/* the race / the dial */}
+      <View style={{ height: 238, justifyContent: 'center' }} onLayout={e => setRailW(Math.max(0, e.nativeEvent.layout.width - 95 - 16))}>
+        {phase !== 'done' ? (
+          <View style={{ gap: 6, opacity: phase === 'settle' ? 0.25 : 1 }}>
+            {(planned.length ? planned : Array.from({ length: 6 }, (_, i) => ({ key: String(i), name: '', short: '·' }))).map((p, i) => {
+              const run = lanes.find(l => l.key === p.key);
+              return run ? (
+                <Lane key={p.key} run={run} settled={false} railW={railW} />
+              ) : (
+                <View key={p.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, height: 26 }}>
+                  <Text style={{ width: 70, textAlign: 'right', fontFamily: MONO, fontSize: 8, letterSpacing: 0.6, color: 'rgba(242,245,244,0.35)' }}>{p.short}</Text>
+                  <View style={{ flex: 1, height: 26, marginRight: 16, justifyContent: 'center' }}>
+                    <View style={{ position: 'absolute', left: 0, right: 0, height: 3, borderRadius: 2, backgroundColor: 'rgba(242,245,244,0.07)' }} />
+                    <View style={{ position: 'absolute', right: 0, top: 4, bottom: 4, borderLeftWidth: 2, borderStyle: 'dashed', borderLeftColor: 'rgba(242,245,244,0.22)' }} />
+                  </View>
+                </View>
+              );
+            })}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 79, paddingRight: 16 }}>
+              <Text style={{ fontFamily: MONO, fontSize: 7.5, color: 'rgba(242,245,244,0.35)' }}>{stepUnit}1</Text>
+              <Text style={{ fontFamily: MONO, fontSize: 7.5, color: 'rgba(242,245,244,0.35)' }}>{stepUnit}{sim?.steps ?? ''} · TARGET</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={{ alignItems: 'center' }}>
+            <OddsDial
+              value={blended ?? rubric ?? 75}
+              color={sprinting ? night.warn : night.accent}
+              condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
+              size={236}
+            />
+          </View>
+        )}
+      </View>
+
+      {/* receipt strip */}
+      {phase === 'done' ? (
+        <View>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+            {lanes.map((l, i) => (
+              <Pressable
+                key={l.key}
+                onPress={() => setDetail(cur => (cur === i ? -1 : i))}
+                style={{
+                  width: 22, height: 8, borderRadius: 4,
+                  backgroundColor: l.invalid ? 'rgba(242,245,244,0.15)' : l.hit ? night.accent : FAIL,
+                  borderWidth: 2, borderColor: detail === i ? night.text : 'transparent',
+                }}
+              />
+            ))}
+          </View>
+          <Text style={{ marginTop: 7, textAlign: 'center', fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.6, color: det ? (det.hit ? night.accentText : FAIL) : 'rgba(242,245,244,0.4)' }}>
+            {det
+              ? `${det.short} — ${det.hit ? 'LANDS' : (det.mark ?? 'FAILS').toUpperCase()}`
+              : `${hits} OF ${valid} LAND · TAP A RUN FOR ITS ${sim?.granularity === 'days' ? 'DAYS' : 'WEEKS'}`}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* re-run delta + compare */}
+      {phase === 'done' && prevSim?.odds && sim?.odds && editedKey ? (
+        <View style={{ marginTop: 9 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
+            <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: 'rgba(242,245,244,0.4)', textDecorationLine: 'line-through' }}>{prevSim.odds.blended}</Text>
+            <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.accent }}>→</Text>
+            <Text style={{ fontFamily: nightFonts.display, fontSize: 17, color: night.accent }}>{sim.odds.blended}</Text>
+            <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.6, color: 'rgba(242,245,244,0.45)' }}>CHANGED: {editedKey.toUpperCase()}</Text>
+            <Pressable onPress={() => setCompare(c => !c)} style={{ borderWidth: 1, borderColor: 'rgba(242,245,244,0.2)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
+              <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.6, color: 'rgba(242,245,244,0.6)' }}>{compare ? 'HIDE' : 'COMPARE'}</Text>
+            </Pressable>
+          </View>
+          {compare ? (
+            <View style={{ marginTop: 9, padding: 10, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(242,245,244,0.15)', borderRadius: 12, gap: 7 }}>
+              {[{ lab: 'BEFORE', s: prevSim, op: 0.45 }, { lab: 'AFTER', s: sim, op: 1 }].map(row => (
+                <View key={row.lab} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+                  <Text style={{ width: 76, fontFamily: MONO, fontSize: 8, letterSpacing: 0.6, color: 'rgba(242,245,244,0.5)' }}>{row.lab} · {row.s.odds?.blended}</Text>
+                  <View style={{ flexDirection: 'row', gap: 5, opacity: row.op }}>
+                    {row.s.lanes.map(l => (
+                      <View key={l.key} style={{ width: 16, height: 6, borderRadius: 3, backgroundColor: l.hit ? night.accent : FAIL }} />
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* judge line */}
+      <View style={{ minHeight: 40, justifyContent: 'center', paddingTop: 6 }}>
+        <Text style={{ textAlign: 'center', fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18, color: 'rgba(242,245,244,0.6)' }}>{judge}</Text>
+      </View>
+
+      {/* run detail */}
+      {det ? (
+        <View style={{ marginTop: 10, backgroundColor: night.surface, borderWidth: 1, borderColor: det.hit ? night.accentFaint : 'rgba(224,122,106,0.4)', borderRadius: 16, padding: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            <Text style={{ fontFamily: MONO, fontSize: 10, letterSpacing: 0.8, color: night.text, fontWeight: '700' }}>{det.short}</Text>
+            <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: det.hit ? night.accentSoft : 'rgba(224,122,106,0.15)' }}>
+              <Text style={{ fontFamily: MONO, fontSize: 8, letterSpacing: 0.8, fontWeight: '700', color: det.hit ? night.accentText : FAIL }}>{det.hit ? 'LANDS' : 'FAILS'}</Text>
+            </View>
+            <View style={{ flex: 1 }} />
+            <Pressable onPress={() => setDetail(-1)} hitSlop={8}><Text style={{ color: 'rgba(242,245,244,0.4)', fontSize: 14 }}>×</Text></Pressable>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 7, marginTop: 11 }}>
+            {detPts.map(pt => (
+              <View key={pt.week} style={{ flex: 1, minWidth: 0, borderWidth: 1, borderColor: pt.event ? 'rgba(247,179,43,0.35)' : 'rgba(242,245,244,0.1)', borderRadius: 11, padding: 8 }}>
+                <Text style={{ fontFamily: MONO, fontSize: 8, letterSpacing: 0.6, color: 'rgba(242,245,244,0.5)', fontWeight: '700' }}>{stepUnit}{pt.week}</Text>
+                <Text style={{ marginTop: 3, fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>{fmtVal(pt.state_value)}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 }}>
+                  <View style={{ width: 26, height: 3, borderRadius: 2, backgroundColor: 'rgba(242,245,244,0.12)' }}>
+                    <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 2, backgroundColor: pt.adherence >= 0.7 ? night.accent : AMBER, width: `${Math.round(pt.adherence * 100)}%` }} />
+                  </View>
+                  <Text style={{ fontFamily: MONO, fontSize: 7.5, color: 'rgba(242,245,244,0.4)' }}>{Math.round(pt.adherence * 100)}%</Text>
+                </View>
+                {pt.event ? (
+                  <Text numberOfLines={2} style={{ marginTop: 5, fontFamily: MONO, fontSize: 8.5, lineHeight: 12, color: det.hit ? 'rgba(242,245,244,0.55)' : FAIL }}>{pt.event}</Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+          {det.first_failure_reason ? (
+            <Text style={{ marginTop: 10, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: 'rgba(242,245,244,0.6)' }}>{det.first_failure_reason}</Text>
+          ) : null}
+          {det.cg ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 9, paddingTop: 9, borderTopWidth: 1, borderStyle: 'dashed', borderTopColor: 'rgba(242,245,244,0.12)' }}>
+              <Text style={{ color: AMBER, fontSize: 10 }}>⚑</Text>
+              <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.6, color: 'rgba(242,245,244,0.55)' }}>ANSWERED IN THE PLAN · FIRST-SLIP PROTOCOL</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* factors */}
+      {phase === 'done' && factors.length > 0 ? (
+        <View style={{ marginTop: 14, gap: 8 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: 4 }}>
+            <Text style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: 1.6, color: 'rgba(242,245,244,0.45)', fontWeight: '700' }}>WHAT MOVES THE NUMBER</Text>
+            <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: 'rgba(242,245,244,0.35)' }}>FROM THE RUNS</Text>
+          </View>
+          {factors.map((f, i) => (
+            <View key={f.key} style={{ backgroundColor: night.surface, borderWidth: 1, borderColor: factorOpen === i ? 'rgba(242,245,244,0.3)' : 'rgba(242,245,244,0.1)', borderRadius: 14, overflow: 'hidden' }}>
+              <Pressable onPress={() => setFactorOpen(cur => (cur === i ? -1 : i))} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13 }}>
+                <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', color: f.direction === 'down' ? FAIL : night.accentText }}>{String(i + 1).padStart(2, '0')}</Text>
+                <Text style={{ flex: 1, fontFamily: nightFonts.bodyMedium, fontSize: 13, color: night.text }}>{f.key.replace(/_/g, ' ')}</Text>
+                <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.5, color: f.direction === 'down' ? FAIL : night.accentText }}>{f.tag}</Text>
+              </Pressable>
+              {factorOpen === i ? (
+                <View style={{ paddingHorizontal: 13, paddingBottom: 12, paddingLeft: 38 }}>
+                  <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.7, color: 'rgba(242,245,244,0.45)' }}>FROM: {f.key.toUpperCase()}{f.linked ? ` · KILLS ${f.linked}` : ''}</Text>
+                </View>
+              ) : null}
+            </View>
+          ))}
+          {hasContingency ? (
+            <View style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(247,179,43,0.4)', borderRadius: 14, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={{ color: AMBER, fontSize: 11 }}>⚑</Text>
+              <Text style={{ flex: 1, fontFamily: nightFonts.bodyMedium, fontSize: 13, color: night.text }}>First-slip protocol — built from the failed runs</Text>
+              <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.5, color: AMBER }}>IN THE PLAN</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* drawer trigger */}
+      {phase === 'done' && Object.keys(answers).length > 0 ? (
+        <View style={{ alignItems: 'center', marginTop: 12 }}>
+          <Pressable onPress={() => setDrawer(true)} style={{ borderWidth: 1, borderColor: 'rgba(242,245,244,0.18)', borderRadius: 999, paddingHorizontal: 13, paddingVertical: 6 }}>
+            <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.8, color: 'rgba(242,245,244,0.6)' }}>CHANGE AN INPUT →</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {/* the inputs drawer */}
+      {drawer ? (
+        <View style={{ marginTop: 12, backgroundColor: night.surfaceDeep, borderWidth: 1, borderColor: 'rgba(242,245,244,0.12)', borderRadius: 18, padding: 16 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: 1.6, color: 'rgba(242,245,244,0.45)', fontWeight: '700' }}>YOUR INPUTS</Text>
+            <Pressable onPress={() => setDrawer(false)} hitSlop={8}><Text style={{ color: 'rgba(242,245,244,0.4)', fontSize: 15 }}>×</Text></Pressable>
+          </View>
+          <Text style={{ marginTop: 6, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: 'rgba(242,245,244,0.55)' }}>
+            The verdict is built from these. Edit one and Qoach re-runs the futures — about half a minute.
+          </Text>
+          <View style={{ marginTop: 12, gap: 10 }}>
+            {Object.entries(answers).map(([key, val]) => {
+              const sel = drawerSel[key];
+              const assumed = missingRequired.includes(key);
+              return (
+                <View key={key} style={{ borderWidth: 1, borderColor: sel ? night.accentBorder : 'rgba(242,245,244,0.12)', borderRadius: 14, padding: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(242,245,244,0.45)' }}>{key.replace(/_/g, ' ').toUpperCase()}</Text>
+                    {assumed ? (
+                      <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(247,179,43,0.4)' }}>
+                        <Text style={{ fontFamily: MONO, fontSize: 7.5, letterSpacing: 0.7, color: AMBER, fontWeight: '700' }}>ASSUMED</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={{ marginTop: 4, fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>{sel ?? val}</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                    {(quickPicks[key] ?? []).map(pick => (
+                      <Pressable key={pick} onPress={() => setDrawerSel(cur => ({ ...cur, [key]: pick }))} style={{ paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: sel === pick ? night.accentBorder : 'rgba(242,245,244,0.15)', backgroundColor: sel === pick ? night.accentSoft : 'transparent' }}>
+                        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 11, color: night.text }}>{pick}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <NightInput
+                    value={sel && !(quickPicks[key] ?? []).includes(sel) ? sel : ''}
+                    onChangeText={t => setDrawerSel(cur => ({ ...cur, [key]: t }))}
+                    placeholder="Or type the real value"
+                    style={{ marginTop: 8, height: 38, fontSize: 12 }}
+                  />
+                  {sel && sel.trim() && sel !== val ? (
+                    <Pressable
+                      onPress={() => { setDrawer(false); setDrawerSel({}); onEditInput(key, sel.trim()); }}
+                      style={{ marginTop: 9, height: 38, borderRadius: 11, backgroundColor: night.accent, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Text style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 0.8, color: night.accentInk, fontWeight: '700' }}>↻ RE-RUN · {key.replace(/_/g, ' ').toUpperCase()}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+          <Text style={{ marginTop: 12, fontFamily: MONO, fontSize: 8.5, lineHeight: 13, letterSpacing: 0.5, color: 'rgba(242,245,244,0.35)' }}>
+            RE-RUNS REDRAW THE LANES — THE DIAL WAITS FOR THEM. NOTHING HERE IS A POPULATION STAT.
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}

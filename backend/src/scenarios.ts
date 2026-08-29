@@ -15,7 +15,18 @@ export const BLEND = 0.5;
 /** Parallelism cap for scenario calls (owner spec). */
 export const SCENARIO_CONCURRENCY = 6;
 
+export type SimGranularity = 'weeks' | 'days';
+
+/** Short horizons simulate in days — a 1-week goal has one week but seven
+ *  lived days, and the lanes need the texture. */
+export function granularityFor(durationWeeks: number): { granularity: SimGranularity; steps: number } {
+  return durationWeeks <= 2
+    ? { granularity: 'days', steps: durationWeeks * 7 }
+    : { granularity: 'weeks', steps: durationWeeks };
+}
+
 export interface ScenarioWeek {
+  /** Step index, 1-based — a week or a day per the sim's granularity. */
   week: number;
   /** Progress toward the goal in its own primary unit (lbs on the bar,
    *  dollars saved, followers, 5k seconds…). Monotonicity NOT required —
@@ -30,9 +41,17 @@ export interface ScenarioWeek {
 export interface ScenarioRun {
   key: string;
   name: string;
+  /** Short mono label for the lane rail (≤10 chars), design lexicon. */
+  short: string;
   hit: boolean;
   first_failure_key: string | null;
   first_failure_reason: string | null;
+  /** hit=false: the step (week/day) the run died on, and a ≤4-word marker
+   *  for the lane ("d2 · work break slip" renders from these). */
+  fail_week?: number;
+  mark?: string;
+  /** This failure is answered by a contingency step in the plan. */
+  cg?: boolean;
   weeks: ScenarioWeek[];
   /** Lane rejected by the validator after a retry — excluded from pass rate. */
   invalid?: boolean;
@@ -42,8 +61,14 @@ export interface SimulationState {
   status: 'generating' | 'simulating' | 'done' | 'failed';
   /** Which build this simulation belongs to. */
   config: { pace: string; variant: string | null };
+  /** weeks for long goals, days for horizons ≤ 2 weeks. */
+  granularity?: SimGranularity;
+  steps?: number;
+  /** The goal's primary metric unit, from the runs ("cigarettes/day",
+   *  "lbs on the bar", "$ saved"). */
+  state_unit?: string;
   lanes: ScenarioRun[];
-  planned: { key: string; name: string }[];
+  planned: { key: string; name: string; short: string }[];
   odds?: { rubric: number; pass_rate: number; blended: number };
   factors?: { key: string; direction: 'up' | 'down'; weight: number }[];
   error?: string;
@@ -70,6 +95,8 @@ export const RATE_VARIABLE: Record<Domain, string> = {
 export interface ScenarioTemplate {
   key: string;
   name: string;
+  /** ≤10-char mono rail label (design lexicon). */
+  short: string;
   domains?: Domain[];             // template applies only to these (absent = all)
   condition: (ctx: TemplateCtx) => string;
 }
@@ -92,24 +119,28 @@ export const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
   {
     key: 'baseline',
     name: 'As planned',
+    short: 'BASELINE',
     condition: () =>
       'The person shows up the way a motivated-but-human adult does: roughly 85% adherence, ordinary life friction, no unusual events. This is the honest expected case, not the fantasy case.',
   },
   {
     key: 'adherence_60',
     name: 'Rough patch',
+    short: 'ADHERE 60%',
     condition: () =>
       'Adherence runs at ~60% for the whole plan: skipped sessions most weeks, targets frequently missed, streaks repeatedly broken and restarted. Model what this level of showing up actually produces.',
   },
   {
     key: 'slow_response',
     name: 'Slow responder',
+    short: 'SLOW RESP',
     condition: (ctx) =>
       `The person executes at planned adherence (~85%) but their ${RATE_VARIABLE[ctx.domain]} is 30% lower than the plan assumes. Effort is there; the response is not. Model where the trajectory lands.`,
   },
   {
     key: 'disruption',
     name: 'Life happens',
+    short: 'DISRUPTION',
     condition: (ctx) => {
       const w = disruptionWindow(ctx.durationWeeks);
       return `Weeks ${w.start}-${w.start + w.len - 1} are LOST entirely (illness, travel, family emergency — zero reps, and the relevant baseline erodes slightly). Before and after, adherence is a normal ~85%. Model the recovery honestly: does the plan's remaining runway absorb the hole?`;
@@ -118,12 +149,14 @@ export const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
   {
     key: 'best_case',
     name: 'Locked in',
+    short: 'BEST CASE',
     condition: () =>
       'The person is locked in: 90% adherence, sleep protected, no major disruptions, and they respond to training/inputs at the expected rate. NOT a fantasy — 90%, not 100%, life still exists.',
   },
   {
     key: 'unexpected_expense',
     name: 'Surprise bill',
+    short: 'SURPRISE $',
     domains: ['money'],
     condition: (ctx) => {
       const w = disruptionWindow(ctx.durationWeeks);
@@ -133,6 +166,7 @@ export const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
   {
     key: 'plateau',
     name: 'The stall',
+    short: 'THE STALL',
     domains: ['strength'],
     condition: (ctx) =>
       `Progress stalls hard at roughly the 60% mark of the runway: the same weights stop moving for 3 weeks despite ~85% adherence (a classic plateau). Model whether the plan's progression rules break the stall in time, given ${ctx.durationWeeks} total weeks.`,
@@ -140,6 +174,7 @@ export const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
   {
     key: 'algorithm_dip',
     name: 'Algorithm turns',
+    short: 'ALGO DIP',
     domains: ['audience'],
     condition: (ctx) => {
       const w = disruptionWindow(ctx.durationWeeks);
@@ -160,7 +195,8 @@ const SCENARIO_TOOL = {
     additionalProperties: false,
     required: ['hit', 'weeks'],
     properties: {
-      hit: { type: 'boolean', description: 'Did this run reach the goal by the final week?' },
+      hit: { type: 'boolean', description: 'Did this run reach the goal by the final step?' },
+      state_unit: { type: 'string', description: "The primary metric's unit, short ('cigarettes/day', 'lbs on the bar', '$ saved', 'followers')." },
       first_failure_key: {
         type: 'string',
         description: "When hit=false: WHICH input broke the run first — one of the collected answer keys (e.g. 'training_days_per_week', 'income_or_contribution_capacity') or the scenario key itself when the imposed condition is the cause. Omit when hit=true.",
@@ -169,9 +205,11 @@ const SCENARIO_TOOL = {
         type: 'string',
         description: 'When hit=false: one plain sentence on how the run died ("the two lost weeks put the taper past June 1st"). Omit when hit=true.',
       },
+      fail_week: { type: 'number', description: 'When hit=false: the 1-based step (week or day) the run died on.' },
+      mark: { type: 'string', description: 'When hit=false: a <=4-word lane marker for that moment ("work break slip", "surprise bill hits"). Omit when hit=true.' },
       weeks: {
         type: 'array',
-        description: 'EXACTLY one entry per week of the protocol, week 1..N.',
+        description: 'EXACTLY one entry per STEP of the simulation (the prompt names the step unit and count), field name stays "week": 1..N.',
         items: {
           type: 'object',
           additionalProperties: false,
@@ -235,15 +273,17 @@ export async function runScenario(
   goalStatement: string,
 ): Promise<ScenarioRun> {
   const base: ScenarioRun = {
-    key: template.key, name: template.name, hit: false,
+    key: template.key, name: template.name, short: template.short, hit: false,
     first_failure_key: null, first_failure_reason: null, weeks: [], invalid: true,
   };
+  const g = granularityFor(ctx.durationWeeks);
+  const stepWord = g.granularity === 'days' ? 'day' : 'week';
   const userMsg =
     `GOAL: ${goalStatement}\n\n` +
     `COLLECTED FACTS:\n${JSON.stringify(ctx.answers)}\n\n` +
     `PROTOCOL (${ctx.durationWeeks} weeks):\n${JSON.stringify({ sessions: protocol.sessions, phases: protocol.phases, milestones: protocol.milestones })}\n\n` +
     `CONDITION FOR THIS RUN — ${template.name}:\n${template.condition(ctx)}\n\n` +
-    `Simulate all ${ctx.durationWeeks} weeks and report the run.`;
+    `Simulate ${stepWord.toUpperCase()} BY ${stepWord.toUpperCase()} — exactly ${g.steps} ${stepWord} entries in weeks[] (field name stays "week"; it means the ${stepWord} index here) — and report the run.`;
   let messages = [{ role: 'user' as const, content: userMsg }];
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -256,14 +296,19 @@ export async function runScenario(
         maxTokens: 4000,
         temperature: 0.3,
       });
-      const run = result.toolInput as Partial<ScenarioRun> | null;
-      const errs = run ? validateRun(run, ctx.durationWeeks, ctx.answers, template.key) : ['no tool output'];
+      const run = result.toolInput as (Partial<ScenarioRun> & { state_unit?: string }) | null;
+      const errs = run ? validateRun(run, g.steps, ctx.answers, template.key) : ['no tool output'];
       if (run && errs.length === 0) {
         return {
-          key: template.key, name: template.name,
+          key: template.key, name: template.name, short: template.short,
           hit: run.hit as boolean,
           first_failure_key: run.hit ? null : (run.first_failure_key ?? null),
           first_failure_reason: run.hit ? null : (run.first_failure_reason ?? null),
+          ...(run.hit ? {} : {
+            fail_week: typeof run.fail_week === 'number' && run.fail_week >= 1 && run.fail_week <= g.steps ? Math.round(run.fail_week) : undefined,
+            mark: run.mark ? String(run.mark).slice(0, 40) : undefined,
+          }),
+          ...(run.state_unit ? { state_unit: String(run.state_unit).slice(0, 40) } : {}),
           weeks: (run.weeks as ScenarioWeek[]).map(w => ({
             week: w.week, state_value: w.state_value,
             adherence: Math.max(0, Math.min(1, w.adherence)),

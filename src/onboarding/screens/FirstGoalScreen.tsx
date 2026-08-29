@@ -13,6 +13,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
 import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, TextButton, Title } from '../ui';
 import { OddsChip, OddsDial } from '../OddsDial';
+import { SimVerdict } from '../SimVerdict';
+import type { SimulationState } from '../../api/coachTypes';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
@@ -417,6 +419,7 @@ const PACE_LABELS: Record<PaceKey, string> = {
 /** Canvas 5a/5c — feasible verdict with the odds dial, at 2-3 paces. */
 function FeasibleVerdict({
   v, pace, onPace, onBuild, onReset, missingRequired,
+  sim, prevSim, editedKey, answers, quickPicks, onEditInput,
 }: {
   v: Verdict;
   pace: PaceKey;
@@ -424,7 +427,16 @@ function FeasibleVerdict({
   onBuild: () => void;
   onReset: () => void;
   missingRequired?: string[];
+  sim?: SimulationState | null;
+  prevSim?: SimulationState | null;
+  editedKey?: string | null;
+  answers?: Record<string, string>;
+  quickPicks?: Record<string, string[]>;
+  onEditInput?: (key: string, value: string) => void;
 }) {
+  // The dial is earned by the lanes whenever a simulation exists for this
+  // pace; a failed pipeline falls back to the classic dial, honestly.
+  const simActive = !!onEditInput && sim?.status !== 'failed' && (sim ? sim.config.pace === pace : true);
   const { width } = useWindowDimensions();
   const wide = width >= 820;
   const [driver, setDriver] = useState(-1);
@@ -434,7 +446,10 @@ function FeasibleVerdict({
   // mirrors the verdict's own numbers, so the fallback path is identical.
   const paces = v.pace_options;
   const chosen = paces?.find(o => o.key === pace) ?? paces?.find(o => o.key === 'steady');
-  const odds = chosen?.success_probability ?? v.success_probability;
+  // The simulated pace's number is the blend once its runs land; unsimulated
+  // pills stay rubric-provisional (owner decision 2).
+  const simBlend = sim?.status === 'done' && sim.config.pace === pace ? sim.odds?.blended : undefined;
+  const odds = simBlend ?? chosen?.success_probability ?? v.success_probability;
   const weeks = chosen?.duration_weeks ?? v.duration_weeks;
   const sprinting = !!paces && chosen?.key === 'sprint';
   const caption =
@@ -477,12 +492,26 @@ function FeasibleVerdict({
         </View>
       ) : null}
       <View style={{ marginTop: 8 }}>
-        <OddsDial
-          value={odds}
-          color={sprinting ? night.warn : night.accent}
-          condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
-          size={wide ? 296 : Math.min(width - 104, 296)}
-        />
+        {simActive ? (
+          <SimVerdict
+            sim={sim ?? null}
+            prevSim={prevSim ?? null}
+            editedKey={editedKey ?? null}
+            rubricOdds={odds}
+            sprinting={sprinting}
+            answers={answers ?? {}}
+            quickPicks={quickPicks ?? {}}
+            missingRequired={missingRequired ?? []}
+            onEditInput={onEditInput!}
+          />
+        ) : (
+          <OddsDial
+            value={odds}
+            color={sprinting ? night.warn : night.accent}
+            condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
+            size={wide ? 296 : Math.max(180, Math.min(width - 104, 296))}
+          />
+        )}
       </View>
       <View style={{ minHeight: 42, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}>
         <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18.5, color: night.textSoft, textAlign: 'center' }}>
@@ -508,7 +537,7 @@ function FeasibleVerdict({
         left={odds !== undefined ? 'WHAT MOVES THE NUMBER' : 'WHAT WILL DECIDE IT'}
         right={v.success_factor_notes?.length ? 'TAP ONE — QOACH EXPLAINS' : ''}
       />
-      <DriverList factors={v.success_factors} notes={v.success_factor_notes} active={driver} onPick={setDriver} />
+      {simActive && sim?.status === 'done' ? null : <DriverList factors={v.success_factors} notes={v.success_factor_notes} active={driver} onPick={setDriver} />}
       {odds !== undefined ? (
         <Text style={{ paddingHorizontal: 6, fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 17, color: night.textGhost }}>
           {`${odds} today isn't ${odds} forever — skip weeks and Qoach revises it.`}
@@ -1385,9 +1414,15 @@ export default function FirstGoalScreen({
         v={coach.verdict}
         missingRequired={coach.missingRequired}
         pace={coach.pace}
-        onPace={coach.setPace}
+        onPace={coach.switchPace}
         onBuild={coach.buildPlan}
         onReset={coach.reset}
+        sim={coach.sim}
+        prevSim={coach.prevSim}
+        editedKey={coach.editedKey}
+        answers={coach.verdictAnswers}
+        quickPicks={coach.quickPicks}
+        onEditInput={coach.editInput}
       />
     );
   }

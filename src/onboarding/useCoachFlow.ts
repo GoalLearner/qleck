@@ -5,9 +5,9 @@
 // intake → thinking → question (3-5, server-enforced) → verdict → building →
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
-import { useCallback, useRef, useState } from 'react';
-import { answerCoachQuestion, generateProtocol, postAnswer, startCoachSession } from '../api/coach';
-import type { PaceKey, ProtocolResponse, StepAssumption } from '../api/coachTypes';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { answerCoachQuestion, generateProtocol, getSimulation, postAnswer, prepareSimulation, startCoachSession } from '../api/coach';
+import type { PaceKey, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
 import {
   CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
   type CoachTurnResponse, type Protocol, type Verdict,
@@ -56,6 +56,15 @@ export function useCoachFlow() {
   const [assumptions, setAssumptions] = useState<StepAssumption[]>([]);
   const [quickPicks, setQuickPicks] = useState<Record<string, string[]>>({});
   const [missingRequired, setMissingRequired] = useState<string[]>([]);
+  const [verdictAnswers, setVerdictAnswers] = useState<Record<string, string>>({});
+  // 2c: the simulation state the verdict page animates from. Polled while
+  // the verdict is on screen; a re-run (input edit / pace switch) keeps the
+  // previous state for the before/after delta.
+  const [sim, setSim] = useState<SimulationState | null>(null);
+  const [prevSim, setPrevSim] = useState<SimulationState | null>(null);
+  const [editedKey, setEditedKey] = useState<string | null>(null);
+  const pollNonce = useRef(0);
+
   const captureAssumptions = (res: ProtocolResponse) => {
     setAssumptions(res.assumptions ?? []);
     setQuickPicks(res.quick_picks ?? {});
@@ -85,6 +94,7 @@ export function useCoachFlow() {
     } else if (res.type === 'verdict') {
       setVerdict(res.verdict);
       setMissingRequired(res.missing_required ?? []);
+      setVerdictAnswers(res.answers ?? {});
       setPhase('verdict');
     } else {
       setRefusal(res.refusal);
@@ -157,6 +167,56 @@ export function useCoachFlow() {
       );
   }, [fail]);
 
+  // Poll the simulation while a verdict is showing. Stops on done/failed;
+  // restarts when a re-run bumps the nonce.
+  useEffect(() => {
+    if (phase !== 'verdict') return;
+    const id = sessionId.current;
+    if (!id) return;
+    const nonce = pollNonce.current;
+    let alive = true;
+    const tick = async () => {
+      if (!alive || pollNonce.current !== nonce) return;
+      try {
+        const res = await getSimulation(id);
+        if (!alive || pollNonce.current !== nonce) return;
+        if (res.simulation) setSim(res.simulation);
+        if (res.simulation && (res.simulation.status === 'done' || res.simulation.status === 'failed')) return;
+      } catch { /* poll again */ }
+      setTimeout(tick, 2200);
+    };
+    tick();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, sim === null]);
+
+  /** The drawer's re-run: correct an input, rebuild + resimulate the same
+   *  pace, and replay the lanes with a before/after delta. */
+  const editInput = useCallback((key: string, value: string) => {
+    const id = sessionId.current;
+    if (!id) return;
+    setPrevSim(sim);
+    setEditedKey(key);
+    setSim(null);
+    pollNonce.current++;
+    postAnswer(id, key, value)
+      .then(() => prepareSimulation(id, pace))
+      .then(() => { pollNonce.current++; setSim(null); })
+      .catch(() => { /* the poll simply keeps whatever state exists */ });
+  }, [pace, sim]);
+
+  /** Pace pill switch: simulate THAT config and replay (owner decision 2). */
+  const switchPace = useCallback((p: PaceKey) => {
+    const id = sessionId.current;
+    setPace(p);
+    if (!id) return;
+    setPrevSim(null);
+    setEditedKey(null);
+    setSim(null);
+    pollNonce.current++;
+    prepareSimulation(id, p).catch(() => {});
+  }, []);
+
   /** Back to a blank intake — new goal, new session. */
   const reset = useCallback(() => {
     sessionId.current = null;
@@ -169,6 +229,10 @@ export function useCoachFlow() {
     setRefusal(null);
     setPace('steady');
     setVariant('offer');
+    setSim(null);
+    setPrevSim(null);
+    setEditedKey(null);
+    pollNonce.current++;
     setProtocol(null);
     setError(null);
     setPhase('intake');
@@ -198,6 +262,7 @@ export function useCoachFlow() {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
     pace, setPace, chosenOdds, chosenStatement, buildOriginal,
     assumptions, quickPicks, missingRequired, fixAssumption,
+    sim, prevSim, editedKey, editInput, switchPace, verdictAnswers,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan,
   };
 }

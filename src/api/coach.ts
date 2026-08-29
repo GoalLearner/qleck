@@ -2,7 +2,7 @@
 import { Platform } from 'react-native';
 import { apiBase } from './device';
 import {
-  CoachApiError, type CoachTurnResponse, type ProtocolResponse,
+  CoachApiError, type CoachTurnResponse, type ProtocolResponse, type SimulationPoll,
 } from './coachTypes';
 
 // One host rule for every client in the app: apiBase() sends the localhost
@@ -46,6 +46,14 @@ export function resetDeviceId(): void {
   if (Platform.OS === 'web') {
     try { window.localStorage.removeItem('qleck-device'); } catch { /* fine */ }
   }
+}
+
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(baseUrl() + path, {
+    headers: { 'X-Qleck-Device': getDeviceId() },
+  });
+  if (!res.ok) throw new Error(`get_failed_${res.status}`);
+  return (await res.json()) as T;
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -106,6 +114,19 @@ export function answerCoachQuestion(sessionId: string, answer: string): Promise<
  *  the stored protocol; call generateProtocol again to rebuild from it. */
 export function postAnswer(sessionId: string, key: string, value: string): Promise<{ ok: boolean }> {
   return post<{ ok: boolean }>(`/coach/sessions/${sessionId}/answers`, { key, value });
+}
+
+/** Poll the 2c pipeline: lanes stream in as scenario runs resolve. */
+export function getSimulation(sessionId: string): Promise<SimulationPoll> {
+  return get<SimulationPoll>(`/coach/sessions/${sessionId}/simulation`);
+}
+
+/** Rebuild + resimulate a config (pace switch, attempt, or an input edit). */
+export function prepareSimulation(sessionId: string, pace?: string, variant?: 'original'): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>(`/coach/sessions/${sessionId}/prepare`, {
+    ...(pace ? { pace } : {}),
+    ...(variant ? { variant } : {}),
+  });
 }
 
 export function generateProtocol(sessionId: string, pace?: string, variant?: 'original'): Promise<ProtocolResponse> {

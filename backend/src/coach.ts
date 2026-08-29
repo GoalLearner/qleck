@@ -9,7 +9,7 @@ import {
 import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, isDomain, missingRequired, type Domain } from './manifests';
 import {
-  SCENARIO_CONCURRENCY, runScenario, summarizeRuns, templatesFor,
+  SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
   type ScenarioRun, type SimulationState, type TemplateCtx,
 } from './scenarios';
 
@@ -1002,7 +1002,7 @@ export async function prepareSimulation(
     status: 'generating',
     config: { pace: config.pace, variant: config.variant },
     lanes: [],
-    planned: templates.map(t => ({ key: t.key, name: t.name })),
+    planned: templates.map(t => ({ key: t.key, name: t.name, short: t.short })),
   };
   await persistSim(env, session.id, sim);
   try {
@@ -1053,8 +1053,24 @@ export async function prepareSimulation(
 
     const rubric = rubricOddsFor(verdict, config);
     const { odds, factors } = summarizeRuns(lanes, rubric);
+    // Design contract: granularity + the metric unit ride the state, and a
+    // failed lane whose failure the contingency answers carries cg.
+    const g = granularityFor(draft.duration_weeks);
+    sim = {
+      ...sim,
+      granularity: g.granularity,
+      steps: g.steps,
+      state_unit: lanes.find(l => (l as ScenarioRun & { state_unit?: string }).state_unit)
+        ? (lanes.find(l => (l as ScenarioRun & { state_unit?: string }).state_unit) as ScenarioRun & { state_unit?: string }).state_unit
+        : undefined,
+    };
 
+    const beforeSteps = draft.phases.reduce((n, ph) => n + ph.steps.length, 0);
     draft = await hardenDraft(env, meta, session, draft, lanes);
+    const contingencyAdded = draft.phases.reduce((n, ph) => n + ph.steps.length, 0) > beforeSteps;
+    if (contingencyAdded) {
+      for (const l of lanes) if (!l.hit && !l.invalid) l.cg = true;
+    }
     await env.DB
       .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ?`)
       .bind(JSON.stringify(draft), session.id)

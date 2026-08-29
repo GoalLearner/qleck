@@ -531,13 +531,15 @@ function FeasibleVerdict({
     </View>
   ) : null;
 
-  const drivers = (
+  // When the sim owns the factors, the whole classic drivers column retires
+  // (its header was double-rendering beside SimVerdict's own).
+  const drivers = simActive && sim?.status === 'done' ? null : (
     <View style={{ flex: wide ? 1 : undefined, gap: 9 }}>
       <OddsCardHeader
         left={odds !== undefined ? 'WHAT MOVES THE NUMBER' : 'WHAT WILL DECIDE IT'}
         right={v.success_factor_notes?.length ? 'TAP ONE — QOACH EXPLAINS' : ''}
       />
-      {simActive && sim?.status === 'done' ? null : <DriverList factors={v.success_factors} notes={v.success_factor_notes} active={driver} onPick={setDriver} />}
+      <DriverList factors={v.success_factors} notes={v.success_factor_notes} active={driver} onPick={setDriver} />
       {odds !== undefined ? (
         <Text style={{ paddingHorizontal: 6, fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 17, color: night.textGhost }}>
           {`${odds} today isn't ${odds} forever — skip weeks and Qoach revises it.`}

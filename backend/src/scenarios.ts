@@ -107,12 +107,14 @@ export interface TemplateCtx {
   answers: Record<string, string>;
 }
 
-/** Disruption window: 2 weeks lost around week 4-6, proportionally earlier
- *  for short horizons (owner spec). */
-export function disruptionWindow(durationWeeks: number): { start: number; len: number } {
-  const start = Math.max(2, Math.min(4, Math.round(durationWeeks * 0.3)));
-  const len = durationWeeks >= 8 ? 2 : 1;
-  return { start, len };
+/** Disruption window, scaled to the horizon IN THE SIM'S OWN STEPS (owner
+ *  fix pre-build-5): ~15% of the runway is lost, landing ~30% in. A 12-week
+ *  goal loses weeks 4-5; a 1-week goal loses day 3 — never "week 2 of 1". */
+export function disruptionWindow(durationWeeks: number): { start: number; len: number; unit: 'week' | 'day' } {
+  const g = granularityFor(durationWeeks);
+  const len = Math.max(1, Math.round(g.steps * 0.15));
+  const start = Math.max(2, Math.min(g.steps - len, Math.round(g.steps * 0.3)));
+  return { start: Math.max(1, start), len, unit: g.granularity === 'days' ? 'day' : 'week' };
 }
 
 export const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
@@ -143,7 +145,8 @@ export const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
     short: 'DISRUPTION',
     condition: (ctx) => {
       const w = disruptionWindow(ctx.durationWeeks);
-      return `Weeks ${w.start}-${w.start + w.len - 1} are LOST entirely (illness, travel, family emergency — zero reps, and the relevant baseline erodes slightly). Before and after, adherence is a normal ~85%. Model the recovery honestly: does the plan's remaining runway absorb the hole?`;
+      const span = w.len === 1 ? `${w.unit} ${w.start}` : `${w.unit}s ${w.start}-${w.start + w.len - 1}`;
+      return `${span.charAt(0).toUpperCase() + span.slice(1)} is LOST entirely (illness, travel, family emergency — zero reps, and the relevant baseline erodes slightly). That is ~15% of the runway — proportionate, not catastrophic. Before and after, adherence is a normal ~85%. Model the recovery honestly: does the remaining runway absorb the hole?`;
     },
   },
   {
@@ -160,7 +163,7 @@ export const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
     domains: ['money'],
     condition: (ctx) => {
       const w = disruptionWindow(ctx.durationWeeks);
-      return `An unexpected expense (car repair / medical bill, roughly one full contribution period's amount) lands at week ${w.start + 1}: that period's transfer is impossible and the next is halved. Adherence otherwise ~85%. Does the target date survive?`;
+      return `An unexpected expense (car repair / medical bill, roughly one full contribution period's amount) lands around ${w.unit} ${w.start + 1}: that period's transfer is impossible and the next is halved. Adherence otherwise ~85%. Does the target date survive?`;
     },
   },
   {
@@ -178,7 +181,7 @@ export const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
     domains: ['audience'],
     condition: (ctx) => {
       const w = disruptionWindow(ctx.durationWeeks);
-      return `From week ${w.start} onward, reach per post drops to 40% of prior levels for 3 weeks (platform algorithm shift), then partially recovers to 75%. Posting adherence stays ~85%. Model follower trajectory through the dip.`;
+      return `From ${w.unit} ${w.start} onward, reach per post drops to 40% of prior levels for ${Math.max(2, w.len + 1)} ${w.unit}s (platform algorithm shift), then partially recovers to 75%. Posting adherence stays ~85%. Model follower trajectory through the dip.`;
     },
   },
 ];

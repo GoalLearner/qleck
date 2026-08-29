@@ -664,8 +664,13 @@ function assumptionPayload(session: SessionRow, protocol: Protocol): {
   }
   const structure = sessionStructure(session);
   const fields = structure.domain ? missingRequired(structure.domain, structure.answers) : [];
+  // Single source (owner spec): the SAME manifest quick-picks feed the
+  // interview chips and the drawer — every domain field that defines them,
+  // not just the unresolved ones.
   const quickPicks: Record<string, string[]> = {};
-  for (const f of fields) if (f.quickPicks) quickPicks[f.key] = f.quickPicks;
+  if (structure.domain) {
+    for (const f of MANIFESTS[structure.domain]) if (f.quickPicks) quickPicks[f.key] = f.quickPicks;
+  }
   return { assumptions, correctable_keys: fields.map(f => f.key), quick_picks: quickPicks };
 }
 
@@ -838,6 +843,9 @@ async function runCoachTurn(
       missing_required: structureOut.domain
         ? missingRequired(structureOut.domain, structureOut.answers).map(f => f.key)
         : [],
+      quick_picks: structureOut.domain
+        ? Object.fromEntries(MANIFESTS[structureOut.domain].filter(f => f.quickPicks).map(f => [f.key, f.quickPicks]))
+        : {},
     }, 200, cors);
   }
 

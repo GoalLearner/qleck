@@ -64,6 +64,7 @@ export function useCoachFlow() {
   const [prevSim, setPrevSim] = useState<SimulationState | null>(null);
   const [editedKey, setEditedKey] = useState<string | null>(null);
   const pollNonce = useRef(0);
+  const [pollTick, setPollTick] = useState(0);
 
   const captureAssumptions = (res: ProtocolResponse) => {
     setAssumptions(res.assumptions ?? []);
@@ -95,6 +96,7 @@ export function useCoachFlow() {
       setVerdict(res.verdict);
       setMissingRequired(res.missing_required ?? []);
       setVerdictAnswers(res.answers ?? {});
+      if (res.quick_picks) setQuickPicks(res.quick_picks);
       setPhase('verdict');
     } else {
       setRefusal(res.refusal);
@@ -188,7 +190,7 @@ export function useCoachFlow() {
     tick();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, sim === null]);
+  }, [phase, pollTick]);
 
   /** The drawer's re-run: correct an input, rebuild + resimulate the same
    *  pace, and replay the lanes with a before/after delta. */
@@ -201,7 +203,7 @@ export function useCoachFlow() {
     pollNonce.current++;
     postAnswer(id, key, value)
       .then(() => prepareSimulation(id, pace))
-      .then(() => { pollNonce.current++; setSim(null); })
+      .then(() => { pollNonce.current++; setSim(null); setPollTick(t => t + 1); })
       .catch(() => { /* the poll simply keeps whatever state exists */ });
   }, [pace, sim]);
 
@@ -214,7 +216,7 @@ export function useCoachFlow() {
     setEditedKey(null);
     setSim(null);
     pollNonce.current++;
-    prepareSimulation(id, p).catch(() => {});
+    prepareSimulation(id, p).then(() => setPollTick(t => t + 1)).catch(() => {});
   }, []);
 
   /** Back to a blank intake — new goal, new session. */

@@ -58,7 +58,7 @@ export interface CoachRefusal {
 /** Successful responses from /coach/sessions and .../messages */
 export type CoachTurnResponse =
   | { sessionId: string; type: 'question'; question: CoachQuestion }
-  | { sessionId: string; type: 'verdict'; verdict: Verdict; domain?: string | null; answers?: Record<string, string>; missing_required?: string[] }
+  | { sessionId: string; type: 'verdict'; verdict: Verdict; domain?: string | null; answers?: Record<string, string>; missing_required?: string[]; quick_picks?: Record<string, string[]> }
   | { sessionId: string; type: 'refused'; refusal: CoachRefusal };
 
 /* ── 2c simulation (mirrors backend/src/scenarios.ts) ─────────────────── */

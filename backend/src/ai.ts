@@ -80,7 +80,7 @@ export interface CallMeta {
   sessionId?: string;
   deviceId?: string;
   ip?: string;
-  kind: 'safety' | 'coach_turn' | 'protocol' | 'audit';
+  kind: 'safety' | 'classify_domain' | 'extract_answers' | 'coach_turn' | 'protocol' | 'audit';
   synthetic?: boolean;
 }
 

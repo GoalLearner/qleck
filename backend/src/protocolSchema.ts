@@ -25,6 +25,11 @@ export interface ProtocolStep {
   duration_minutes?: number;                    // required when kind === 'duration'
   details: string;        // how to actually do it
   week_progression?: string; // how this step ramps across the phase, if it does
+  /** P2a provenance: answer keys a numeric target derives from
+   *  ('goal_text' / 'standard_practice' are legal sentinels). */
+  derived_from?: string[];
+  /** Only when a REQUIRED input stayed missing after the interview. */
+  assumption?: string;
 }
 
 export interface ProtocolPhase {
@@ -124,6 +129,14 @@ export const PROTOCOL_TOOL_SCHEMA = {
                 },
                 duration_minutes: { type: 'number', description: "REQUIRED when kind is 'duration'; omit otherwise." },
                 details: { type: 'string' },
+                derived_from: {
+                  type: 'array', items: { type: 'string' },
+                  description: "REQUIRED whenever this step carries a numeric target (quantity.amount > 0 or duration_minutes): the collected answer keys the number derives from, or ['goal_text'] when the goal states it, or ['standard_practice'] for domain-standard personal-data-free prescriptions.",
+                },
+                assumption: {
+                  type: 'string',
+                  description: "ONLY when a named required input stayed missing after the interview: the plain-words assumption the number rests on ('assumed 200 lb bodyweight').",
+                },
                 week_progression: { type: 'string' },
               },
             },
@@ -224,6 +237,46 @@ export function physiquePillarErrors(goalStatement: string, p: Protocol): string
 // Sub-tasks masquerading as steps (v24): a warm-up shipped as its own habit
 // and rendered on rest days. These belong inside the session step's details.
 const SUBTASK_TITLE_RE = /\b(warm[\s-]?up|cool[\s-]?down)\b/i;
+
+/** P2a: every numeric target traces to collected data or an explicit,
+ *  permitted assumption. Code-side twin of the prompt's provenance rule —
+ *  the prompt persuades, this enforces.
+ *  - numeric target with neither derived_from nor assumption -> reject
+ *  - derived_from key not in answers (nor a sentinel) -> reject
+ *  - assumption when the interview collected everything required -> reject
+ */
+const PROVENANCE_SENTINELS = new Set(['goal_text', 'standard_practice']);
+
+export function provenanceErrors(
+  p: Protocol,
+  answers: Record<string, string>,
+  assumableKeys: string[],
+): string[] {
+  const errs: string[] = [];
+  for (const ph of p.phases ?? []) {
+    for (const st of ph.steps ?? []) {
+      const numeric =
+        (st.quantity && typeof st.quantity.amount === 'number' && st.quantity.amount > 0) ||
+        typeof st.duration_minutes === 'number';
+      if (!numeric) continue;
+      const df = Array.isArray(st.derived_from) ? st.derived_from.filter(k => typeof k === 'string' && k.trim()) : [];
+      const assumption = typeof st.assumption === 'string' && st.assumption.trim() ? st.assumption.trim() : null;
+      if (df.length === 0 && !assumption) {
+        errs.push(`step "${st.title}" carries a numeric target but neither derived_from nor assumption — every number must cite the collected answer keys it derives from (or 'goal_text' / 'standard_practice')`);
+        continue;
+      }
+      for (const k of df) {
+        if (!PROVENANCE_SENTINELS.has(k) && !(k in answers)) {
+          errs.push(`step "${st.title}" cites derived_from key "${k}" which was never collected — legal keys: ${Object.keys(answers).join(', ') || '(none)'}, goal_text, standard_practice`);
+        }
+      }
+      if (assumption && df.length === 0 && assumableKeys.length === 0) {
+        errs.push(`step "${st.title}" rests on an assumption ("${assumption}") but every required input was collected — cite derived_from instead of assuming`);
+      }
+    }
+  }
+  return errs;
+}
 
 export function validateProtocol(p: unknown): string[] {
   const errs: string[] = [];

@@ -16,6 +16,14 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v25 (P2a, owner spec): the requirements-driven interview. Goals classify
+// into a domain; each domain carries a required-inputs manifest
+// (manifests.ts); answers extract into structured keys after every turn; the
+// interview is steered at missing REQUIRED keys (soft cap 6 when required
+// fields remain); every numeric target in a protocol cites derived_from
+// (collected keys / goal_text / standard_practice) or an explicit assumption
+// permitted ONLY for keys the interview exhausted; verdicts emit factors
+// naming which collected inputs moved the odds.
 // v24: two on-device lessons from the first TestFlight build. (1) Bodyweight
 // is a REQUIRED intake question for physique/strength goals — the pillar rule
 // forces a protein prescription, and the coach priced one from an assumed
@@ -69,7 +77,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 24;
+export const PROMPT_VERSION = 25;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -144,6 +152,8 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
 
    Every question ships with 3-4 suggested_answers — short, concrete quick-picks (2-6 words each) covering the realistic range, e.g. ["Complete beginner", "Lifting ~1 year, 3 days/wk", "Experienced, 4+ days/wk"]; for numeric facts like body weight, offer ranges ("Under 60 kg / 130 lbs", "60-75 kg / 130-165 lbs", "75-90 kg / 165-200 lbs", "Over 90 kg / 200 lbs"). Order least to most; the user can always type an exact answer instead.
 
+   MISSING REQUIRED FIELDS notes: the app may attach a note listing required inputs for this goal's domain that are still uncollected, each with the reason the plan needs it. When the note is present, your NEXT question targets one or more of those fields — batch tightly-related ones into a single question, and when a field lists quick-picks, use them as the suggested_answers. Do not spend a question on anything else while the note lists missing required fields. When the note instead says the goal is too vague to classify, your next question pins the goal down to something concrete and measurable first.
+
    WHEN THE GOAL LOOKS SIMPLE: a small habit ("read 10 minutes before bed") has no interesting stats and no constraints — which is exactly why A, B and C exist. Where it sits in the evening, what it follows, and how it died last time are all real, all answerable, and all change the plan. A question is filler if you could write the same plan without its answer; if you land there, you picked the wrong item, not too many questions.
 
    QUESTION HYGIENE — these are hard rules:
@@ -167,6 +177,8 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
    - "sprint" (include when a meaningfully shorter runway is still physically plausible): compress the runway by roughly 25-40%. Price it honestly with the same procedure and NO greenlight floor — it should usually land 50-70; if an honest sprint would fall below 50, pick a gentler sprint or omit it. Its note sells the trade straight: what discipline it demands, what one slip costs.
    - "relaxed" (include unless the goal is deadline-bound or already very long): extend the runway by roughly 25-50% — enough air to breathe, never enough to lose urgency. Price it at or above steady, capped at 97. Its note names the real risk at this pace: drift, not difficulty.
    Hard rules: duration_weeks strictly increases sprint < steady < relaxed (whole weeks, 1-52); success_probability strictly increases from sprint to steady, and relaxed is >= steady. Each note is ONE sentence in coach voice.
+   ALWAYS emit factors: 3-6 {key, direction, weight} entries naming which STRUCTURED ANSWER KEYS pushed the probability up or down (weight 1-3). Only keys shown to you as collected answers (or 'goal_text') are legal — a factor citing data never collected is dropped by the app.
+
    Alongside success_factors, emit success_factor_notes — parallel arrays, same length: for each factor, ONE short sentence in your coach voice on how it moves the number (e.g. "Protect the mornings and the number holds", "Recovery is training too — skip it and the odds quietly leak"). Concrete and a little wry, never a percentage per factor.
    This number is your judgment as a coach, never a statistic: no field you write may imply it was measured from other users' outcomes.
    - "declined": pursuing it would be unsafe or impossible IN EVERY REFRAMING. This should be vanishingly rare — a separate safety gate runs before you, and almost any over-ambitious goal has a scaled version worth offering. "Marathon in 3 weeks, never run" is NOT declined — it's a counter_offer for a longer runway or a shorter first race. If you can imagine a realistic cousin of the goal, you MUST counter_offer it.
@@ -239,6 +251,20 @@ export const VERDICT_TOOL = {
       original_duration_weeks: {
         type: 'number',
         description: "counter_offer only: the ORIGINAL ask's own timeline in whole weeks (its stated one, or the honest minimum an attempt would need).",
+      },
+      factors: {
+        type: 'array',
+        description: "3-6 entries: WHICH collected inputs moved the probability and which way. key MUST be one of the structured answer keys you were shown (or 'goal_text'); direction 'up' raised the odds, 'down' lowered; weight 1 (minor) to 3 (major).",
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['key', 'direction', 'weight'],
+          properties: {
+            key: { type: 'string' },
+            direction: { type: 'string', enum: ['up', 'down'] },
+            weight: { type: 'number' },
+          },
+        },
       },
       success_factor_notes: {
         type: 'array',
@@ -342,6 +368,8 @@ HARD RULE for physique and body-composition goals — and ANY goal whose outcome
 4. PROTEIN — computed from the bodyweight they reported: 0.7-1 g per lb (1.6-2.2 g per kg), emitted as THEIR daily gram number in a quantity step ("Hit ~150 g protein", unit "g"). If bodyweight was never collected, behavior-based instead ("a palm-sized portion of protein at every meal") — never an invented number.
 5. SLEEP & RECOVERY — 7-9 hours as a real, checkable step anchored to a bedtime, and rest-day discipline where the split needs it.
 Each of the five is a SEPARATE step the user can check off — five pillars folded into four cards means one pillar has no daily presence. The 3-6 steps-per-phase cap still holds, so a physique phase runs 5-6 steps — which means the cap will SQUEEZE, and when it does the five pillars always survive: nice-to-haves (meal prep, a weigh-in, extra walks) merge into a pillar's details or wait for phase 2, never the other way around. Staging a pillar into a later phase ("training starts once the eating settles") also violates the rule — scale a pillar DOWN for week one (two short sessions, not zero), never OUT. The weekly measurement/weigh-in may stand as the sixth step.
+
+EVERY NUMERIC TARGET CITES ITS SOURCE — any step carrying a numeric prescription (quantity.amount above zero, or duration_minutes) MUST carry derived_from: the structured answer keys the number derives from (["bodyweight"] for a protein target; ["current_amount","target_date","income_or_contribution_capacity"] for a transfer amount), or ["goal_text"] when the number is stated in the goal itself, or ["standard_practice"] for a domain-standard prescription that is personal-data-free (7-9 hours sleep, 2-3 warm-up sets, conversational pace). A number you cannot cite is a number you may not write. When — and only when — the interview ended with a required input still missing (the prompt names which), write the number anyway and set assumption to the plain-words assumption it rests on ("assumed 200 lb bodyweight"); the app shows assumptions to the user for correction. Never set assumption when derived_from is possible.
 
 A STEP IS A HABIT, NOT A SUB-TASK — never emit warm-ups, cool-downs, mobility prep, equipment setup, or packing as their own steps: they are lines inside the parent session's details ("2-3 light warm-up sets before working sets"). A separate warm-up step double-counts the session, wastes a slot the pillar rule needs, and renders absurdly on rest days. If a step could not stand alone as a day's win, it is not a step.
 

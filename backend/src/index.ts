@@ -20,7 +20,7 @@
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
 import { verifyAppleToken } from './apple';
-import { classifyGoal, coachTurn, generateProtocol, reviseProtocol, type PaceKey, type PaceOption, type SessionRow, type Verdict } from './coach';
+import { classifyGoal, coachTurn, enrichStructure, generateProtocol, reviseProtocol, sessionStructure, type PaceKey, type PaceOption, type SessionRow, type Verdict } from './coach';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
@@ -383,6 +383,10 @@ export default {
         }
 
         const session = (await loadSession(env, sessionId, deviceId))!;
+        // P2a: classify the goal and extract whatever the goal text itself
+        // states (a baseline like "I smoke 15/day" lives there) before the
+        // first question is chosen.
+        await enrichStructure(env, { ...meta, sessionId }, session);
         return await runCoachTurn(env, cors, meta, session, undefined);
       }
 
@@ -496,7 +500,7 @@ export default {
  * those rules is DROPPED, not clamped: a missing gauge degrades safely, a
  * clamped number would be a lie.
  */
-function sanitizeOdds(v: Verdict): void {
+function sanitizeOdds(v: Verdict, answers: Record<string, string>): void {
   const clean = (n: unknown): number | undefined => {
     if (typeof n !== 'number' || !Number.isFinite(n)) return undefined;
     const r = Math.round(n);
@@ -516,6 +520,18 @@ function sanitizeOdds(v: Verdict): void {
   const od = Number(v.original_duration_weeks);
   v.original_duration_weeks =
     v.decision === 'counter_offer' && Number.isFinite(od) && od >= 1 && od <= 52 ? Math.round(od) : undefined;
+  // P2a factors: same trust-nothing stance — a factor citing a key that was
+  // never collected is dropped, not displayed. Degrades to no factors.
+  const legalKeys = new Set([...Object.keys(answers), 'goal_text']);
+  const rawFactors = Array.isArray(v.factors) ? v.factors : [];
+  const factors = rawFactors
+    .filter(f =>
+      f && typeof f.key === 'string' && legalKeys.has(f.key) &&
+      (f.direction === 'up' || f.direction === 'down') &&
+      typeof f.weight === 'number' && f.weight >= 1 && f.weight <= 3)
+    .slice(0, 6)
+    .map(f => ({ key: f.key, direction: f.direction, weight: Math.round(f.weight) }));
+  v.factors = factors.length ? factors : undefined;
 
   // Pace options: 2-3 honest paces, or nothing. Steady is force-aligned to
   // the verdict's own (already sanitized) numbers so the recommended pill can
@@ -565,6 +581,14 @@ async function runCoachTurn(
   session: SessionRow,
   answer: string | undefined,
 ): Promise<Response> {
+  // P2a: fold the new answer into the structured layer BEFORE the turn runs,
+  // so this very turn's missing-fields steering sees it. First turns were
+  // enriched at session start.
+  if (answer !== undefined) {
+    const priorTranscript = JSON.parse(session.transcript) as { question: string }[];
+    const lastQ = priorTranscript.length ? priorTranscript[priorTranscript.length - 1].question : '';
+    await enrichStructure(env, { ...meta, sessionId: session.id }, session, { question: lastQ, answer });
+  }
   const result = await coachTurn(env, { ...meta, sessionId: session.id }, session, answer);
 
   const transcript = JSON.parse(session.transcript) as { question: string; why: string; answer?: string }[];
@@ -593,14 +617,18 @@ async function runCoachTurn(
   }
 
   if (result.type === 'verdict' && result.verdict) {
-    sanitizeOdds(result.verdict);
+    sanitizeOdds(result.verdict, sessionStructure(session).answers);
     await env.DB
       .prepare(
         `UPDATE coach_sessions SET transcript = ?, status = 'verdict', verdict = ?, updated_at = datetime('now') WHERE id = ?`,
       )
       .bind(JSON.stringify(transcript), JSON.stringify(result.verdict), session.id)
       .run();
-    return json({ sessionId: session.id, type: 'verdict', verdict: result.verdict }, 200, cors);
+    const structureOut = sessionStructure(session);
+    return json({
+      sessionId: session.id, type: 'verdict', verdict: result.verdict,
+      domain: structureOut.domain, answers: structureOut.answers,
+    }, 200, cors);
   }
 
   if (result.type === 'refused') {

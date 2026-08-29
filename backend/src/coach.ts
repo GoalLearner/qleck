@@ -6,7 +6,8 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, physiquePillarErrors, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, physiquePillarErrors, provenanceErrors, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
+import { DOMAINS, MANIFESTS, isDomain, missingRequired, type Domain } from './manifests';
 
 // Server-enforced negotiation band: at least 3 clarifying questions, at most 5.
 // Both ends work the same way — the tool the coach must not use is simply
@@ -32,6 +33,12 @@ export interface SessionRow {
   clarify_turns: number;
   verdict: string | null;
   protocol: string | null;
+  domain: string | null;
+  needs_clarification: number;
+  answers: string;
+  /** Transient (never persisted): keys the latest extraction added. Fuels the
+   *  progress gate — a 6th question must be EARNED by a productive 5th. */
+  last_extract_added?: number;
 }
 
 interface TranscriptEntry {
@@ -71,6 +78,8 @@ export interface Verdict {
   original_probability?: number;
   /** counter_offer only: the ORIGINAL ask's own timeline in weeks. */
   original_duration_weeks?: number;
+  /** P2a: which collected inputs moved the odds, and which way. */
+  factors?: { key: string; direction: 'up' | 'down'; weight: number }[];
   /** Parallel to success_factors: one line each on how the factor moves the
    *  odds. Absent on verdicts stored before prompt v18. */
   success_factor_notes?: string[];
@@ -102,27 +111,154 @@ function priorQuestions(session: SessionRow): string[] {
   return transcript.map(t => t.question).filter(Boolean);
 }
 
-/** v24: a gram-number protein step is only honest if the intake actually
- *  collected a bodyweight — the number derives from it. Detection is by Q&A
- *  pair (a weight-ish question with a numeric answer), NOT by scanning for
- *  "NNN lbs" anywhere: the goal "bench 315 lbs" would false-positive. */
-function proteinProvenanceErrors(session: SessionRow, p: Protocol): string[] {
+/* ── P2a: classification + structured answers ─────────────────────────── */
+
+export interface SessionStructure {
+  domain: Domain | null;
+  needsClarification: boolean;
+  answers: Record<string, string>;
+}
+
+export function sessionStructure(session: SessionRow): SessionStructure {
+  let answers: Record<string, string> = {};
+  try { answers = JSON.parse(session.answers || '{}'); } catch { /* corrupt -> empty */ }
+  return {
+    domain: isDomain(session.domain) ? session.domain : null,
+    needsClarification: session.needs_clarification === 1,
+    answers,
+  };
+}
+
+const CLASSIFY_DOMAIN_TOOL = {
+  name: 'classify_domain',
+  description: 'Classify the goal into its coaching domain.',
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['domain', 'concrete'],
+    properties: {
+      domain: { type: 'string', enum: DOMAINS },
+      concrete: {
+        type: 'boolean',
+        description: 'true when the goal names a specific, plannable outcome. "Be happier" / "get my life together" are NOT concrete; "run a 5k", "save $5,000", "quit vaping" are.',
+      },
+    },
+  },
+} as const;
+
+/** Cheap, pinned classifier. Falls back to other/concrete on any failure —
+ *  classification failing must never block the interview. */
+export async function classifyDomain(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  goalText: string,
+  answersSoFar?: Record<string, string>,
+): Promise<{ domain: Domain; concrete: boolean }> {
+  try {
+    const ctx = answersSoFar && Object.keys(answersSoFar).length
+      ? `\n\nClarified so far:\n${JSON.stringify(answersSoFar)}`
+      : '';
+    const result = await callModel(env, { ...meta, kind: 'classify_domain' }, {
+      model: modelsFor(env).classifier,
+      system: 'You classify a personal goal into a coaching domain. strength = lift/press/pull numbers; endurance = run/ride/swim distance or pace; body_composition = lose/gain weight, muscle, physique; skill = learn an ability or language; money = save/pay off/earn amounts; career = roles, promotions, jobs; creative = write/make/ship creative work, including growing an audience or followers for it (TikTok/YouTube/newsletter growth is creative, NOT social); social = real-life friendships, meeting people; habit_change = quit/cut down/start a daily behavior; academic = grades, exams, degrees; other = none of these. Vague self-improvement wishes with no plannable outcome are concrete=false. When a Clarified-so-far context accompanies the goal, judge the goal AS CLARIFIED: a vague headline whose clarification names a specific plannable outcome ("be happier" clarified to "see friends twice a week") IS concrete — classify the clarified outcome.',
+      messages: [{ role: 'user', content: `Goal:\n${goalAsData(goalText)}${ctx}` }],
+      tools: [CLASSIFY_DOMAIN_TOOL],
+      toolChoice: { type: 'tool', name: CLASSIFY_DOMAIN_TOOL.name },
+      maxTokens: 128,
+      temperature: 0,
+    });
+    const out = result.toolInput as { domain?: string; concrete?: boolean } | null;
+    if (out && isDomain(out.domain)) return { domain: out.domain, concrete: out.concrete !== false };
+  } catch { /* fall through */ }
+  return { domain: 'other', concrete: true };
+}
+
+/** Extraction: map what the user has actually said onto the domain's
+ *  manifest keys. Only stated facts — never inferred numbers. Failure
+ *  degrades to "no new keys", never blocks the turn. */
+export async function extractAnswers(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  domain: Domain,
+  latest?: { question: string; answer: string },
+): Promise<Record<string, string>> {
+  const fields = MANIFESTS[domain];
+  const props: Record<string, unknown> = {};
+  for (const f of fields) {
+    props[f.key] = { type: 'string', description: f.reason };
+  }
   const transcript: TranscriptEntry[] = JSON.parse(session.transcript);
-  const askedWeight = transcript.some(t =>
-    /\b(body\s*weight|bodyweight|weigh|how heavy|your (current )?weight)\b/i.test(t.question ?? '') &&
-    /\d/.test(t.answer ?? ''));
-  if (askedWeight) return [];
-  const errs: string[] = [];
-  for (const ph of p.phases) {
-    for (const st of ph.steps) {
-      const proteinish = /protein/i.test(`${st.title} ${st.details ?? ''}`);
-      const grams = st.quantity && /^g(rams?)?$/i.test(st.quantity.unit ?? '') ? st.quantity.amount : undefined;
-      if (proteinish && typeof grams === 'number' && grams >= 40) {
-        errs.push(`step "${st.title}" prescribes ${grams} g protein but no bodyweight was ever collected — use a behavior-based protein step instead (e.g. "a palm-sized portion of protein at every meal"), never an invented number`);
+  const qa = transcript
+    .filter(t => t.answer !== undefined)
+    .map(t => `Q: ${t.question}\nA: ${t.answer}`)
+    .join('\n');
+  const latestBlock = latest ? `\nQ: ${latest.question}\nA: ${latest.answer}` : '';
+  try {
+    const result = await callModel(env, { ...meta, kind: 'extract_answers' }, {
+      model: modelsFor(env).classifier,
+      system:
+        'You extract structured facts from a goal-coaching interview. Fill ONLY fields the user has actually stated, from the goal text or their answers — verbatim-faithful short values ("205 lbs", "3 days", "about 15/day", "stalled at 285 last year"). Ranges and approximations are fine as given. NEVER infer, compute, or guess a value the user did not state. A filler or non-answer ("nothing unusual", "steady week to week", "whatever you think") states NOTHING — omit the field. Never fill a field by restating the goal itself. Omit every unknown field entirely.',
+      messages: [{
+        role: 'user',
+        content: `Goal:\n${goalAsData(session.goal_text)}\n\nInterview so far:\n${qa || '(none yet)'}${latestBlock}`,
+      }],
+      tools: [{
+        name: 'record_answers',
+        description: 'Record the facts the user has stated, keyed to manifest fields.',
+        input_schema: { type: 'object', additionalProperties: false, properties: props },
+      }],
+      toolChoice: { type: 'tool', name: 'record_answers' },
+      maxTokens: 512,
+      temperature: 0,
+    });
+    const out = result.toolInput as Record<string, unknown> | null;
+    const clean: Record<string, string> = {};
+    if (out) {
+      for (const f of fields) {
+        const v = out[f.key];
+        if (typeof v === 'string' && v.trim()) clean[f.key] = v.trim().slice(0, 200);
       }
     }
+    return clean;
+  } catch {
+    return {};
   }
-  return errs;
+}
+
+/** Classify (or re-classify while vague) + extract + persist. Mutates the
+ *  in-memory session so the SAME turn's interview sees the fresh state. */
+export async function enrichStructure(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  latest?: { question: string; answer: string },
+): Promise<void> {
+  let structure = sessionStructure(session);
+  if (!structure.domain || structure.needsClarification) {
+    // While the goal is vague the structured answers are empty BY DESIGN, so
+    // re-classification must read the conversation itself — the concretizing
+    // answer lives in the transcript (or in `latest`, not yet persisted).
+    const tx: TranscriptEntry[] = JSON.parse(session.transcript);
+    const said = tx.filter(t => t.answer !== undefined).map(t => t.answer as string);
+    if (latest?.answer) said.push(latest.answer);
+    const ctx = { ...structure.answers, ...(said.length ? { clarified_in_conversation: said.join(' | ').slice(0, 600) } : {}) };
+    const cls = await classifyDomain(env, meta, session.goal_text, ctx);
+    session.domain = cls.domain;
+    session.needs_clarification = cls.concrete ? 0 : 1;
+    structure = sessionStructure(session);
+  }
+  if (structure.domain && !structure.needsClarification) {
+    const extracted = await extractAnswers(env, meta, session, structure.domain, latest);
+    const before = Object.keys(structure.answers).length;
+    const merged = { ...structure.answers, ...extracted };
+    session.last_extract_added = Object.keys(merged).length - before;
+    session.answers = JSON.stringify(merged);
+  }
+  await env.DB
+    .prepare(`UPDATE coach_sessions SET domain = ?, needs_clarification = ?, answers = ? WHERE id = ?`)
+    .bind(session.domain, session.needs_clarification, session.answers || '{}', session.id)
+    .run();
 }
 
 function goalAsData(goalText: string): string {
@@ -206,8 +342,30 @@ export async function coachTurn(
   session: SessionRow,
   pendingAnswer?: string,
 ): Promise<CoachTurnResult> {
-  const atCeiling = session.clarify_turns >= MAX_CLARIFY_TURNS;
-  const forceAsk = session.clarify_turns < MIN_CLARIFY_TURNS;
+  // P2a: required manifest fields drive the interview. While required keys
+  // are missing the coach keeps asking (the refuse-path IS a question), the
+  // 5-question cap softens to 6, and the readiness audit is skipped — the
+  // manifest already knows something is missing. At the hard cap with fields
+  // still missing, generation proceeds on explicit assumptions instead.
+  const structure = sessionStructure(session);
+  const missing = structure.domain && !structure.needsClarification
+    ? missingRequired(structure.domain, structure.answers)
+    : [];
+  const needsConcreteness = structure.needsClarification;
+  // Progress gate: keep pressing for required fields only while pressing
+  // WORKS. A turn whose answer extracted nothing new is the user telling us
+  // they can't or won't give it — stop forcing, let the verdict come, and
+  // the leftovers become explicit assumptions. First turns count as
+  // progress (nothing has been asked yet), and so does concretizing a
+  // vague goal.
+  const progressing =
+    session.last_extract_added === undefined || session.last_extract_added > 0 || needsConcreteness;
+  const wantsMore = (missing.length > 0 || needsConcreteness) && progressing;
+  const ceiling = wantsMore ? MAX_CLARIFY_TURNS + 1 : MAX_CLARIFY_TURNS;
+  const atCeiling = session.clarify_turns >= ceiling;
+  const forceAsk =
+    session.clarify_turns < MIN_CLARIFY_TURNS ||
+    (!atCeiling && wantsMore);
 
   // Between the floor and the ceiling, the auditor decides whether there is
   // anything left worth asking — an AFFIRMATIVE gate, not just a veto.
@@ -225,10 +383,24 @@ export async function coachTurn(
   const nothingLeftToAsk = !!gateAudit && (gateAudit.sufficient || gateAudit.missing.length === 0);
   const mustVerdict = atCeiling || nothingLeftToAsk;
 
+  const steer: ChatMessage[] = [];
+  if (!mustVerdict && needsConcreteness) {
+    steer.push({
+      role: 'user',
+      content: '[app note] This goal is too vague to plan or classify yet. Your next question must pin it down to ONE concrete, measurable outcome the user actually wants (offer 3-4 concrete candidate directions as the suggested answers).',
+    });
+  } else if (!mustVerdict && missing.length > 0) {
+    steer.push({
+      role: 'user',
+      content:
+        `[app note] MISSING REQUIRED FIELDS for this ${structure.domain} goal — your next question must collect one or more of these (batch related ones; quick-picks become suggested_answers). If one was already asked and answered vaguely, you may ask it ONCE more in genuinely different words — never a rephrase of the same sentence — and if it stays vague, move to the next field:\n` +
+        missing.map(f => `- ${f.key}: ${f.reason}${f.quickPicks ? ` (quick-picks: ${f.quickPicks.join(' | ')})` : ''}`).join('\n'),
+    });
+  }
   const result = await callModel(env, { ...meta, kind: 'coach_turn' }, {
     model: modelsFor(env).coach,
     system: COACH_SYSTEM,
-    messages: coachMessages(session, pendingAnswer),
+    messages: [...coachMessages(session, pendingAnswer), ...steer],
     tools: mustVerdict ? [VERDICT_TOOL] : forceAsk ? [ASK_TOOL] : [ASK_TOOL, VERDICT_TOOL],
     toolChoice: mustVerdict
       ? { type: 'tool', name: VERDICT_TOOL.name }
@@ -397,6 +569,16 @@ export async function generateProtocol(
     .filter(t => t.answer !== undefined)
     .map(t => `Q: ${t.question}\nA (user data): ${t.answer}`)
     .join('\n');
+  // P2a: the structured layer rides beside the free-text nuance, and the
+  // interview's leftovers define what may legally be assumed.
+  const structure = sessionStructure(session);
+  const unresolved = structure.domain ? missingRequired(structure.domain, structure.answers) : [];
+  const assumableKeys = unresolved.map(f => f.key);
+  const structuredBlock =
+    `STRUCTURED ANSWERS (the ONLY keys legal in derived_from, plus 'goal_text' and 'standard_practice'):\n${JSON.stringify(structure.answers)}\n` +
+    (assumableKeys.length
+      ? `UNRESOLVED REQUIRED INPUTS (the interview could not collect these — a number depending on one carries an explicit assumption): ${assumableKeys.join(', ')}\n`
+      : `Every required input was collected — assumptions are NOT permitted; every number cites derived_from.\n`);
   const baseMessages: ChatMessage[] = [
     {
       role: 'user',
@@ -404,6 +586,7 @@ export async function generateProtocol(
         `Accepted verdict:\n${JSON.stringify(verdict)}\n\n` +
         `Original goal:\n${goalAsData(session.goal_text)}\n\n` +
         (qa ? `Clarifying Q&A:\n${qa}\n\n` : '') +
+        structuredBlock + '\n' +
         `Generate the protocol for "${targetStatement}"${targetWeeks ? ` over ${targetWeeks} weeks` : ' over its own stated timeline'}.` +
         (attempting
           ? ` The user heard your counter-offer and chose to attempt their ORIGINAL ask anyway, eyes open, at your honest ${verdict.original_probability ?? '<50'}% odds. Respect the choice: build the strongest possible protocol for the ORIGINAL ask on its own timeline, designed to push those odds as high as they can honestly go. coach_notes honors the boldness and names what has to go right — never scold, never re-litigate the counter.`
@@ -452,7 +635,7 @@ export async function generateProtocol(
     // more validation error to fix, which is exactly what it is.
     if (errors.length === 0) {
       errors.push(...physiquePillarErrors(`${targetStatement} ${session.goal_text}`, repaired as Protocol));
-      errors.push(...proteinProvenanceErrors(session, repaired as Protocol));
+      errors.push(...provenanceErrors(repaired as Protocol, structure.answers, assumableKeys));
     }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: repaired as Protocol };

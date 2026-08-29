@@ -75,9 +75,9 @@ const DELEGATION_CHIP = /no idea|you decide|whatever you think/i;
 // COACH_SYSTEM promises 3-4 quick-picks per question and ASK_TOOL's schema
 // bounds it; this is the bar that proves it in the live pipeline.
 const MIN_CHIPS = 3;
-// Mirrors MIN_CLARIFY_TURNS / MAX_CLARIFY_TURNS in backend/src/coach.ts.
+// Mirrors backend/src/coach.ts: 5 is the normal ceiling; 6 is legal only while required manifest fields are missing AND answers still yield them (P2a soft cap).
 const MIN_Q = 3;
-const MAX_Q = 5;
+const MAX_Q = 6;
 
 async function runGoalFixture(f) {
   const t0 = Date.now();

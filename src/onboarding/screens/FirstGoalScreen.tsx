@@ -434,9 +434,11 @@ function FeasibleVerdict({
   quickPicks?: Record<string, string[]>;
   onEditInput?: (key: string, value: string) => void;
 }) {
-  // The dial is earned by the lanes whenever a simulation exists for this
-  // pace; a failed pipeline falls back to the classic dial, honestly.
-  const simActive = !!onEditInput && sim?.status !== 'failed' && (sim ? sim.config.pace === pace : true);
+  // The futures strip renders only once a LIVE simulation for this pace
+  // actually exists — never by default. The old null-default flashed the
+  // skeleton strip for ~1s on every verdict while SIMULATIONS is off
+  // (the first poll then reported the sim disabled and yanked it).
+  const simActive = !!onEditInput && !!sim && sim.status !== 'failed' && sim.config.pace === pace;
   const { width } = useWindowDimensions();
   const wide = width >= 820;
   const [driver, setDriver] = useState(-1);

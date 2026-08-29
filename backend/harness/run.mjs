@@ -12,13 +12,15 @@ import { GOAL_FIXTURES, REVISION_FIXTURES, LEAK_CANARIES } from './fixtures.mjs'
 const BASE = process.env.QLECK_API ?? 'http://127.0.0.1:8787';
 const SECRET = process.env.HARNESS_SECRET ?? 'local-dev-harness';
 const DEVICE = 'aaaaaaaa-aaaa-4aaa-8aaa-000000000001';
-const CONCURRENCY = 4;
+const CONCURRENCY = 4; // owner spec fix 1: capped so the transport backoff, not the pool, absorbs provider pressure
 const GENERIC_ANSWER = 'Whatever you think is realistic — I have a normal schedule and average fitness.';
 
 async function api(path, body) {
-  // One retry on a dropped connection or 5xx: wrangler dev recycles the
-  // worker on file changes, and a harness started in that window used to die
-  // on ECONNRESET before running a single fixture.
+  // Exponential backoff on dropped connections and 5xx (fix 1 discipline,
+  // applied to the harness's own client): wrangler dev recycles the local
+  // worker under sustained load and the supervisor revives it in ~5s — three
+  // waits at 2s/4s/8s ride that out, so a suite run measures the PIPELINE,
+  // not the dev server's mood.
   let res;
   for (let attempt = 0; ; attempt++) {
     try {
@@ -31,11 +33,11 @@ async function api(path, body) {
         },
         body: JSON.stringify(body),
       });
-      if (res.status < 500 || attempt > 0) break;
+      if (res.status < 500 || attempt >= 3) break;
     } catch (err) {
-      if (attempt > 0) throw err;
+      if (attempt >= 3) throw err;
     }
-    await new Promise(r => setTimeout(r, 4000));
+    await new Promise(r => setTimeout(r, 2000 * 2 ** attempt));
   }
   let json = {};
   try { json = await res.json(); } catch { /* non-json error body */ }

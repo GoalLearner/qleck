@@ -6,8 +6,8 @@
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
 import { useCallback, useRef, useState } from 'react';
-import { answerCoachQuestion, generateProtocol, startCoachSession } from '../api/coach';
-import type { PaceKey } from '../api/coachTypes';
+import { answerCoachQuestion, generateProtocol, postAnswer, startCoachSession } from '../api/coach';
+import type { PaceKey, ProtocolResponse, StepAssumption } from '../api/coachTypes';
 import {
   CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
   type CoachTurnResponse, type Protocol, type Verdict,
@@ -19,6 +19,7 @@ export type CoachPhase =
   | 'question'    // Qoach asked something
   | 'verdict'     // feasible or counter-offer on screen
   | 'building'    // waiting on protocol generation
+  | 'rebuilding'  // regenerating after an assumption was corrected
   | 'protocol'    // plan on screen
   | 'refused'     // safety refusal / decline
   | 'error';      // normalized failure, maybe retryable
@@ -50,6 +51,15 @@ export function useCoachFlow() {
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [refusal, setRefusal] = useState<CoachRefusal | null>(null);
   const [protocol, setProtocol] = useState<Protocol | null>(null);
+  // The assumption layer (owner spec): which steps rest on assumed values,
+  // which manifest keys the user can supply, and the quick-picks for them.
+  const [assumptions, setAssumptions] = useState<StepAssumption[]>([]);
+  const [quickPicks, setQuickPicks] = useState<Record<string, string[]>>({});
+  const [missingRequired, setMissingRequired] = useState<string[]>([]);
+  const captureAssumptions = (res: ProtocolResponse) => {
+    setAssumptions(res.assumptions ?? []);
+    setQuickPicks(res.quick_picks ?? {});
+  };
   const [error, setError] = useState<CoachError | null>(null);
 
   const sessionId = useRef<string | null>(null);
@@ -74,6 +84,7 @@ export function useCoachFlow() {
       setPhase('question');
     } else if (res.type === 'verdict') {
       setVerdict(res.verdict);
+      setMissingRequired(res.missing_required ?? []);
       setPhase('verdict');
     } else {
       setRefusal(res.refusal);
@@ -113,7 +124,7 @@ export function useCoachFlow() {
     setVariant('offer');
     setPhase('building');
     generateProtocol(id, pace).then(
-      res => { setProtocol(res.protocol); setPhase('protocol'); },
+      res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
       err => fail(err, buildPlan),
     );
   }, [fail, pace]);
@@ -126,9 +137,24 @@ export function useCoachFlow() {
     setVariant('original');
     setPhase('building');
     generateProtocol(id, undefined, 'original').then(
-      res => { setProtocol(res.protocol); setPhase('protocol'); },
+      res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
       err => fail(err, buildOriginal),
     );
+  }, [fail]);
+
+  /** "Assumed ~170 lb — fix": supply the real value, rebuild the protocol.
+   *  The server clears the stored plan, so the regeneration derives every
+   *  dependent number from the corrected key. */
+  const fixAssumption = useCallback((key: string, value: string) => {
+    const id = sessionId.current;
+    if (!id || !value.trim()) return;
+    setPhase('rebuilding');
+    postAnswer(id, key, value.trim())
+      .then(() => generateProtocol(id))
+      .then(
+        res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
+        err => fail(err, () => fixAssumption(key, value)),
+      );
   }, [fail]);
 
   /** Back to a blank intake — new goal, new session. */
@@ -171,6 +197,7 @@ export function useCoachFlow() {
   return {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
     pace, setPace, chosenOdds, chosenStatement, buildOriginal,
+    assumptions, quickPicks, missingRequired, fixAssumption,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan,
   };
 }

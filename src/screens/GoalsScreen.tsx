@@ -285,6 +285,14 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
             {goalTitle(m.goal.statement, m.goal.protocol)}
           </Text>
         </View>
+        {!protocol.sessions?.length && (
+          <Pressable
+            onPress={() => (navigation as any).navigate('NewGoal', { prefill: m.goal.statement, replaceGoalId: m.goal.id })}
+            style={{ marginTop: 10, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' }}
+          >
+            <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.creamText }}>⟳ Regenerate with the new engine</Text>
+          </Pressable>
+        )}
         <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.onNavySoft, marginTop: 10 }}>
           {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
           {m.rf ? ` · ${m.rf.current}% — ${m.rf.drifted ? `slipping, was ${m.rf.original}%` : oddsTier(m.rf.current).label.toLowerCase()} — if you do the reps` : ''}

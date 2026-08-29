@@ -488,14 +488,15 @@ export default {
           const st = sessionStructure(session);
           await env.DB
             .prepare(
-              `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot)
-               VALUES (?, ?, ?, ?, ?)`,
+              `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot, verdict_fallback)
+               VALUES (?, ?, ?, ?, ?, ?)`,
             )
             .bind(
               session.id, session.domain,
               typeof verdict.success_probability === 'number' ? Math.round(verdict.success_probability) : null,
               JSON.stringify(verdict.factors ?? []),
               JSON.stringify(st.answers),
+              verdict.verdict_fallback ? 1 : 0,
             )
             .run()
             .catch(err => console.error('goal_outcomes write failed', err));
@@ -558,6 +559,7 @@ export default {
 function assumptionPayload(session: SessionRow, protocol: Protocol): {
   assumptions: { step_id: string; title: string; assumption: string; key: string | null }[];
   correctable_keys: string[];
+  quick_picks: Record<string, string[]>;
 } {
   const assumptions: { step_id: string; title: string; assumption: string; key: string | null }[] = [];
   for (const ph of protocol.phases ?? []) {
@@ -568,8 +570,10 @@ function assumptionPayload(session: SessionRow, protocol: Protocol): {
     }
   }
   const structure = sessionStructure(session);
-  const correctable = structure.domain ? missingRequired(structure.domain, structure.answers).map(f => f.key) : [];
-  return { assumptions, correctable_keys: correctable };
+  const fields = structure.domain ? missingRequired(structure.domain, structure.answers) : [];
+  const quickPicks: Record<string, string[]> = {};
+  for (const f of fields) if (f.quickPicks) quickPicks[f.key] = f.quickPicks;
+  return { assumptions, correctable_keys: fields.map(f => f.key), quick_picks: quickPicks };
 }
 
 /** Shared: run one coach turn and persist the resulting session state. */
@@ -703,6 +707,19 @@ async function runCoachTurn(
 
   if (result.type === 'verdict' && result.verdict) {
     sanitizeOdds(result.verdict, sessionStructure(session).answers);
+    // Fix 2 (owner spec): odds must never be null. sanitizeOdds DROPS
+    // malformed numbers by design; when that leaves no probability, the
+    // deterministic rubric floor takes over — band-conservative constants,
+    // empty factors, flagged so goal_outcomes can count how often the model
+    // failed to price. The 2c simulation blends against exactly this floor.
+    if (typeof result.verdict.success_probability !== 'number') {
+      result.verdict.success_probability = result.verdict.decision === 'counter_offer' ? 80 : 75;
+      if (result.verdict.decision === 'counter_offer' && typeof result.verdict.original_probability !== 'number') {
+        result.verdict.original_probability = 40;
+      }
+      result.verdict.factors = [];
+      result.verdict.verdict_fallback = true;
+    }
     await env.DB
       .prepare(
         `UPDATE coach_sessions SET transcript = ?, status = 'verdict', verdict = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -713,6 +730,9 @@ async function runCoachTurn(
     return json({
       sessionId: session.id, type: 'verdict', verdict: result.verdict,
       domain: structureOut.domain, answers: structureOut.answers,
+      missing_required: structureOut.domain
+        ? missingRequired(structureOut.domain, structureOut.answers).map(f => f.key)
+        : [],
     }, 200, cors);
   }
 

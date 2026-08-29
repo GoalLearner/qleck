@@ -131,7 +131,7 @@ function stepMetric(step: ProtocolStep): string {
   return `✓ ${freq}`;
 }
 
-function StepRow({ step }: { step: ProtocolStep }) {
+function StepRow({ step, onFixAssumption }: { step: ProtocolStep; onFixAssumption?: (key: string) => void }) {
   const k = kindStyle(step.kind);
   return (
     <View
@@ -158,6 +158,23 @@ function StepRow({ step }: { step: ProtocolStep }) {
             {step.details}
           </Text>
         ) : null}
+        {step.assumption ? (
+          <Pressable
+            disabled={!step.assumption_key || !onFixAssumption}
+            onPress={() => step.assumption_key && onFixAssumption?.(step.assumption_key)}
+            style={{ marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 5 }}
+          >
+            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: '#F7B32B' }}>
+              {step.assumption.charAt(0).toUpperCase() + step.assumption.slice(1)}
+              {step.assumption_key && onFixAssumption ? ' — ' : ''}
+            </Text>
+            {step.assumption_key && onFixAssumption ? (
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 11.5, color: '#F7B32B', textDecorationLine: 'underline' }}>
+                fix
+              </Text>
+            ) : null}
+          </Pressable>
+        ) : null}
       </View>
       {/* Sits beside its rep rather than stranded at the far edge: the column
           is width-capped in ProtocolReveal, which is what pinned these chips
@@ -171,13 +188,14 @@ function StepRow({ step }: { step: ProtocolStep }) {
 
 /** One phase: a header that always shows, reps only while open. */
 function PhaseCard({
-  phase, open, isLast, milestones, onToggle,
+  phase, open, isLast, milestones, onToggle, onFixAssumption,
 }: {
   phase: ProtocolPhase;
   open: boolean;
   isLast: boolean;
   milestones: ProtocolMilestone[];
   onToggle: () => void;
+  onFixAssumption?: (key: string) => void;
 }) {
   const weeks = phase.start_week === phase.end_week
     ? `WEEK ${phase.start_week}`
@@ -226,7 +244,7 @@ function PhaseCard({
 
       {open ? (
         <View style={{ paddingHorizontal: 16 }}>
-          {phase.steps.map(step => <StepRow key={step.id} step={step} />)}
+          {phase.steps.map(step => <StepRow key={step.id} step={step} onFixAssumption={onFixAssumption} />)}
         </View>
       ) : null}
 
@@ -398,13 +416,14 @@ const PACE_LABELS: Record<PaceKey, string> = {
 
 /** Canvas 5a/5c — feasible verdict with the odds dial, at 2-3 paces. */
 function FeasibleVerdict({
-  v, pace, onPace, onBuild, onReset,
+  v, pace, onPace, onBuild, onReset, missingRequired,
 }: {
   v: Verdict;
   pace: PaceKey;
   onPace: (p: PaceKey) => void;
   onBuild: () => void;
   onReset: () => void;
+  missingRequired?: string[];
 }) {
   const { width } = useWindowDimensions();
   const wide = width >= 820;
@@ -470,6 +489,11 @@ function FeasibleVerdict({
           {caption}
         </Text>
       </View>
+      {missingRequired && missingRequired.length > 0 ? (
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: '#F7B32B', textAlign: 'center', paddingTop: 2 }}>
+          Priced with {missingRequired.length} unknown{missingRequired.length > 1 ? 's' : ''} ({missingRequired.map(k => k.replace(/_/g, ' ')).join(', ')}) — the plan will state its assumptions, and you can fix them.
+        </Text>
+      ) : null}
       {paces ? (
         <Text style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost, paddingTop: 6 }}>
           STEADY IS QOACH'S PICK · TAP A PILL TO SWITCH
@@ -711,15 +735,21 @@ function CounterVerdict({
  * strip gives the whole span at a glance, and locking in actually pays off.
  */
 function ProtocolReveal({
-  protocol, statement, odds, onLock, onRestart,
+  protocol, statement, odds, onLock, onRestart, quickPicks, onFixAssumption,
 }: {
   protocol: Protocol;
   statement: string;
   odds?: number;
   onLock: () => void;
   onRestart: () => void;
+  quickPicks?: Record<string, string[]>;
+  onFixAssumption?: (key: string, value: string) => void;
 }) {
   const [open, setOpen] = useState(0);
+  // "Assumed ~170 lb — fix": which manifest key is being edited, and the
+  // typed value. Quick-picks submit immediately; typed values via Rebuild.
+  const [fixingKey, setFixingKey] = useState<string | null>(null);
+  const [fixValue, setFixValue] = useState('');
   const [locked, setLocked] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const confettiRef = useRef<ConfettiHandle>(null);
@@ -803,9 +833,52 @@ function ProtocolReveal({
                 isLast={i === phases.length - 1}
                 milestones={milestones.filter(m => m.week >= phase.start_week && m.week <= phase.end_week)}
                 onToggle={() => setOpen(cur => (cur === i ? -1 : i))}
+                onFixAssumption={onFixAssumption ? (key) => { setFixingKey(key); setFixValue(''); } : undefined}
               />
             ))}
           </View>
+
+          {fixingKey && onFixAssumption ? (
+            <View style={{
+              marginTop: 10, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(247,179,43,0.55)',
+              backgroundColor: 'rgba(247,179,43,0.08)', padding: 14, gap: 10,
+            }}>
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 13.5, color: night.text }}>
+                What's your {fixingKey.replace(/_/g, ' ')}?
+              </Text>
+              {(quickPicks?.[fixingKey] ?? []).length > 0 ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {(quickPicks?.[fixingKey] ?? []).map(pick => (
+                    <Pressable
+                      key={pick}
+                      onPress={() => { setFixingKey(null); onFixAssumption(fixingKey, pick); }}
+                      style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(247,179,43,0.5)' }}
+                    >
+                      <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.text }}>{pick}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                <NightInput
+                  value={fixValue}
+                  onChangeText={setFixValue}
+                  placeholder="Type the real value (e.g. 200 lbs)"
+                  style={{ flex: 1, height: 44, fontSize: 13.5 }}
+                  onSubmitEditing={() => { if (fixValue.trim()) { setFixingKey(null); onFixAssumption(fixingKey, fixValue); } }}
+                />
+                <Pressable
+                  onPress={() => { if (fixValue.trim()) { setFixingKey(null); onFixAssumption(fixingKey, fixValue); } }}
+                  style={{ height: 44, paddingHorizontal: 16, borderRadius: 12, backgroundColor: night.accent, alignItems: 'center', justifyContent: 'center', opacity: fixValue.trim() ? 1 : 0.5 }}
+                >
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.accentInk }}>Rebuild</Text>
+                </Pressable>
+                <Pressable onPress={() => setFixingKey(null)} style={{ height: 44, paddingHorizontal: 10, justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, color: night.textFaint }}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
 
           <LinearGradient
             colors={[night.accentSofter, 'rgba(14,159,232,0.08)']}
@@ -1158,12 +1231,14 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
 // in-app "+" modal (dismiss = cancel). The Qoach surfaces keep Electric Night
 // in both — the coach is its own sub-brand.
 export default function FirstGoalScreen({
-  onLocked, onDismiss, dismissLabel = 'Skip for now', demoHints = true,
+  onLocked, onDismiss, dismissLabel = 'Skip for now', demoHints = true, initialGoal,
 }: {
   onLocked: (plan: AcceptedPlan) => void;
   onDismiss: () => void;
   dismissLabel?: string;
   demoHints?: boolean;
+  /** Prefill for the intake box — the regenerate-old-goal path. */
+  initialGoal?: string;
 }) {
   const coach = useCoachFlow();
   const { goals } = useRally();
@@ -1173,7 +1248,7 @@ export default function FirstGoalScreen({
     () => suggestionsFor(goals.map(g => `${g.statement} ${g.protocol.goal_statement ?? ''}`)),
     [goals],
   );
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialGoal ?? '');
   const [answer, setAnswer] = useState('');
   const [boxFocused, setBoxFocused] = useState(false);
   const [shakeCount, setShakeCount] = useState(0);
@@ -1294,7 +1369,7 @@ export default function FirstGoalScreen({
   }
 
   /* thinking / building — full-screen orb only outside the conversation */
-  if (coach.phase === 'building' || (coach.phase === 'thinking' && coach.qa.length === 0)) {
+  if (coach.phase === 'building' || coach.phase === 'rebuilding' || (coach.phase === 'thinking' && coach.qa.length === 0)) {
     return <ThinkingView building={coach.phase === 'building'} onDismiss={onDismiss} dismissLabel={dismissLabel} />;
   }
 
@@ -1308,6 +1383,7 @@ export default function FirstGoalScreen({
     return (
       <FeasibleVerdict
         v={coach.verdict}
+        missingRequired={coach.missingRequired}
         pace={coach.pace}
         onPace={coach.setPace}
         onBuild={coach.buildPlan}
@@ -1336,6 +1412,8 @@ export default function FirstGoalScreen({
         protocol={coach.protocol}
         statement={coach.chosenStatement ?? coach.verdict.goal_statement}
         odds={coach.chosenOdds}
+        quickPicks={coach.quickPicks}
+        onFixAssumption={coach.fixAssumption}
         onLock={lockIn}
         onRestart={coach.reset}
       />

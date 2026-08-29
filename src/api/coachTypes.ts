@@ -58,13 +58,24 @@ export interface CoachRefusal {
 /** Successful responses from /coach/sessions and .../messages */
 export type CoachTurnResponse =
   | { sessionId: string; type: 'question'; question: CoachQuestion }
-  | { sessionId: string; type: 'verdict'; verdict: Verdict }
+  | { sessionId: string; type: 'verdict'; verdict: Verdict; domain?: string | null; answers?: Record<string, string>; missing_required?: string[] }
   | { sessionId: string; type: 'refused'; refusal: CoachRefusal };
+
+export interface StepAssumption {
+  step_id: string;
+  title: string;
+  assumption: string;
+  key: string | null;
+}
 
 export interface ProtocolResponse {
   sessionId: string;
   type: 'protocol';
   protocol: Protocol;
+  /** Steps whose numbers rest on assumptions the user can correct. */
+  assumptions?: StepAssumption[];
+  correctable_keys?: string[];
+  quick_picks?: Record<string, string[]>;
 }
 
 /** Normalized client-side failure. `retryable` drives the Retry affordance. */

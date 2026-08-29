@@ -80,6 +80,9 @@ export interface Verdict {
   original_duration_weeks?: number;
   /** P2a: which collected inputs moved the odds, and which way. */
   factors?: { key: string; direction: 'up' | 'down'; weight: number }[];
+  /** Fix 2: true when the server's deterministic floor replaced dropped
+   *  odds — the model failed to price and the rubric floor stood in. */
+  verdict_fallback?: boolean;
   /** Parallel to success_factors: one line each on how the factor moves the
    *  odds. Absent on verdicts stored before prompt v18. */
   success_factor_notes?: string[];
@@ -409,7 +412,7 @@ export async function coachTurn(
         missing.map(f => `- ${f.key}: ${f.reason}${f.quickPicks ? ` (quick-picks: ${f.quickPicks.join(' | ')})` : ''}`).join('\n'),
     });
   }
-  const result = await callModel(env, { ...meta, kind: 'coach_turn' }, {
+  const result = await callModel(env, { ...meta, kind: mustVerdict ? 'verdict_turn' : 'coach_turn' }, {
     model: modelsFor(env).coach,
     system: COACH_SYSTEM,
     messages: [...coachMessages(session, pendingAnswer), ...steer],
@@ -672,7 +675,7 @@ export async function generateProtocol(
                 `Emit a minimally-corrected protocol that fixes exactly these problems.`,
             },
           ];
-    const result = await callModel(env, { ...meta, kind: 'protocol' }, {
+    const result = await callModel(env, { ...meta, kind: 'protocol', ...(attempt > 0 ? { retryKind: 'validator' as const, attempt } : {}) }, {
       model: modelsFor(env).coach,
       system: PROTOCOL_SYSTEM,
       messages,
@@ -773,7 +776,7 @@ ${goalAsData(feedback)}
                 `Emit a minimally-corrected revision that fixes exactly these problems.`,
             },
           ];
-    const result = await callModel(env, { ...meta, kind: 'protocol' }, {
+    const result = await callModel(env, { ...meta, kind: 'protocol', ...(attempt > 0 ? { retryKind: 'validator' as const, attempt } : {}) }, {
       model: modelsFor(env).coach,
       system: REVISION_SYSTEM,
       messages,
@@ -856,7 +859,7 @@ export async function maintenanceProtocol(
                 `Emit a minimally-corrected protocol that fixes exactly these problems.`,
             },
           ];
-    const result = await callModel(env, { ...meta, kind: 'protocol' }, {
+    const result = await callModel(env, { ...meta, kind: 'protocol', ...(attempt > 0 ? { retryKind: 'validator' as const, attempt } : {}) }, {
       model: modelsFor(env).coach,
       system: MAINTENANCE_SYSTEM,
       messages,

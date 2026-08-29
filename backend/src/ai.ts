@@ -80,7 +80,12 @@ export interface CallMeta {
   sessionId?: string;
   deviceId?: string;
   ip?: string;
-  kind: 'safety' | 'classify_domain' | 'extract_answers' | 'coach_turn' | 'protocol' | 'audit';
+  kind: 'safety' | 'classify_domain' | 'extract_answers' | 'coach_turn' | 'verdict_turn' | 'protocol' | 'audit';
+  /** Which retry loop this call belongs to, when any ('validator' = the
+   *  generation loop re-prompting on schema errors). Transport retries are
+   *  counted inside the call itself. */
+  retryKind?: 'validator';
+  attempt?: number;
   synthetic?: boolean;
 }
 
@@ -115,6 +120,7 @@ interface RawResult {
   inputTokens: number;
   outputTokens: number;
   responseJson: string;
+  cacheHitTokens?: number;
 }
 
 /* ── provider branches ──────────────────────────────────────────────────── */
@@ -147,12 +153,14 @@ async function deepseekOnce(env: Env, params: CallParams): Promise<RawResult> {
     }),
   });
   if (!res.ok) {
-    throw new Error(`deepseek ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const err = new Error(`deepseek ${res.status}: ${(await res.text()).slice(0, 300)}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   const data = (await res.json()) as {
     model?: string;
     choices?: { message?: { content?: string; tool_calls?: { function?: { name?: string; arguments?: string } }[] } }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
+    usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number };
   };
   const msg = data.choices?.[0]?.message;
   const call = msg?.tool_calls?.[0]?.function;
@@ -176,30 +184,52 @@ async function deepseekOnce(env: Env, params: CallParams): Promise<RawResult> {
     model: data.model ?? params.model,
     inputTokens: data.usage?.prompt_tokens ?? 0,
     outputTokens: data.usage?.completion_tokens ?? 0,
+    cacheHitTokens: data.usage?.prompt_cache_hit_tokens ?? 0,
     responseJson: JSON.stringify(msg ?? {}),
   };
 }
 
-// DeepSeek flakes in two ways the Anthropic path doesn't: transient HTTP
-// errors under load, and ~5-10% malformed tool-argument JSON. One fresh
-// resample fixes nearly all of both; token usage is summed for honest costs.
-async function callDeepseek(env: Env, params: CallParams): Promise<RawResult> {
+// Transport vs content, kept apart (owner spec, fix 1):
+//  - TRANSPORT failures (429 / 5xx / network / timeout) get exponential
+//    backoff — 3 attempts, 1s/2s/4s + jitter — and are counted in
+//    transportRetries so the ledger can price them. They never consume a
+//    validator retry.
+//  - CONTENT failures (DeepSeek's ~5-10% malformed tool-argument JSON) get
+//    ONE fresh resample as before. 4xx other than 429 throws immediately —
+//    resending an invalid request is noise.
+async function deepseekWithBackoff(env: Env, params: CallParams): Promise<RawResult & { transportRetries: number }> {
+  let transportRetries = 0;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await deepseekOnce(env, params);
+      return { ...r, transportRetries };
+    } catch (err) {
+      const status = (err as Error & { status?: number }).status;
+      const retryable = status === undefined || status === 429 || status >= 500;
+      if (!retryable || attempt >= 2) throw err;
+      transportRetries++;
+      const delay = 1000 * 2 ** attempt + Math.floor(Math.random() * 250);
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
+}
+
+async function callDeepseek(env: Env, params: CallParams): Promise<RawResult & { transportRetries?: number }> {
   let totalIn = 0;
   let totalOut = 0;
-  let last: RawResult | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      last = await deepseekOnce(env, params);
-    } catch (err) {
-      if (attempt === 0) continue; // transient HTTP error → one retry
-      throw err;
-    }
+  let totalCacheHit = 0;
+  let retries = 0;
+  let last: (RawResult & { transportRetries: number }) | null = null;
+  for (let resample = 0; resample < 2; resample++) {
+    last = await deepseekWithBackoff(env, params);
+    retries += last.transportRetries;
     totalIn += last.inputTokens;
     totalOut += last.outputTokens;
+    totalCacheHit += last.cacheHitTokens ?? 0;
     if (last.toolName) break; // parseable tool call → done
   }
   if (!last) throw new Error('deepseek: no response');
-  return { ...last, inputTokens: totalIn, outputTokens: totalOut };
+  return { ...last, inputTokens: totalIn, outputTokens: totalOut, cacheHitTokens: totalCacheHit, transportRetries: retries };
 }
 
 async function callAnthropic(env: Env, params: CallParams): Promise<RawResult> {
@@ -236,6 +266,7 @@ async function callAnthropic(env: Env, params: CallParams): Promise<RawResult> {
     model: response.model ?? params.model,
     inputTokens: response.usage?.input_tokens ?? 0,
     outputTokens: response.usage?.output_tokens ?? 0,
+    cacheHitTokens: (response.usage as { cache_read_input_tokens?: number } | undefined)?.cache_read_input_tokens ?? 0,
     responseJson: JSON.stringify(response.content),
   };
 }
@@ -273,6 +304,7 @@ export async function callModel(env: Env, meta: CallMeta, params: CallParams): P
   }
 
   const requestId = crypto.randomUUID();
+  const transportRetries = (raw as { transportRetries?: number }).transportRetries ?? 0;
   await logAiRequest(env.DB, {
     id: requestId,
     sessionId: meta.sessionId ?? null,
@@ -282,6 +314,9 @@ export async function callModel(env: Env, meta: CallMeta, params: CallParams): P
     model: raw.model,
     inputTokens: raw.inputTokens,
     outputTokens: raw.outputTokens,
+    cacheHitTokens: raw.cacheHitTokens ?? 0,
+    attempt: meta.attempt ?? 0,
+    retryKind: meta.retryKind ?? (transportRetries > 0 ? 'transport' : null),
     costUsd: costUsd(raw.model, raw.inputTokens, raw.outputTokens),
     verdictClass: raw.refused ? 'api_refusal' : raw.toolName,
     synthetic: meta.synthetic ? 1 : 0,
@@ -304,6 +339,9 @@ interface LedgerRow {
   costUsd: number;
   verdictClass: string | null;
   synthetic: number;
+  cacheHitTokens?: number;
+  attempt?: number;
+  retryKind?: string | null;
   prompt: string;
   response: string;
 }
@@ -312,10 +350,10 @@ async function logAiRequest(db: D1Database, row: LedgerRow): Promise<void> {
   await db.batch([
     db
       .prepare(
-        `INSERT INTO ai_requests (id, session_id, device_id, ip, kind, model, input_tokens, output_tokens, cost_usd, verdict_class, synthetic)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ai_requests (id, session_id, device_id, ip, kind, model, input_tokens, output_tokens, cost_usd, verdict_class, synthetic, cache_hit_tokens, attempt, retry_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(row.id, row.sessionId, row.deviceId, row.ip, row.kind, row.model, row.inputTokens, row.outputTokens, row.costUsd, row.verdictClass, row.synthetic),
+      .bind(row.id, row.sessionId, row.deviceId, row.ip, row.kind, row.model, row.inputTokens, row.outputTokens, row.costUsd, row.verdictClass, row.synthetic, row.cacheHitTokens ?? 0, row.attempt ?? 0, row.retryKind ?? null),
     db
       .prepare(`INSERT INTO ai_request_payloads (request_id, prompt, response) VALUES (?, ?, ?)`)
       .bind(row.id, row.prompt, row.response),

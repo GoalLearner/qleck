@@ -87,6 +87,11 @@ export function StepRow({ step, last, showDetails = true }: { step: ProtocolStep
             {step.details}
           </Text>
         )}
+        {!!step.assumption && (
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 11, color: '#B07E14', marginTop: 3 }}>
+            {step.assumption.charAt(0).toUpperCase() + step.assumption.slice(1)} — regenerate the goal to correct it
+          </Text>
+        )}
       </View>
       <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: look.fg }}>{stepMetric(step)}</Text>
     </View>

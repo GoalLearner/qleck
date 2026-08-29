@@ -102,6 +102,12 @@ export function answerCoachQuestion(sessionId: string, answer: string): Promise<
   return post<CoachTurnResponse>(`/coach/sessions/${sessionId}/messages`, { answer });
 }
 
+/** Correct a structured answer ("Assumed ~170 lb — fix"). The server clears
+ *  the stored protocol; call generateProtocol again to rebuild from it. */
+export function postAnswer(sessionId: string, key: string, value: string): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>(`/coach/sessions/${sessionId}/answers`, { key, value });
+}
+
 export function generateProtocol(sessionId: string, pace?: string, variant?: 'original'): Promise<ProtocolResponse> {
   return post<ProtocolResponse>(`/coach/sessions/${sessionId}/protocol`, {
     ...(pace ? { pace } : {}),

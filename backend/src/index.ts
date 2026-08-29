@@ -325,7 +325,12 @@ export default {
     // synthetic in the ledger (excluded from quotas, metrics, retention).
     const isHarness = !!env.HARNESS_SECRET && request.headers.get('X-Qleck-Harness') === env.HARNESS_SECRET;
 
-    if (!isHarness) {
+    // The simulation poll is quota-EXEMPT: it finishes work the quota already
+    // admitted (the interview and prepare were gated), and a 429 here would
+    // freeze an in-flight verdict's lanes at the daily cap — the poll IS the
+    // engine, so blocking it strands the session mid-simulation. The work it
+    // kicks is bounded (one draft with a 3-attempt fuse + one lane set).
+    if (!isHarness && !isSimPoll) {
       const quotaError = await checkQuota(env, deviceId, ip);
       if (quotaError) return json({ error: quotaError, message: 'Daily coach limit reached — back tomorrow.' }, 429, cors);
     }

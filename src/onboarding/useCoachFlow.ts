@@ -169,8 +169,20 @@ export function useCoachFlow() {
       );
   }, [fail]);
 
-  // Poll the simulation while a verdict is showing. Stops on done/failed;
-  // restarts when a re-run bumps the nonce.
+  // Poll the simulation while a verdict is showing.
+  //
+  // FIELD LESSON (build 5, the owner's frozen skeletons): the loop must be
+  // UNKILLABLE while the verdict is on screen. The old shape bumped the
+  // nonce to kill the live loop the instant a pace pill was tapped, and only
+  // a SUCCESSFUL prepare restarted it — one backgrounded tap (taking a
+  // screenshot, switching apps) lost the POST and left dead polling under
+  // eternal skeletons. Now the nonce only discards STALE RESPONSES; the loop
+  // itself never stops except on done/failed (and every re-run remounts it
+  // via pollTick, bumped in `finally`, success or not).
+  const paceRef = useRef(pace);
+  paceRef.current = pace;
+  const healTries = useRef(0);
+  const healing = useRef(false);
   useEffect(() => {
     if (phase !== 'verdict') return;
     const id = sessionId.current;
@@ -178,14 +190,38 @@ export function useCoachFlow() {
     const nonce = pollNonce.current;
     let alive = true;
     const tick = async () => {
-      if (!alive || pollNonce.current !== nonce) return;
+      if (!alive) return;
       try {
         const res = await getSimulation(id);
-        if (!alive || pollNonce.current !== nonce) return;
-        if (res.simulation) setSim(res.simulation);
-        if (res.simulation && (res.simulation.status === 'done' || res.simulation.status === 'failed')) return;
+        if (!alive) return;
+        const s = pollNonce.current === nonce ? res.simulation : null;
+        if (s) {
+          if (s.config?.pace !== paceRef.current) {
+            // A pace switch was lost in flight: the server is simulating a
+            // config the pills no longer show. Re-fire the prepare (at most
+            // twice, one at a time), then show what exists rather than
+            // nothing forever.
+            if (healing.current) {
+              // a heal is mid-flight — keep ticking, decide on its outcome
+            } else if (healTries.current < 2) {
+              healTries.current++;
+              healing.current = true;
+              prepareSimulation(id, paceRef.current)
+                .then(() => { pollNonce.current++; setPollTick(t => t + 1); })
+                .catch(() => { /* next poll retries via the counter */ })
+                .finally(() => { healing.current = false; });
+            } else {
+              setSim(s);
+              if (s.status === 'done' || s.status === 'failed') return;
+            }
+          } else {
+            healTries.current = 0;
+            setSim(s);
+            if (s.status === 'done' || s.status === 'failed') return;
+          }
+        }
       } catch { /* poll again */ }
-      setTimeout(tick, 2200);
+      if (alive) setTimeout(tick, 2200);
     };
     tick();
     return () => { alive = false; };
@@ -193,21 +229,24 @@ export function useCoachFlow() {
   }, [phase, pollTick]);
 
   /** The drawer's re-run: correct an input, rebuild + resimulate the same
-   *  pace, and replay the lanes with a before/after delta. */
+   *  pace, and replay the lanes with a before/after delta. Polling resumes
+   *  whether or not the round-trip succeeds. */
   const editInput = useCallback((key: string, value: string) => {
     const id = sessionId.current;
     if (!id) return;
     setPrevSim(sim);
     setEditedKey(key);
     setSim(null);
-    pollNonce.current++;
+    pollNonce.current++; // in-flight responses for the old run are stale
     postAnswer(id, key, value)
       .then(() => prepareSimulation(id, pace))
-      .then(() => { pollNonce.current++; setSim(null); setPollTick(t => t + 1); })
-      .catch(() => { /* the poll simply keeps whatever state exists */ });
+      .catch(() => { setEditedKey(null); setPrevSim(null); })
+      .finally(() => setPollTick(t => t + 1));
   }, [pace, sim]);
 
-  /** Pace pill switch: simulate THAT config and replay (owner decision 2). */
+  /** Pace pill switch: simulate THAT config and replay (owner decision 2).
+   *  Polling resumes whether or not the prepare lands — a lost POST is then
+   *  repaired by the poll loop's self-heal. */
   const switchPace = useCallback((p: PaceKey) => {
     const id = sessionId.current;
     setPace(p);
@@ -215,8 +254,11 @@ export function useCoachFlow() {
     setPrevSim(null);
     setEditedKey(null);
     setSim(null);
-    pollNonce.current++;
-    prepareSimulation(id, p).then(() => setPollTick(t => t + 1)).catch(() => {});
+    healTries.current = 0;
+    pollNonce.current++; // in-flight responses for the old pace are stale
+    prepareSimulation(id, p)
+      .catch(() => { /* self-heal re-fires it from the poll loop */ })
+      .finally(() => setPollTick(t => t + 1));
   }, []);
 
   /** Back to a blank intake — new goal, new session. */
@@ -235,6 +277,8 @@ export function useCoachFlow() {
     setPrevSim(null);
     setEditedKey(null);
     pollNonce.current++;
+    healTries.current = 0;
+    healing.current = false;
     setProtocol(null);
     setError(null);
     setPhase('intake');

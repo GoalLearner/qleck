@@ -9,10 +9,16 @@
 // of the same page).
 //
 // ONE `phase` ENUM DRIVES EVERYTHING (design handoff sim_verdict_fix):
-//   boot → lanes → hold → settle → done, replay loops back to lanes.
-// Header label, caption, lane visibility and dial visibility all derive from
-// it, so no two parts of the card can ever disagree about what is happening
-// — the TestFlight bug was a header saying "done" over lanes stuck at idle.
+//   boot → lanes → settle → done, replay loops back to lanes.
+// Header label, caption and lane visibility all derive from it, so no two
+// parts of the card can ever disagree about what is happening — the
+// TestFlight bug was a header saying "done" over lanes stuck at idle.
+//
+// OWNER REVERSAL (2026-08-29 late): the dial is NOT gated on the futures.
+// It renders instantly with Qoach's rubric number (FeasibleVerdict owns it),
+// this strip races below, and when the runs land the number REVISES —
+// "82 today isn't 82 forever" made literal. The tap-gated hold phase died
+// with that decision; never re-propose it.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Pressable, Text, View } from 'react-native';
 import { night, nightFonts } from './theme';
@@ -26,15 +32,14 @@ const AMBER = '#F7B32B';
 // The spec's draw curve, verbatim: cubic-bezier(.3,.6,.4,1).
 const DRAW_EASING = Easing.bezier(0.3, 0.6, 0.4, 1);
 
-export type SimPhase = 'boot' | 'lanes' | 'hold' | 'settle' | 'done';
+export type SimPhase = 'boot' | 'lanes' | 'settle' | 'done';
 
 /** The header label for a phase — exported so the card header can never
  *  free-hand its own version of the state. */
 export function simPhaseLabel(phase: SimPhase): string {
   switch (phase) {
-    case 'boot':
-    case 'lanes': return 'SIMULATING — TAP TO SKIP';
-    case 'hold': return "TAP FOR QOACH'S CALL";
+    case 'boot': return 'RACING THE FUTURES';
+    case 'lanes': return 'RACING THE FUTURES — TAP TO SKIP';
     case 'settle': return '';
     case 'done': return 'TAP DIAL TO REPLAY';
   }
@@ -134,7 +139,7 @@ function SweepDot({ index }: { index: number }) {
 export function SimVerdict({
   sim, prevSim, editedKey, rubricOdds, sprinting,
   answers, quickPicks, missingRequired,
-  onEditInput, onPhase,
+  onEditInput, onPhase, bindReplay,
 }: {
   sim: SimulationState | null;
   prevSim: SimulationState | null;
@@ -147,6 +152,8 @@ export function SimVerdict({
   onEditInput: (key: string, value: string) => void;
   /** The card header derives its right-side label from this — one source. */
   onPhase?: (phase: SimPhase) => void;
+  /** Hands the parent the lane-replay so the dial's tap can trigger it. */
+  bindReplay?: (fn: () => void) => void;
 }) {
   const [railW, setRailW] = useState(0);
   const [phase, setPhase] = useState<SimPhase>('boot');
@@ -199,15 +206,16 @@ export function SimVerdict({
       setPhase('lanes');
     }
   }, [phase, lanes.length, railW, lanes]);
-  // lanes → hold: 500ms after the last lane resolves (420ms after a skip);
-  // reduced motion goes immediately.
+  // lanes → settle: 500ms after the last lane resolves (420ms after a skip);
+  // reduced motion jumps straight to done — the revision lands, no theater.
   useEffect(() => {
     if (phase === 'lanes' && doneStatus && allResolved) {
       clearPhaseT();
-      if (reduceMotion) { setPhase('hold'); return; }
-      phaseT.current = setTimeout(() => setPhase('hold'), snapAll ? 420 : 500);
+      if (reduceMotion) { fade.setValue(0); setPhase('done'); return; }
+      phaseT.current = setTimeout(() => setPhase('settle'), snapAll ? 420 : 500);
     }
     return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, doneStatus, allResolved, snapAll, reduceMotion]);
   // settle → done: lanes fade 450ms, dial 470ms later.
   useEffect(() => {
@@ -232,17 +240,22 @@ export function SimVerdict({
   useEffect(() => () => clearPhaseT(), []); // unmount only
   useEffect(() => { onPhase?.(phase); }, [phase, onPhase]);
 
-  /** The stage tap — the spec's whole interaction model. */
+  /** Replay the finished race — wired to the dial via bindReplay. */
+  const replayLanes = useCallback(() => {
+    if (!lanes.length) return;
+    clearPhaseT();
+    fade.setValue(1);
+    staggerKeys.current = lanes.map(l => l.key);
+    setSnapAll(false); setResolved({}); setDetail(-1); setRunId(r => r + 1);
+    setPhase('lanes');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lanes]);
+  useEffect(() => { bindReplay?.(replayLanes); }, [bindReplay, replayLanes]);
+
+  /** The stage tap: mid-draw skips; a finished race replays. */
   const onStageTap = () => {
-    if (phase === 'lanes') { setSnapAll(true); return; }              // skip
-    if (phase === 'hold') { setDetail(-1); setPhase('settle'); return; } // Qoach's call
-    if (phase === 'done') {                                            // replay
-      clearPhaseT();
-      fade.setValue(1);
-      staggerKeys.current = lanes.map(l => l.key);
-      setSnapAll(false); setResolved({}); setDetail(-1); setRunId(r => r + 1);
-      setPhase('lanes');
-    }
+    if (phase === 'lanes') { setSnapAll(true); return; } // skip
+    if (phase === 'done') replayLanes();
   };
 
   const hits = lanes.filter(l => l.hit && !l.invalid).length;
@@ -254,16 +267,15 @@ export function SimVerdict({
   const judge = useMemo(() => {
     if (phase === 'boot' || phase === 'lanes' || running) {
       // Name the real stage — an unnamed 30-second wait reads as a stall.
+      // The dial above is already lit with Qoach's number; these captions
+      // promise the revision, not the reveal.
       if (!sim || sim.status === 'generating') {
-        return `Qoach is drafting the plan these futures will race — about half a minute, then they run.`;
+        return `Qoach is drafting the plan these futures will race — they'll revise the number above when they land.`;
       }
       if (sim.status === 'simulating' && lanes.length < (planned.length || 1)) {
         return `Plan drafted — racing ${planned.length} honest futures, ${lanes.length} back…`;
       }
-      return `Running ${planned.length || 6} honest futures of your plan — the dial waits for them.`;
-    }
-    if (phase === 'hold' || phase === 'settle') {
-      return `${hits} of ${valid} land. Take your time with the lanes — tap when you're ready for Qoach's call.`;
+      return `Racing ${planned.length || 6} honest futures of your plan — the number above answers to them.`;
     }
     const worst = lanes.find(l => !l.hit && !l.invalid);
     let why = worst?.first_failure_reason ? worst.first_failure_reason.split('—')[0].trim() : '';
@@ -305,13 +317,15 @@ export function SimVerdict({
 
   return (
     <View>
-      {/* the race / the dial — one tappable stage, phase-driven */}
-      <Pressable
-        onPress={onStageTap}
-        style={{ height: 238, justifyContent: 'center' }}
-        onLayout={e => setRailW(Math.max(0, e.nativeEvent.layout.width - 95 - 16))}
-      >
-        {phase !== 'done' ? (
+      {/* the race — tappable while running (skip) or finished (replay).
+          The dial lives ABOVE this strip in FeasibleVerdict, already lit
+          with the rubric number; these lanes revise it when they land. */}
+      {phase !== 'done' ? (
+        <Pressable
+          onPress={onStageTap}
+          style={{ paddingVertical: 10 }}
+          onLayout={e => setRailW(Math.max(0, e.nativeEvent.layout.width - 95 - 16))}
+        >
           <Animated.View style={{ gap: 6, opacity: fade }}>
             {(planned.length ? planned : Array.from({ length: 6 }, (_, i) => ({ key: String(i), name: '', short: '·' }))).map((p, i) => {
               const run = lanes.find(l => l.key === p.key);
@@ -341,22 +355,12 @@ export function SimVerdict({
               <Text style={{ fontFamily: MONO, fontSize: 7.5, color: night.textGhost }}>{stepUnit}{sim?.steps ?? ''} · TARGET</Text>
             </View>
           </Animated.View>
-        ) : (
-          <View style={{ alignItems: 'center' }}>
-            <OddsDial
-              value={blended ?? rubric ?? 75}
-              color={sprinting ? night.warn : night.accent}
-              condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
-              size={236}
-              onPress={onStageTap}
-            />
-          </View>
-        )}
-      </Pressable>
+        </Pressable>
+      ) : null}
 
-      {/* receipt strip */}
+      {/* receipt strip — tap a bar for its run, tap elsewhere to replay */}
       {phase === 'done' ? (
-        <View>
+        <Pressable onPress={onStageTap} style={{ paddingTop: 6 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
             {lanes.map((l, i) => (
               <Pressable
@@ -375,7 +379,7 @@ export function SimVerdict({
               ? `${det.short} — ${det.hit ? 'LANDS' : (det.mark ?? 'FAILS').toUpperCase()}`
               : `${hits} OF ${valid} LAND · TAP A RUN FOR ITS ${sim?.granularity === 'days' ? 'DAYS' : 'WEEKS'}`}
           </Text>
-        </View>
+        </Pressable>
       ) : null}
 
       {/* re-run delta + compare */}
@@ -543,7 +547,7 @@ export function SimVerdict({
             })}
           </View>
           <Text style={{ marginTop: 12, fontFamily: MONO, fontSize: 8.5, lineHeight: 13, letterSpacing: 0.5, color: night.textGhost }}>
-            RE-RUNS REDRAW THE LANES — THE DIAL WAITS FOR THEM. NOTHING HERE IS A POPULATION STAT.
+            RE-RUNS REDRAW THE LANES AND REVISE THE NUMBER. NOTHING HERE IS A POPULATION STAT.
           </Text>
         </View>
       ) : null}

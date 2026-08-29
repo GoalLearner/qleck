@@ -443,6 +443,8 @@ function FeasibleVerdict({
   // The header's right label derives from the sim's phase — the ONE source
   // (design handoff: header and lanes must never disagree again).
   const [simPhase, setSimPhase] = useState<SimPhase>('boot');
+  // The lane replay, handed up by SimVerdict so the dial's tap can fire it.
+  const replayRef = useRef<(() => void) | null>(null);
 
   // The paces, when the verdict offers them: the same goal at 2-3 runways,
   // each with its own honestly-priced odds. Steady is the coach's pick and
@@ -473,6 +475,11 @@ function FeasibleVerdict({
         <View style={{ flexDirection: 'row', gap: 5, backgroundColor: night.hairline, borderRadius: 999, padding: 5, marginTop: 10 }}>
           {paces.map(o => {
             const on = o.key === chosen?.key;
+            // A pace whose futures have run shows the earned blend — the
+            // pill must never disagree with the dial it just revised.
+            const shownOdds = sim?.status === 'done' && sim.config.pace === o.key && sim.odds
+              ? sim.odds.blended
+              : o.success_probability;
             return (
               <Pressable
                 key={o.key}
@@ -487,7 +494,7 @@ function FeasibleVerdict({
                   {PACE_LABELS[o.key]}
                 </Text>
                 <Text style={{ fontFamily: MONO, fontSize: 9, fontWeight: '700', color: on ? (o.key === 'sprint' ? '#e8b467' : '#8fd3ab') : night.textGhost }}>
-                  {`${o.duration_weeks}wk · ${o.success_probability}%`}
+                  {`${o.duration_weeks}wk · ${shownOdds}%`}
                 </Text>
               </Pressable>
             );
@@ -495,6 +502,18 @@ function FeasibleVerdict({
         </View>
       ) : null}
       <View style={{ marginTop: 8 }}>
+        {/* The dial is NEVER gated on the futures (owner call): it lights up
+            with Qoach's number the moment the verdict lands. `odds` already
+            prefers the blend, so when the runs below finish, useSweep's
+            flip-aware target change IS the revision moment — the number
+            visibly re-sweeps from the rubric to the earned blend. */}
+        <OddsDial
+          value={odds}
+          color={sprinting ? night.warn : night.accent}
+          condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
+          size={wide ? 296 : Math.max(180, Math.min(width - 104, 296))}
+          onPress={simActive && simPhase === 'done' ? () => replayRef.current?.() : undefined}
+        />
         {simActive ? (
           <SimVerdict
             sim={sim ?? null}
@@ -507,15 +526,9 @@ function FeasibleVerdict({
             missingRequired={missingRequired ?? []}
             onEditInput={onEditInput!}
             onPhase={setSimPhase}
+            bindReplay={fn => { replayRef.current = fn; }}
           />
-        ) : (
-          <OddsDial
-            value={odds}
-            color={sprinting ? night.warn : night.accent}
-            condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
-            size={wide ? 296 : Math.max(180, Math.min(width - 104, 296))}
-          />
-        )}
+        ) : null}
       </View>
       <View style={{ minHeight: 42, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}>
         <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18.5, color: night.textSoft, textAlign: 'center' }}>

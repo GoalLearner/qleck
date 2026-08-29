@@ -41,7 +41,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#f5f2ea"
         }
-      ]
+      ],
+      "./plugins/withQleckIos.js"
     ]
   }
 }

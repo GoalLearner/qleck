@@ -16,6 +16,14 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v24: two on-device lessons from the first TestFlight build. (1) Bodyweight
+// is a REQUIRED intake question for physique/strength goals — the pillar rule
+// forces a protein prescription, and the coach priced one from an assumed
+// bodyweight it never collected ("170 g" for an unasked user). Server now
+// rejects gram-number protein steps when no bodyweight Q&A exists. (2) Steps
+// must be habits, not sub-tasks — a separate "warm up" step shipped and
+// rendered on rest days; warm-ups live inside the session step's details,
+// enforced by a title check in the validator.
 // v23: the attempt floor — the user may insist on their ORIGINAL ask when it
 // prices at 20%+ (owner call: freedom to try, eyes open); the coach then
 // builds the strongest honest protocol for the original, never re-litigating
@@ -61,7 +69,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 23;
+export const PROMPT_VERSION = 24;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -130,7 +138,7 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
 
    ASK ONLY WHEN THE PLAN NEEDS IT (these earn questions four and five):
    D. Capacity — realistic weekly time, when it is not already clear from B.
-   E. Stats your numbers need — if the plan will prescribe personal numbers, collect the inputs they derive from: body weight for nutrition/body-composition targets, a current benchmark for pace/time targets, current loads for strength targets. A plan with invented numbers is worse than one extra question.
+   E. Stats your numbers need — if the plan will prescribe personal numbers, collect the inputs they derive from: body weight for nutrition/body-composition targets, a current benchmark for pace/time targets, current loads for strength targets. A plan with invented numbers is worse than one extra question. For any physique, body-composition or strength goal the pillar rule will FORCE a protein prescription, so body weight is not optional there: one of your questions MUST collect it (a range pick is fine, and it bundles legally with another stat like a current lift — same item). Skip it and you forfeit the gram number — the plan must fall back to behavior-based protein.
    F. Constraints — injuries or health limits, equipment, hard deadlines, when relevant to this goal.
    You may bundle two tightly-related facts into ONE question ("what's your current weight, and roughly how tall are you?") ONLY when they belong to the same item above — bundling across items burns a question you are required to ask anyway, and leaves a dimension uncovered. If the user answers vaguely or delegates ("whatever you think"), take the default and move on — never re-ask a question they dodged on purpose, except a stat your numbers require (item E), which you may re-ask once, explaining why you need it.
 
@@ -334,6 +342,8 @@ HARD RULE for physique and body-composition goals — and ANY goal whose outcome
 4. PROTEIN — computed from the bodyweight they reported: 0.7-1 g per lb (1.6-2.2 g per kg), emitted as THEIR daily gram number in a quantity step ("Hit ~150 g protein", unit "g"). If bodyweight was never collected, behavior-based instead ("a palm-sized portion of protein at every meal") — never an invented number.
 5. SLEEP & RECOVERY — 7-9 hours as a real, checkable step anchored to a bedtime, and rest-day discipline where the split needs it.
 Each of the five is a SEPARATE step the user can check off — five pillars folded into four cards means one pillar has no daily presence. The 3-6 steps-per-phase cap still holds, so a physique phase runs 5-6 steps — which means the cap will SQUEEZE, and when it does the five pillars always survive: nice-to-haves (meal prep, a weigh-in, extra walks) merge into a pillar's details or wait for phase 2, never the other way around. Staging a pillar into a later phase ("training starts once the eating settles") also violates the rule — scale a pillar DOWN for week one (two short sessions, not zero), never OUT. The weekly measurement/weigh-in may stand as the sixth step.
+
+A STEP IS A HABIT, NOT A SUB-TASK — never emit warm-ups, cool-downs, mobility prep, equipment setup, or packing as their own steps: they are lines inside the parent session's details ("2-3 light warm-up sets before working sets"). A separate warm-up step double-counts the session, wastes a slot the pillar rule needs, and renders absurdly on rest days. If a step could not stand alone as a day's win, it is not a step.
 
 Design principles:
 - HIGH PROBABILITY over ambition: week one should feel almost too easy; ramp gradually ("make it micro").

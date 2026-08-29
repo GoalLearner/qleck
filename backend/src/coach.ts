@@ -102,6 +102,29 @@ function priorQuestions(session: SessionRow): string[] {
   return transcript.map(t => t.question).filter(Boolean);
 }
 
+/** v24: a gram-number protein step is only honest if the intake actually
+ *  collected a bodyweight — the number derives from it. Detection is by Q&A
+ *  pair (a weight-ish question with a numeric answer), NOT by scanning for
+ *  "NNN lbs" anywhere: the goal "bench 315 lbs" would false-positive. */
+function proteinProvenanceErrors(session: SessionRow, p: Protocol): string[] {
+  const transcript: TranscriptEntry[] = JSON.parse(session.transcript);
+  const askedWeight = transcript.some(t =>
+    /\b(body\s*weight|bodyweight|weigh|how heavy|your (current )?weight)\b/i.test(t.question ?? '') &&
+    /\d/.test(t.answer ?? ''));
+  if (askedWeight) return [];
+  const errs: string[] = [];
+  for (const ph of p.phases) {
+    for (const st of ph.steps) {
+      const proteinish = /protein/i.test(`${st.title} ${st.details ?? ''}`);
+      const grams = st.quantity && /^g(rams?)?$/i.test(st.quantity.unit ?? '') ? st.quantity.amount : undefined;
+      if (proteinish && typeof grams === 'number' && grams >= 40) {
+        errs.push(`step "${st.title}" prescribes ${grams} g protein but no bodyweight was ever collected — use a behavior-based protein step instead (e.g. "a palm-sized portion of protein at every meal"), never an invented number`);
+      }
+    }
+  }
+  return errs;
+}
+
 function goalAsData(goalText: string): string {
   // Injection hygiene: user text always travels inside tags, flagged as data.
   return `<goal_text>\n${goalText}\n</goal_text>`;
@@ -429,6 +452,7 @@ export async function generateProtocol(
     // more validation error to fix, which is exactly what it is.
     if (errors.length === 0) {
       errors.push(...physiquePillarErrors(`${targetStatement} ${session.goal_text}`, repaired as Protocol));
+      errors.push(...proteinProvenanceErrors(session, repaired as Protocol));
     }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: repaired as Protocol };

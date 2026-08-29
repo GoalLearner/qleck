@@ -192,11 +192,11 @@ export function reconcileDuration(p: unknown): unknown {
  * body-composition language only — because a false positive would demand
  * nonsense pillars of a non-physique goal and doom both attempts.
  */
-const PHYSIQUE_RE = /(lose|gain|drop|shed|build|put on|add)\s+(about |around |~)?\d+\s*(lbs?|pounds?|kg|kilos?|inch(es)?)|muscle|physique|recomp|body\s?comp(osition)?|glutes?|tone\s?up|bulk(ing)?|body fat/i;
+const PHYSIQUE_RE = /(lose|gain|drop|shed|build|put on|add)\s+(about |around |~)?\d+\s*(lbs?|pounds?|kg|kilos?|inch(es)?)|\bmuscle\b|physique|recomp|body\s?comp(osition)?|\bglutes?\b|tone\s?up|\bbulk(ing)?\b|body fat/i;
 
 const PILLARS: [string, RegExp][] = [
   ['training (a gym/resistance/workout step)', /gym|lift|strength|resistance|workout|session|weights|circuit|train/i],
-  ['progression (a logbook step: write sets down, beat last week)', /log|logbook|write.{0,20}(set|weight|lift)|progress|add (a )?(rep|weight)|heavier|beat (the|your|last)/i],
+  ['progression (a logbook step: write sets down, beat last week)', /\blog\b|logbook|write.{0,20}(set|weight|lift)|progress|add (a )?(rep|weight)|heavier|beat (the|your|last)/i],
   ['energy balance (a concrete surplus or deficit eating behavior)', /deficit|surplus|calorie|portion|fullness|plate|extra (meal|shake)|eat (to|less|more|at)/i],
   ['protein (ideally grams from reported bodyweight)', /protein/i],
   ['sleep (a checkable bedtime step)', /sleep|bed(time)?|asleep/i],
@@ -221,6 +221,10 @@ export function physiquePillarErrors(goalStatement: string, p: Protocol): string
   return errs;
 }
 
+// Sub-tasks masquerading as steps (v24): a warm-up shipped as its own habit
+// and rendered on rest days. These belong inside the session step's details.
+const SUBTASK_TITLE_RE = /\b(warm[\s-]?up|cool[\s-]?down)\b/i;
+
 export function validateProtocol(p: unknown): string[] {
   const errs: string[] = [];
   const proto = p as Protocol;
@@ -233,6 +237,14 @@ export function validateProtocol(p: unknown): string[] {
   if (!Array.isArray(proto.phases) || proto.phases.length === 0) {
     errs.push('at least one phase required');
     return errs;
+  }
+
+  for (const ph of proto.phases) {
+    for (const st of ph.steps ?? []) {
+      if (st?.title && SUBTASK_TITLE_RE.test(st.title)) {
+        errs.push(`step "${st.title}" is a sub-task, not a habit — fold warm-ups/cool-downs into the session step's details`);
+      }
+    }
   }
 
   const stepIds = new Set<string>();

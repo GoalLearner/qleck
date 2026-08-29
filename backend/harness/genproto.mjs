@@ -21,7 +21,7 @@ try {
 } catch { /* fine */ }
 
 const ROUTES = [
-  ['stats', /weigh|weight|tall|height|body|bench|current (5k|time|load|pace)|kilograms|pounds/i],
+  ['stats', /weigh|weight|tall|height|body(?! ?weight.?exercis)|kilograms|pounds/i],
   ['failure', /derail|got in the way|stopped you|past attempt|tried (this|before|to)|relaps|struggle|hardest part|what usually/i],
   ['anchor', /when in|what time|time of day|part of your (day|evening|morning)|routine|follow|slot|fit into your day/i],
   ['capacity', /how (much|many) (time|hours|days|mornings|evenings|sessions)|per week|a week|weekly|schedule|realistically (have|commit|fit)|how often/i],

@@ -15,6 +15,13 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   DEEPSEEK_API_KEY?: string;
   AI_ENABLED?: string;
+  // Owner call 2026-08-29 late: the verdict page keeps ONLY the probability —
+  // the five-futures simulation is OFF. "off" short-circuits every sim to
+  // status 'failed' (which build-8 clients render as the clean dial+drivers
+  // page) while the DRAFT still generates in the background so accepting a
+  // plan stays instant. Flip to anything else + deploy to bring the full
+  // lanes experience back — all client and engine code is intact.
+  SIMULATIONS?: string;
   DAILY_DEVICE_LIMIT?: string;
   DAILY_IP_LIMIT?: string;
   CORS_ORIGINS?: string;

@@ -21,6 +21,11 @@ database_id = "6dc260dc-f302-4951-815c-c25328578877"
 AI_PROVIDER = "deepseek"
 # Kill-switch: set to "false" (or anything else) to stop all AI spend instantly.
 AI_ENABLED = "true"
+# The five-futures simulation on the verdict page (owner call 2026-08-29:
+# keep the probability, scratch the visible sim). "off" = sims short-circuit
+# to failed (clients show the clean dial), drafts still pre-generate for
+# instant accepts. Any other value restores the full lanes experience.
+SIMULATIONS = "off"
 # Per-day AI-request quotas, pre-auth (device header + IP). Tighten server-side
 # any time — no client release needed. A full goal costs ~6-10 requests, so
 # 150 ≈ 15-25 goals/day/device; worst-case runaway ≈ $0.15/day at DeepSeek

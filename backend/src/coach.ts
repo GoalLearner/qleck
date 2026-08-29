@@ -1147,7 +1147,12 @@ export async function initSimulation(
   const domain: Domain = structure.domain ?? 'other';
   const templates = templatesFor(domain);
   const sim: SimulationState = {
-    status: 'generating',
+    // SIMULATIONS="off" (owner call): born failed — build-8 clients render a
+    // failed sim as the clean dial+drivers page and stop polling, so the
+    // five futures never appear and the number never revises. The draft
+    // still pre-generates via driveDraft for the instant accept.
+    status: env.SIMULATIONS === 'off' ? 'failed' : 'generating',
+    ...(env.SIMULATIONS === 'off' ? { error: 'sim_disabled' } : {}),
     config: { pace: config.pace, variant: config.variant },
     lanes: [],
     planned: templates.map(t => ({ key: t.key, name: t.name, short: t.short })),

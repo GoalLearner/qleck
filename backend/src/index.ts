@@ -113,6 +113,35 @@ async function driveSim(
   }
 }
 
+/** SIMULATIONS="off" companion: generate ONLY the draft in the background so
+ *  accepting a plan stays instant, with no lanes and no verdict rewrite —
+ *  the rubric number the verdict shipped with is the number, full stop.
+ *  Epoch-guarded like every engine write, so a pace switch mid-generation
+ *  discards the stale draft instead of attaching it to the new config. */
+async function driveDraft(
+  env: Env,
+  meta: { deviceId: string; ip: string; synthetic?: boolean },
+  sessionId: string,
+  deviceId: string,
+): Promise<void> {
+  try {
+    const session = await loadSession(env, sessionId, deviceId);
+    if (!session || session.draft_protocol || !session.verdict || !session.simulation) return;
+    const sim = JSON.parse(session.simulation) as SimulationState;
+    const epoch = sim.epoch ?? 0;
+    const verdict = JSON.parse(session.verdict) as Verdict;
+    const pace = (sim.config?.pace as PaceKey) ?? 'steady';
+    const variant = sim.config?.variant === 'original' ? 'original' : undefined;
+    const gen = await generateProtocol(env, { ...meta, sessionId }, session, verdict, pace, variant);
+    if (gen.protocol) {
+      await env.DB
+        .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
+        .bind(JSON.stringify(gen.protocol), sessionId, epoch)
+        .run();
+    }
+  } catch { /* accept falls back to in-request generation */ }
+}
+
 async function loadSession(env: Env, id: string, deviceId: string): Promise<SessionRow | null> {
   const row = await env.DB
     .prepare(`SELECT * FROM coach_sessions WHERE id = ? AND device_id = ?`)
@@ -585,9 +614,11 @@ export default {
         // Init, then a head start: driveSim locks before working, so this
         // and the polls' drivers can never double the work — the new pace's
         // draft begins ~2-4s before the first poll would have kicked it.
+        // With SIMULATIONS off, only the draft pre-generates (driveDraft).
         ctx.waitUntil((async () => {
           await initSimulation(env, session, config);
-          await driveSim(env, meta, session.id, deviceId);
+          if (env.SIMULATIONS === 'off') await driveDraft(env, meta, session.id, deviceId);
+          else await driveSim(env, meta, session.id, deviceId);
         })());
         return json({ sessionId: session.id, ok: true, preparing: config }, 202, cors);
       }
@@ -629,7 +660,11 @@ export default {
         const wantVariant = variant ?? null;
         if (
           session.draft_protocol && simState &&
-          (simState.status === 'done' || simState.status === 'simulating') &&
+          // 'failed' included deliberately: with SIMULATIONS off every draft
+          // belongs to a born-failed sim, and a lanes-failed sim's draft is
+          // still the validated plan for this exact config (epoch-guarded
+          // writes make a stale draft impossible).
+          (simState.status === 'done' || simState.status === 'simulating' || simState.status === 'failed') &&
           simState.config.pace === wantPace && simState.config.variant === wantVariant
         ) {
           const draft = JSON.parse(session.draft_protocol) as Protocol;
@@ -933,7 +968,8 @@ async function runCoachTurn(
       // from ever doubling the work.
       ctx.waitUntil((async () => {
         await initSimulation(env, simSession, { pace: 'steady', variant: null });
-        await driveSim(env, meta, session.id, meta.deviceId);
+        if (env.SIMULATIONS === 'off') await driveDraft(env, meta, session.id, meta.deviceId);
+        else await driveSim(env, meta, session.id, meta.deviceId);
       })());
     }
     const structureOut = sessionStructure(session);

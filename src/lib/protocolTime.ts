@@ -122,8 +122,17 @@ export function repsForDate(
   const week = weekOf(startedOn, local, protocol.duration_weeks);
   const phase = phaseForWeek(protocol, week);
   const reps: DayRep[] = [];
+  // 2b: a session-attached step is pinned by construction — the server
+  // guarantees its days equal its session's days, so the pinned path renders
+  // it only on session days. The lookup below is belt and braces for
+  // protocols whose step days got stripped somewhere en route.
+  const sessionDays = new Map((protocol.sessions ?? []).map(sess => [sess.id, sess.days]));
   for (const step of phase.steps) {
     const checkedToday = checkIns.some(c => c.step_id === step.id && c.local_date === local);
+    if (step.session_id && (step.frequency.days?.length ?? 0) === 0) {
+      const days = sessionDays.get(step.session_id);
+      if (days?.length) step.frequency.days = [...days];
+    }
     const pinned = (step.frequency.days?.length ?? 0) > 0;
     if (pinned) {
       if (stepPinnedOn(step, local)) reps.push({ step, phase, checked: checkedToday, quotaLabel: null });

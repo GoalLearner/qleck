@@ -24,6 +24,9 @@ export type CoachPhase =
   | 'error';      // normalized failure, maybe retryable
 
 export interface AcceptedPlan {
+  /** The coach session that built this plan — links the server's
+   *  goal_outcomes calibration row to the real goal. */
+  coachSessionId?: string;
   goalText: string;        // what the user typed
   statement: string;       // what the coach accepted
   durationWeeks: number;
@@ -162,7 +165,7 @@ export function useCoachFlow() {
     protocol && verdict
       // durationWeeks comes from the PROTOCOL: a sprint or relaxed pace means
       // the verdict's headline weeks and the generated plan's weeks differ.
-      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: chosenOdds, protocol }
+      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: chosenOdds, protocol, coachSessionId: sessionId.current ?? undefined }
       : null;
 
   return {

@@ -6,7 +6,7 @@
 // tsconfig). Verdict + response envelopes are mirrored here because their
 // backend home (coach.ts) pulls in Worker-only types.
 export type {
-  Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep, RepKind,
+  Protocol, ProtocolMilestone, ProtocolPhase, ProtocolSession, ProtocolStep, RepKind,
 } from '../../backend/src/protocolSchema';
 import type { Protocol } from '../../backend/src/protocolSchema';
 

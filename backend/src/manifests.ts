@@ -58,6 +58,7 @@ export const MANIFESTS: Record<Domain, ManifestField[]> = {
     F('income_or_contribution_capacity', true, 'income or realistic monthly contribution → whether the target math closes'),
     F('pay_cadence', true, 'pay cadence → transfer schedule anchors to real paydays', ['Weekly', 'Biweekly', 'Twice a month', 'Monthly']),
     F('target_date', true, 'target date → required contribution per pay period'),
+    F('pay_day', false, 'the day pay lands (weekday, or date like the 1st/15th) → the transfer rep anchors to the real payday', ['Friday', 'Every other Friday', '1st of the month', '15th and 30th']),
     F('fixed_obligations', false, 'rent/debt obligations → how much capacity is genuinely free'),
   ],
   career: [

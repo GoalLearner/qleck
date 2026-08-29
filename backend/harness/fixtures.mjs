@@ -86,7 +86,7 @@ export const GOAL_FIXTURES = [
     expect: ['feasible'],
   },
   {
-    id: 'sleep-11pm', category: 'realistic', protocol: true, maxQuestions: 4,
+    id: 'sleep-11pm', category: 'realistic', protocol: true, maxQuestions: 5, // manifest steering can spend one extra turn when a canned positional answer lands off-question; 6 is the real alarm
     goal: 'Get to bed by 11pm on weeknights for a month. I usually drift to 1am scrolling.',
     answers: [
       'It starts on the sofa around 10 and drifts to bed; I am asleep near 1am.',

@@ -6,7 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, isDomain, missingRequired, type Domain } from './manifests';
 
 // Server-enforced negotiation band: at least 3 clarifying questions, at most 5.
@@ -544,9 +544,19 @@ export async function coachTurn(
         maxTokens: 2048,
         temperature: 0.2,
       });
+      let recovered = false;
       if (refactor.toolName === VERDICT_TOOL.name) {
         const rv = refactor.toolInput as Verdict;
-        if (rv.decision === verdict.decision && keyFactorCount(rv) >= 2) verdict = rv;
+        if (rv.decision === verdict.decision && keyFactorCount(rv) >= 2) { verdict = rv; recovered = true; }
+      }
+      if (!recovered) {
+        // Calibration breadcrumb (owner spec 2b add): how often vague goals
+        // starve the verdict of citable keys. Fire-and-forget.
+        await env.DB
+          .prepare(`INSERT OR REPLACE INTO factor_guard_failopens (session_id, domain, keys_at_verdict) VALUES (?, ?, ?)`)
+          .bind(meta.sessionId, structure.domain, JSON.stringify(answerKeys))
+          .run()
+          .catch(() => {});
       }
     }
     // Sufficiency veto: the model verdicted while the auditor said facts were
@@ -687,9 +697,28 @@ export async function generateProtocol(
           for (const st of ph.steps ?? []) delete st.assumption;
         }
       }
+      // 2b repair: an attached step with missing/short days inherits its
+      // session's days (owner spec: auto-set if missing) — the validator
+      // then enforces equality, so only genuine mismatches burn a retry.
+      {
+        const sess = new Map(((repaired as Protocol).sessions ?? []).map(x => [x.id, x]));
+        for (const ph of (repaired as Protocol).phases ?? []) {
+          for (const st of ph.steps ?? []) {
+            const parent = st.session_id ? sess.get(st.session_id) : undefined;
+            if (parent && Array.isArray(parent.days) && parent.days.length > 0) {
+              if (!st.frequency.days || st.frequency.days.length === 0) {
+                st.frequency.days = [...parent.days];
+                st.frequency.per_week = parent.days.length;
+              }
+            }
+          }
+        }
+      }
       errors.push(...physiquePillarErrors(`${targetStatement} ${session.goal_text}`, repaired as Protocol));
       errors.push(...provenanceErrors(repaired as Protocol, structure.answers, assumableKeys));
       errors.push(...exhaustedKeyErrors(repaired as Protocol, session.domain, assumableKeys, structure.answers));
+      errors.push(...sessionErrors(repaired as Protocol));
+      errors.push(...milestoneProvenanceErrors(repaired as Protocol, structure.answers, assumableKeys, session.domain));
     }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: repaired as Protocol };

@@ -124,10 +124,20 @@ export default {
       try {
 
       if (url.pathname === '/goals' && request.method === 'POST') {
-        const parsed = parseCreateGoal((await request.json().catch(() => ({}))) as CreateGoalBody);
+        const rawBody = (await request.json().catch(() => ({}))) as CreateGoalBody & { sessionId?: unknown };
+        const parsed = parseCreateGoal(rawBody);
         if (!parsed.ok) return json({ error: parsed.error }, 400, cors);
         const goal = await createGoal(env, userId, parsed);
         if ('error' in goal) return json({ error: goal.error }, 409, cors);
+        // Link the calibration row to the real goal when the client tells us
+        // which coach session built it (additive; older clients omit it).
+        if (typeof rawBody.sessionId === 'string' && /^[0-9a-fA-F-]{36}$/.test(rawBody.sessionId)) {
+          await env.DB
+            .prepare(`UPDATE goal_outcomes SET goal_id = ? WHERE session_id = ?`)
+            .bind(parsed.id, rawBody.sessionId)
+            .run()
+            .catch(() => {});
+        }
         return json({ goal }, 200, cors);
       }
       if (url.pathname === '/goals' && request.method === 'GET') {
@@ -472,6 +482,24 @@ export default {
           .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, updated_at = datetime('now') WHERE id = ?`)
           .bind(JSON.stringify(result.protocol), session.id)
           .run();
+        // 2c's calibration dataset starts here (owner spec): the verdict row
+        // is written at protocol save, outcome left null until known.
+        {
+          const st = sessionStructure(session);
+          await env.DB
+            .prepare(
+              `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot)
+               VALUES (?, ?, ?, ?, ?)`,
+            )
+            .bind(
+              session.id, session.domain,
+              typeof verdict.success_probability === 'number' ? Math.round(verdict.success_probability) : null,
+              JSON.stringify(verdict.factors ?? []),
+              JSON.stringify(st.answers),
+            )
+            .run()
+            .catch(err => console.error('goal_outcomes write failed', err));
+        }
         return json({ sessionId: session.id, type: 'protocol', protocol: result.protocol, ...assumptionPayload(session, result.protocol) }, 200, cors);
       }
 

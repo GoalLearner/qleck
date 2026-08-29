@@ -133,6 +133,7 @@ export async function saveGoal(plan: AcceptedPlan, goalText: string, id?: string
     timezone,
     successProbability: plan.odds ?? null,
     protocol: plan.protocol,
+    ...(plan.coachSessionId ? { sessionId: plan.coachSessionId } : {}),
   };
   await writeGoalOutbox([...(await readGoalOutbox()), item]);
   void flushGoalOutbox();

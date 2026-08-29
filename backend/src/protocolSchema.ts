@@ -33,6 +33,17 @@ export interface ProtocolStep {
   /** The unresolved manifest key the assumption stands in for — what the
    *  correction UI posts to /answers. Required alongside assumption. */
   assumption_key?: string;
+  /** 2b: the session this step belongs to (its occurrence, or a rep
+   *  conditional on it). Conditional steps MUST carry it. */
+  session_id?: string;
+}
+
+/** 2b: the weekly skeleton. Steps attach to sessions; a conditional rep
+ *  (after each session, day after pay) only exists on its session's days. */
+export interface ProtocolSession {
+  id: string;
+  type: string;            // "press", "run", "pay", "practice"...
+  days: string[];          // fixed weekday names, e.g. ["mon","thu"]
 }
 
 export interface ProtocolPhase {
@@ -49,6 +60,10 @@ export interface ProtocolMilestone {
   week: number;
   title: string;
   criteria: string;       // observable "you did it" statement
+  /** 2b: same provenance contract as step targets. */
+  derived_from?: string[];
+  assumption?: string;
+  assumption_key?: string;
 }
 
 export interface Protocol {
@@ -61,6 +76,8 @@ export interface Protocol {
   // carry one, and the client falls back to deriving it.
   short_title?: string;
   duration_weeks: number;
+  /** 2b: the weekly session skeleton steps attach to. */
+  sessions?: ProtocolSession[];
   phases: ProtocolPhase[];
   milestones: ProtocolMilestone[];
   coach_notes: string;    // tone: encouraging, honest, no medical claims
@@ -79,6 +96,20 @@ export const PROTOCOL_TOOL_SCHEMA = {
       description: 'The goal as a NAME for lists: the action + its target and/or timeframe, 3-7 words, no method, no clauses. "Quit smoking in 4 weeks", "Cut doomscrolling to under 1 hour/day", "In bed by 11pm".',
     },
     duration_weeks: { type: 'number' },
+    sessions: {
+      type: 'array',
+      description: "The weekly skeleton, designed FIRST: every recurring scheduled activity (training session, run, practice block, payday) as {id, type, days}. days are fixed weekday names ('mon'...'sun'). Steps that ARE a session occurrence, or are conditional on one (a meal after each session, a transfer the day after pay), carry that session's id in session_id.",
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'type', 'days'],
+        properties: {
+          id: { type: 'string' },
+          type: { type: 'string', description: "'press', 'run', 'pay', 'practice'..." },
+          days: { type: 'array', items: { type: 'string' }, description: "fixed weekday names, e.g. ['mon','thu']" },
+        },
+      },
+    },
     phases: {
       type: 'array',
       items: {
@@ -144,6 +175,10 @@ export const PROTOCOL_TOOL_SCHEMA = {
                   type: 'string',
                   description: "REQUIRED alongside assumption: the unresolved input's key this assumption stands in for (e.g. 'bodyweight').",
                 },
+                session_id: {
+                  type: 'string',
+                  description: "The session (from sessions[]) this step is an occurrence of or conditional on. REQUIRED for any step referencing another activity (after each session/run, pre-session meal, the day after pay). Omit for standalone daily/flexible habits.",
+                },
                 week_progression: { type: 'string' },
               },
             },
@@ -162,6 +197,9 @@ export const PROTOCOL_TOOL_SCHEMA = {
           week: { type: 'number' },
           title: { type: 'string' },
           criteria: { type: 'string' },
+          derived_from: { type: 'array', items: { type: 'string' }, description: 'Same contract as step targets: any number in the milestone cites the collected keys it derives from (goal_text / standard_practice legal).' },
+          assumption: { type: 'string' },
+          assumption_key: { type: 'string' },
         },
       },
     },
@@ -341,6 +379,107 @@ export function exhaustedKeyErrors(
     return [`the protein step "${proteinNumeric.title}" derives from an uncollected bodyweight — it must carry assumption ("assumed ~170 lb bodyweight")`];
   }
   return [];
+}
+
+const VALID_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+
+// Conditional language over titles AND descriptions: a step that references
+// another activity must be attached to it. (Warm-up/cool-down TITLES stay
+// hard-banned as standalone steps — they fold into the session's details —
+// so this list covers the attach-or-die family beyond them.)
+const CONDITIONAL_RE = new RegExp(
+  [
+    'after (each|every|your|the) (session|workout|run|lift|gym|practice|class|shift)',
+    'before (each|every|your|the) (session|workout|run|lift|gym|practice|class)',
+    'pre[- ]?(workout|session|run|lift)',
+    'post[- ]?(workout|session|run|lift)',
+    'day after (pay|each pay|payday|you get paid)',
+    'after (pay|payday|each paycheck|you get paid)',
+    'on (session|training|run|lifting) days',
+  ].join('|'),
+  'i',
+);
+
+/** 2b session-consistency rules (code, not model):
+ *  - session ids unique, days valid weekday names, 1-7 of them
+ *  - a step's session_id must exist
+ *  - conditional-language steps MUST carry session_id
+ *  - attached steps: days auto-set to the session's days happens in the
+ *    repair pass; HERE they must equal them, and per_week must equal the
+ *    session's day count (<= sessions/week, no floating quota)
+ */
+export function sessionErrors(p: Protocol): string[] {
+  const errs: string[] = [];
+  const sessions = new Map<string, ProtocolSession>();
+  for (const sess of p.sessions ?? []) {
+    if (!sess.id?.trim()) { errs.push('a session is missing its id'); continue; }
+    if (sessions.has(sess.id)) errs.push(`duplicate session id "${sess.id}"`);
+    if (!sess.type?.trim()) errs.push(`session "${sess.id}" is missing its type`);
+    const days = Array.isArray(sess.days) ? sess.days.map(d => String(d).toLowerCase()) : [];
+    if (days.length < 1 || days.length > 7) errs.push(`session "${sess.id}" needs 1-7 fixed days`);
+    for (const d of days) if (!VALID_DAYS.has(d)) errs.push(`session "${sess.id}" has invalid day "${d}"`);
+    sessions.set(sess.id, { ...sess, days });
+  }
+  for (const ph of p.phases ?? []) {
+    for (const st of ph.steps ?? []) {
+      const text = `${st.title} ${st.details ?? ''}`;
+      if (st.session_id) {
+        const sess = sessions.get(st.session_id);
+        if (!sess) { errs.push(`step "${st.title}" references session "${st.session_id}" which does not exist`); continue; }
+        const days = (st.frequency.days ?? []).map(d => String(d).toLowerCase());
+        if (days.length === 0) {
+          errs.push(`step "${st.title}" is attached to session "${sess.id}" but has no fixed days — conditional steps cannot use a floating weekly quota; set days to the session's days (${sess.days.join(',')})`);
+        } else {
+          const a = [...days].sort().join(',');
+          const b = [...sess.days].sort().join(',');
+          if (a !== b) errs.push(`step "${st.title}" days (${a}) must equal its session's days (${b})`);
+        }
+        if (st.frequency.per_week > sess.days.length) {
+          errs.push(`step "${st.title}" per_week ${st.frequency.per_week} exceeds its session's ${sess.days.length} day(s)/week`);
+        }
+      } else if (CONDITIONAL_RE.test(text)) {
+        errs.push(`step "${st.title}" references another activity ("${(text.match(CONDITIONAL_RE) ?? [''])[0]}") but carries no session_id — attach it to the session it depends on (declare the session in sessions[] if missing)`);
+      }
+    }
+  }
+  return errs;
+}
+
+/** 2b: milestone provenance — same contract as step targets. A milestone
+ *  whose title/criteria carries a number cites its sources. */
+export function milestoneProvenanceErrors(
+  p: Protocol,
+  answers: Record<string, string>,
+  assumableKeys: string[],
+  domain: string | null,
+): string[] {
+  const errs: string[] = [];
+  let audienceCited = false;
+  for (const m of p.milestones ?? []) {
+    const df = Array.isArray(m.derived_from) ? m.derived_from.filter(k => typeof k === 'string' && k.trim()) : [];
+    if (df.includes('current_followers')) audienceCited = true;
+    const numeric = /\d/.test(`${m.title} ${m.criteria}`);
+    if (!numeric) continue;
+    const assumption = typeof m.assumption === 'string' && m.assumption.trim() ? m.assumption.trim() : null;
+    const assumptionKey = typeof m.assumption_key === 'string' && m.assumption_key.trim() ? m.assumption_key.trim() : null;
+    if (df.length === 0 && !assumption) {
+      errs.push(`milestone "${m.title}" carries a number but neither derived_from nor assumption`);
+      continue;
+    }
+    for (const k of df) {
+      if (!PROVENANCE_SENTINELS.has(k) && !(k in answers)) {
+        errs.push(`milestone "${m.title}" cites derived_from key "${k}" which was never collected`);
+      }
+    }
+    if (assumption && !assumptionKey) errs.push(`milestone "${m.title}" has an assumption without assumption_key`);
+    if (assumption && assumptionKey && !assumableKeys.includes(assumptionKey)) {
+      errs.push(`milestone "${m.title}" assumes "${assumptionKey}" which is not an unresolved required input`);
+    }
+  }
+  if (domain === 'audience' && (p.milestones ?? []).length > 0 && !audienceCited) {
+    errs.push(`audience goal: at least one milestone must derive from current_followers (the follower ladder is the point of the plan)`);
+  }
+  return errs;
 }
 
 export function validateProtocol(p: unknown): string[] {

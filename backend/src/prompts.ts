@@ -16,6 +16,13 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v26 (2b, owner spec): schedule-first protocols. sessions[] is the weekly
+// skeleton (type + fixed days) designed before the steps; conditional reps
+// (after each session, day after pay) attach via session_id and take the
+// session's exact days — never a floating quota (sessionErrors). Money goals
+// emit a "pay" session for transfer reps. Milestones obey the same
+// provenance contract as step targets; audience milestone ladders must
+// derive from current_followers. goal_outcomes logs every protocol save.
 // v25 (P2a, owner spec): the requirements-driven interview. Goals classify
 // into a domain; each domain carries a required-inputs manifest
 // (manifests.ts); answers extract into structured keys after every turn; the
@@ -77,7 +84,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 25;
+export const PROMPT_VERSION = 26;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -368,6 +375,10 @@ HARD RULE for physique and body-composition goals — and ANY goal whose outcome
 4. PROTEIN — computed from the bodyweight they reported: 0.7-1 g per lb (1.6-2.2 g per kg), emitted as THEIR daily gram number in a quantity step ("Hit ~150 g protein", unit "g"). If bodyweight is listed as an UNRESOLVED REQUIRED INPUT, still prescribe the gram number — computed from a stated assumed bodyweight ("Hit ~150 g protein", assumption: "assumed 170 lb bodyweight") — because the app surfaces the assumption for one-tap correction and regenerates. A behavior-based dodge hides the gap; the assumption advertises it.
 5. SLEEP & RECOVERY — 7-9 hours as a real, checkable step anchored to a bedtime, and rest-day discipline where the split needs it.
 Each of the five is a SEPARATE step the user can check off — five pillars folded into four cards means one pillar has no daily presence. The 3-6 steps-per-phase cap still holds, so a physique phase runs 5-6 steps — which means the cap will SQUEEZE, and when it does the five pillars always survive: nice-to-haves (meal prep, a weigh-in, extra walks) merge into a pillar's details or wait for phase 2, never the other way around. Staging a pillar into a later phase ("training starts once the eating settles") also violates the rule — scale a pillar DOWN for week one (two short sessions, not zero), never OUT. The weekly measurement/weigh-in may stand as the sixth step.
+
+SCHEDULE FIRST — design sessions[] before writing a single step: every recurring scheduled activity in the plan (training session, run, practice block, payday) is a session {id, type, days} with FIXED weekday names chosen from what the user said about their schedule. Then attach steps: a step that IS a session occurrence carries that session_id, and so does every rep that only makes sense because of a session — the meal after each workout, the log after each run, the transfer the day after pay. Attached steps take the session's exact days and per_week equal to the session's day count — never a floating weekly quota. Steps with no parent (a daily protein target, a nightly bedtime) omit session_id and may stay flexible. For money goals with a stated pay cadence, emit a "pay" session on the payday's weekday and attach the transfer step to it. The app renders attached reps ONLY on their session's days — this is what keeps a conditional rep off rest days.
+
+MILESTONES OBEY THE SAME PROVENANCE CONTRACT as step targets: any milestone whose title or criteria carries a number sets derived_from (collected keys / goal_text / standard_practice) or assumption + assumption_key. For audience goals the milestone ladder IS the follower math — at least one milestone derives from current_followers.
 
 EVERY NUMERIC TARGET CITES ITS SOURCE — any step carrying a numeric prescription (quantity.amount above zero, or duration_minutes) MUST carry derived_from: the structured answer keys the number derives from (["bodyweight"] for a protein target; ["current_amount","target_date","income_or_contribution_capacity"] for a transfer amount), or ["goal_text"] when the number is stated in the goal itself, or ["standard_practice"] for a domain-standard prescription that is personal-data-free (7-9 hours sleep, 2-3 warm-up sets, conversational pace). A number you cannot cite is a number you may not write. When — and only when — the interview ended with a required input still missing (the prompt names which), write the number anyway, set assumption to the plain-words assumption it rests on ("assumed 200 lb bodyweight") AND assumption_key to the unresolved input's key ("bodyweight"); the app shows the assumption for one-tap correction. Never keep an assumption for an input that IS collected — derive from the collected value. Never set assumption when derived_from is possible. And NEVER design AROUND an unresolved input by dropping the prescription that needs it: a strength or body-composition plan does not lose its protein target because bodyweight went uncollected — it carries the standard prescription WITH the assumption stated. Omitting a pillar to dodge an assumption is a worse lie than the assumption.
 

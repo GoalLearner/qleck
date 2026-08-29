@@ -215,6 +215,35 @@ for (const g of GOALS) {
   console.log(`  validator: PASSED (saved). numerics ${numerics}: ${cited} cited, ${assumed} assumed, ${uncited} uncited`);
   if (uncited > 0) failures++;
 
+  // 2b: the session skeleton and every attached step's day alignment.
+  const sessions = p.sessions ?? [];
+  const byId = new Map(sessions.map(x => [x.id, x]));
+  if (sessions.length) {
+    console.log(`  sessions: ${sessions.map(x => `${x.id}(${x.type}: ${x.days.join(',')})`).join('  ')}`);
+    const seen = new Set();
+    for (const ph of p.phases) {
+      for (const st of ph.steps) {
+        if (!st.session_id || seen.has(st.session_id + '|' + st.title)) continue;
+        seen.add(st.session_id + '|' + st.title);
+        const sess = byId.get(st.session_id);
+        console.log(`    ⇒ "${st.title.slice(0, 46)}" → ${st.session_id} [session days: ${sess ? sess.days.join(',') : 'MISSING'}] [step days: ${(st.frequency.days ?? []).join(',') || 'NONE'}]`);
+      }
+    }
+  } else {
+    console.log('  sessions: none declared');
+  }
+  if (g.id === 'save-10k') {
+    const pay = sessions.find(x => /pay/i.test(x.type) || /pay/i.test(x.id));
+    const attached = pay && p.phases.some(ph => ph.steps.some(st => st.session_id === pay.id && /transfer|move|deposit|save/i.test(st.title + ' ' + (st.details ?? ''))));
+    console.log(`  money check: pay session ${pay ? pay.id : 'MISSING'} | transfer attached: ${!!attached}`);
+    if (!pay || !attached) { failures++; console.log('  money FAIL'); }
+  }
+  if (g.id === 'bench-315') {
+    const lift = sessions.find(x => /press|bench|lift|train|strength/i.test(x.type + ' ' + x.id));
+    console.log(`  bench check: training session ${lift ? `${lift.id} (${lift.days.join(',')})` : 'MISSING'}`);
+    if (!lift) { failures++; console.log('  bench FAIL'); }
+  }
+
   if (g.hostile) {
     // The owner's hostile contract: interview stops at/before the hard cap,
     // generation still runs, assumptions appear ONLY on exhausted keys, and

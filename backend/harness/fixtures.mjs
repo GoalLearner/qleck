@@ -41,7 +41,7 @@ export const GOAL_FIXTURES = [
     // context, past attempts, plus ONE discretionary question after the
     // turn-4 collection budget freezes the steer. Anything above 5 means
     // repeats got past the guard again.
-    id: 'read-nightly', category: 'realistic', protocol: true, maxQuestions: 5,
+    id: 'read-nightly', category: 'realistic', protocol: true, maxQuestions: 5, priceCheck: true,
     goal: 'Read 10 minutes before bed every night for the next month.',
     answers: [
       'I get into bed around 11 most nights.',

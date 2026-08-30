@@ -20,7 +20,7 @@
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
 import { verifyAppleToken } from './apple';
-import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
+import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
@@ -596,7 +596,7 @@ export default {
           return json({ error: 'no_verdict_yet', status: session.status }, 409, cors);
         }
         const verdict = JSON.parse(session.verdict) as Verdict;
-        const pace: PaceKey = body.pace === 'sprint' || body.pace === 'relaxed' ? body.pace : 'steady';
+        const pace: PaceKey = body.pace === 'sprint' || body.pace === 'relaxed' || body.pace === 'custom' ? body.pace : 'steady';
         const variant = body.variant === 'original' ? 'original' as const : null;
         if (variant) {
           const orig = verdict.decision === 'counter_offer' ? verdict.original_probability : undefined;
@@ -623,6 +623,26 @@ export default {
         return json({ sessionId: session.id, ok: true, preparing: config }, 202, cors);
       }
 
+      /* POST /coach/sessions/:id/price {weeks} — v29 "Your pace": price a
+       * user-named runway with the same procedure, clamped into the ladder's
+       * ordering, stored as pace_options[custom]. The user awaits this call
+       * (~5-10s) exactly like an interview turn. */
+      const priceMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/price$/);
+      if (priceMatch && request.method === 'POST') {
+        const session = await loadSession(env, priceMatch[1], deviceId);
+        if (!session) return json({ error: 'session_not_found' }, 404, cors);
+        if (session.status !== 'verdict' || !session.verdict) {
+          return json({ error: 'no_verdict_yet', status: session.status }, 409, cors);
+        }
+        const weeks = Math.round(Number(body.weeks));
+        if (!Number.isFinite(weeks) || weeks < 1 || weeks > 52) {
+          return json({ error: 'invalid_weeks', min: 1, max: 52 }, 400, cors);
+        }
+        const out = await priceCustomPace(env, { ...meta, sessionId: session.id }, session, weeks);
+        if ('error' in out) return json({ error: out.error }, out.error === 'no_paces' ? 400 : 502, cors);
+        return json({ sessionId: session.id, pace: out.pace }, 200, cors);
+      }
+
       /* POST /coach/sessions/:id/protocol — generate for a verdict session. */
       const protoMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol$/);
       if (protoMatch) {
@@ -637,7 +657,7 @@ export default {
         }
         const verdict = JSON.parse(session.verdict) as Verdict;
         const pace: PaceKey | undefined =
-          body.pace === 'sprint' || body.pace === 'steady' || body.pace === 'relaxed' ? body.pace : undefined;
+          body.pace === 'sprint' || body.pace === 'steady' || body.pace === 'relaxed' || body.pace === 'custom' ? body.pace : undefined;
         // The attempt floor (owner call): the user may insist on the ORIGINAL
         // ask of a counter-offer, but only when the coach prices it at 20% or
         // better — below that the coach will not put its name on a plan, and

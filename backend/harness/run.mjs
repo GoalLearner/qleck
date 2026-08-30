@@ -193,6 +193,28 @@ async function runGoalFixture(f) {
   if (dupQuestion || badChip) pass = false;
   if (thinChipQ || statBucketChip) pass = false;
 
+  // v29 custom-pace leg (fixtures flagged priceCheck): a user-named runway
+  // shorter than the sprint must never out-price it, and one longer than
+  // relaxed must never under-price it — the ladder is law, server-enforced.
+  let priceOk = null;
+  if (f.priceCheck && outcome === 'feasible' && Array.isArray(verdict?.pace_options) && verdict.pace_options.length >= 2) {
+    const ladder = [...verdict.pace_options].sort((a, b) => a.duration_weeks - b.duration_weeks);
+    const shortest = ladder[0], longest = ladder[ladder.length - 1];
+    const wShort = Math.max(1, shortest.duration_weeks - 1);
+    const wLong = Math.min(52, longest.duration_weeks + 4);
+    const [pShort, pLong] = await Promise.all([
+      api(`/coach/sessions/${sessionId}/price`, { weeks: wShort }),
+      api(`/coach/sessions/${sessionId}/price`, { weeks: wLong }),
+    ]);
+    const a = pShort.body?.pace, b = pLong.body?.pace;
+    priceOk =
+      pShort.status === 200 && pLong.status === 200 &&
+      typeof a?.success_probability === 'number' && a.success_probability <= shortest.success_probability &&
+      typeof b?.success_probability === 'number' && b.success_probability >= longest.success_probability &&
+      !!a.note && !!b.note;
+    if (priceOk === false) pass = false;
+  }
+
   let protocolOk = null;
   let protocol = null;
   if (f.protocol && (outcome === 'feasible' || outcome === 'counter_offer')) {
@@ -227,7 +249,7 @@ async function runGoalFixture(f) {
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
     pillarsOk,
-    pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, ms: Date.now() - t0,
+    pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, priceOk, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -330,6 +352,8 @@ const bars = {
     goalResults.every(r => r.paceOk),
   'verdicts carve into subtitle + 3 traced reads':
     goalResults.every(r => r.readsOk),
+  'custom paces obey the ladder':
+    goalResults.every(r => r.priceOk === null || r.priceOk === true),
   'physique protocols cover the pillars':
     goalResults.every(r => r.pillarsOk === null || r.pillarsOk === true),
   [`questions tappable (${MIN_CHIPS}+ chips) or exact-figure asks`]:

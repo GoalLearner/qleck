@@ -131,6 +131,12 @@ export function prepareSimulation(sessionId: string, pace?: string, variant?: 'o
   });
 }
 
+/** v29 "Your pace": price a user-named runway; the server stores it as the
+ *  verdict's pace_options[custom] and returns the priced entry. */
+export function priceCustomPace(sessionId: string, weeks: number): Promise<{ pace: import('./coachTypes').PaceOption }> {
+  return post(`/coach/sessions/${sessionId}/price`, { weeks });
+}
+
 export function generateProtocol(sessionId: string, pace?: string, variant?: 'original'): Promise<ProtocolResponse> {
   return post<ProtocolResponse>(`/coach/sessions/${sessionId}/protocol`, {
     ...(pace ? { pace } : {}),

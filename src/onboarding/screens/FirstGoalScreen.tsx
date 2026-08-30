@@ -414,12 +414,13 @@ const PACE_LABELS: Record<PaceKey, string> = {
   sprint: 'Time crunch',
   steady: 'Steady',
   relaxed: 'No rush',
+  custom: 'Yours',
 };
 
 /** Canvas 5a/5c — feasible verdict with the odds dial, at 2-3 paces. */
 function FeasibleVerdict({
   v, pace, onPace, onBuild, onReset, missingRequired,
-  sim, prevSim, editedKey, answers, quickPicks, onEditInput,
+  sim, prevSim, editedKey, answers, quickPicks, onEditInput, onPriceCustom,
 }: {
   v: Verdict;
   pace: PaceKey;
@@ -433,12 +434,24 @@ function FeasibleVerdict({
   answers?: Record<string, string>;
   quickPicks?: Record<string, string[]>;
   onEditInput?: (key: string, value: string) => void;
+  /** v29: price a user-named runway; resolves false when pricing failed. */
+  onPriceCustom?: (weeks: number) => Promise<boolean>;
 }) {
   // The futures strip renders only once a LIVE simulation for this pace
   // actually exists — never by default. The old null-default flashed the
   // skeleton strip for ~1s on every verdict while SIMULATIONS is off
   // (the first poll then reported the sim disabled and yanked it).
   const simActive = !!onEditInput && !!sim && sim.status !== 'failed' && sim.config.pace === pace;
+  // v29 "Your pace": the weeks stepper under the pills. Once priced, the
+  // custom entry joins pace_options and renders as its own pill.
+  const [customWeeks, setCustomWeeks] = useState<number | null>(null);
+  const [pricing, setPricing] = useState(false);
+  const stepWeeks = (d: number) => setCustomWeeks(w => Math.max(1, Math.min(52, (w ?? chosen?.duration_weeks ?? v.duration_weeks) + d)));
+  const priceIt = () => {
+    if (!onPriceCustom || pricing || customWeeks == null) return;
+    setPricing(true);
+    onPriceCustom(customWeeks).finally(() => setPricing(false));
+  };
   const { width } = useWindowDimensions();
   const wide = width >= 820;
   const [driver, setDriver] = useState(-1);
@@ -521,6 +534,29 @@ function FeasibleVerdict({
               </Pressable>
             );
           })}
+        </View>
+      ) : null}
+      {paces && onPriceCustom ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 9 }}>
+          <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.8, color: night.textGhost }}>OR NAME IT</Text>
+          <Pressable onPress={() => stepWeeks(-1)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>−</Text>
+          </Pressable>
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 12.5, color: night.text, minWidth: 44, textAlign: 'center' }}>
+            {customWeeks ?? chosen?.duration_weeks ?? v.duration_weeks} wk
+          </Text>
+          <Pressable onPress={() => stepWeeks(1)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>+</Text>
+          </Pressable>
+          <Pressable
+            onPress={priceIt}
+            disabled={pricing || customWeeks == null}
+            style={{ paddingHorizontal: 11, height: 28, borderRadius: 14, backgroundColor: customWeeks == null || pricing ? night.hairline : night.accent, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.8, fontWeight: '700', color: customWeeks == null || pricing ? night.textMuted : night.accentInk }}>
+              {pricing ? 'PRICING…' : 'PRICE IT'}
+            </Text>
+          </Pressable>
         </View>
       ) : null}
       <View style={{ marginTop: 8 }}>
@@ -1542,6 +1578,7 @@ export default function FirstGoalScreen({
         answers={coach.verdictAnswers}
         quickPicks={coach.quickPicks}
         onEditInput={coach.editInput}
+        onPriceCustom={coach.priceCustom}
       />
     );
   }

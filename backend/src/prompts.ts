@@ -16,6 +16,11 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v29 (Tier-1A, partner spec): "Your pace" — the user names ANY runway in
+// weeks and PRICE_TOOL prices exactly that duration with the same SUCCESS
+// PROBABILITY procedure, calibrated against the existing pace ladder. The
+// server clamps the result into the ladder's ordering (a shorter runway can
+// never out-price a longer one) and stores it as pace_options[key='custom'].
 // v28 (design turn 7, "carved for reading"): the verdict page is probability-
 // only (SIMULATIONS off) and the assessment wall is carved into subtitle +
 // three read cards ('for' | 'risk' | 'move'), each tracing to collected
@@ -173,7 +178,7 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
    You may bundle two tightly-related facts into ONE question ("what's your current weight, and roughly how tall are you?") ONLY when they belong to the same item above — bundling across items burns a question you are required to ask anyway, and leaves a dimension uncovered. If the user answers vaguely or delegates ("whatever you think"), take the default and move on — never re-ask a question they dodged on purpose, except a stat your numbers require (item E), which you may re-ask once, explaining why you need it.
 
    Every question ships with 3-4 suggested_answers — short, concrete quick-picks (2-6 words each) covering the realistic range, e.g. ["Complete beginner", "Lifting ~1 year, 3 days/wk", "Experienced, 4+ days/wk"]. Order least to most; the user can always type an exact answer instead.
-   EXACT-FIGURE QUESTIONS are the one exception: when you ask for a stat the plan does ARITHMETIC on — body weight, a current lift or 1RM, a current time or distance, dollars saved or contributable, follower or view counts — send suggested_answers as an EMPTY array and let the user type the real number. NEVER invent range buckets ("Under 60 kg / 130 lbs", "150-180 lbs", "$500-2,000") for these: protein grams, loading plans, contribution schedules and growth math all inherit the bucket's slop and turn arbitrary. Chips are allowed on an exact-figure question ONLY for genuine non-numeric answers to it ("Never tested a 1RM", "I've never counted") — and the delegation ban below still applies.
+   EXACT-FIGURE QUESTIONS are the one exception: when you ask for a stat the plan does ARITHMETIC on — body weight, a current lift or 1RM, a current time or distance, dollars saved or contributable, follower or view counts — send suggested_answers as an EMPTY array and let the user type the real number. NEVER invent range buckets ("Under 60 kg / 130 lbs", "150-180 lbs", "$500-2,000") for these: protein grams, loading plans, contribution schedules and growth math all inherit the bucket's slop and turn arbitrary. Chips are allowed on an exact-figure question ONLY for genuine non-numeric answers to it ("Never tested a 1RM", "I've never counted") — and the delegation ban below still applies. When you offer candidate READINGS of a vague stat answer, each chip is ONE specific value ("About 75 kg", "About 80 kg") — never a range ("75-80 kg"), which would smuggle the bucket back in.
 
    MISSING REQUIRED FIELDS notes: the app may attach a note listing required inputs for this goal's domain that are still uncollected, each with the reason the plan needs it. When the note is present, your NEXT question targets one or more of those fields — batch tightly-related ones into a single question, and when a field lists quick-picks, use them as the suggested_answers. Do not spend a question on anything else while the note lists missing required fields. When the note instead says the goal is too vague to classify, your next question pins the goal down to something concrete and measurable first.
 
@@ -338,6 +343,22 @@ export const VERDICT_TOOL = {
           },
         },
       },
+    },
+  },
+};
+
+/** v29: price ONE user-named runway for an already-issued verdict. */
+export const PRICE_TOOL = {
+  name: 'price_pace',
+  description: 'Price the SAME goal at exactly the requested runway, using the SUCCESS PROBABILITY procedure. The existing pace ladder is your calibration: a shorter runway than a priced pace can never come out higher; a longer one can never come out lower. No greenlight floor — a brutal runway gets its honest number.',
+  strict: true,
+  input_schema: {
+    type: 'object' as const,
+    additionalProperties: false,
+    required: ['success_probability', 'note'],
+    properties: {
+      success_probability: { type: 'number', description: 'Whole-number percent (1-97) for the goal at exactly the requested weeks.' },
+      note: { type: 'string', description: "ONE sentence in coach voice on the trade this runway makes (what it demands, or what the extra air buys)." },
     },
   },
 };

@@ -3,7 +3,7 @@
 // session id and the newest message.
 import { callModel, modelsFor, reclassifyRequest, type ChatMessage, type Env } from './ai';
 import {
-  ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PROTOCOL_SYSTEM,
+  ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PRICE_TOOL, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
 import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
@@ -61,7 +61,10 @@ export interface CoachTurnResult {
   error?: string;
 }
 
-export type PaceKey = 'sprint' | 'steady' | 'relaxed';
+// 'custom' (Tier-1A, partner ask): a user-named runway, priced by the same
+// procedure and stored as a fourth pace_options entry — every downstream
+// lookup (generation, prepare, accept) then works unchanged.
+export type PaceKey = 'sprint' | 'steady' | 'relaxed' | 'custom';
 
 export interface PaceOption {
   key: PaceKey;
@@ -1168,6 +1171,64 @@ export async function simStep(
     working_until: undefined,
   }, epoch);
   return 'done';
+}
+
+/**
+ * v29 "Your pace": price the SAME goal at a user-named runway. The result is
+ * clamped into the existing ladder's ordering (a shorter runway can never
+ * out-price a longer one) and stored as pace_options[key='custom'], so every
+ * downstream pace lookup — generation, prepare, accept — just works.
+ */
+export async function priceCustomPace(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  weeks: number,
+): Promise<{ pace: PaceOption } | { error: string }> {
+  const verdict = JSON.parse(session.verdict!) as Verdict;
+  const existing = (verdict.pace_options ?? []).filter(o => o.key !== 'custom');
+  if (verdict.decision !== 'feasible' || existing.length < 2) return { error: 'no_paces' };
+  const same = existing.find(o => o.duration_weeks === weeks);
+  if (same) return { pace: { ...same, key: 'custom' } }; // known runway — no model call
+  const structure = sessionStructure(session);
+  const ladder = existing.map(o => `${o.key}: ${o.duration_weeks}wk = ${o.success_probability}%`).join(' · ');
+  const result = await callModel(env, { ...meta, kind: 'verdict_turn' }, {
+    model: modelsFor(env).coach,
+    system: COACH_SYSTEM,
+    messages: [{
+      role: 'user',
+      content:
+        `A verdict was already issued for this goal:\n${verdict.goal_statement}\n\n` +
+        `Collected answers: ${JSON.stringify(structure.answers)}\n` +
+        `Priced pace ladder: ${ladder}\n\n` +
+        `The user names their OWN runway: EXACTLY ${weeks} weeks. Price it with the SUCCESS PROBABILITY procedure, calibrated against the ladder — no greenlight floor, the honest number.`,
+    }],
+    tools: [PRICE_TOOL],
+    toolChoice: { type: 'tool', name: PRICE_TOOL.name },
+    maxTokens: 300,
+  });
+  const input = result.toolName === PRICE_TOOL.name
+    ? (result.toolInput as { success_probability: number; note: string })
+    : null;
+  let p = input ? Math.round(Number(input.success_probability)) : NaN;
+  if (!Number.isFinite(p)) return { error: 'price_failed' };
+  // The ladder is law: clamp into [best shorter pace, worst longer pace].
+  const shorter = existing.filter(o => o.duration_weeks < weeks).map(o => o.success_probability);
+  const longer = existing.filter(o => o.duration_weeks > weeks).map(o => o.success_probability);
+  const lo = shorter.length ? Math.max(...shorter) : 1;
+  const hi = longer.length ? Math.min(...longer) : 97;
+  p = Math.max(1, Math.min(97, Math.max(lo, Math.min(hi, p))));
+  const pace: PaceOption = {
+    key: 'custom', duration_weeks: weeks, success_probability: p,
+    note: String(input?.note ?? '').trim().slice(0, 220),
+  };
+  verdict.pace_options = [...existing, pace];
+  session.verdict = JSON.stringify(verdict);
+  await env.DB
+    .prepare(`UPDATE coach_sessions SET verdict = ?, updated_at = datetime('now') WHERE id = ?`)
+    .bind(session.verdict, session.id)
+    .run();
+  return { pace };
 }
 
 /** Initialize the simulation state for a config (planned lanes, empty). */

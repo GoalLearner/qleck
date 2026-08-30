@@ -10,7 +10,7 @@ export type {
 } from '../../backend/src/protocolSchema';
 import type { Protocol } from '../../backend/src/protocolSchema';
 
-export type PaceKey = 'sprint' | 'steady' | 'relaxed';
+export type PaceKey = 'sprint' | 'steady' | 'relaxed' | 'custom';
 
 export interface PaceOption {
   key: PaceKey;

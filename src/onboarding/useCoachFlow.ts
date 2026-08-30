@@ -6,7 +6,7 @@
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { answerCoachQuestion, generateProtocol, getSimulation, postAnswer, prepareSimulation, startCoachSession } from '../api/coach';
+import { answerCoachQuestion, generateProtocol, getSimulation, postAnswer, prepareSimulation, priceCustomPace, startCoachSession } from '../api/coach';
 import type { PaceKey, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
 import {
   CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
@@ -244,6 +244,27 @@ export function useCoachFlow() {
       .finally(() => setPollTick(t => t + 1));
   }, [pace, sim]);
 
+  /** v29 "Your pace": price a user-named runway, fold it into the verdict's
+   *  pace ladder, select it, and pre-generate its draft. Resolves false when
+   *  pricing fails (the pills simply stay as they were). */
+  const priceCustom = useCallback((weeks: number): Promise<boolean> => {
+    const id = sessionId.current;
+    if (!id) return Promise.resolve(false);
+    return priceCustomPace(id, weeks)
+      .then(res => {
+        setVerdict(v => v
+          ? { ...v, pace_options: [...(v.pace_options ?? []).filter(o => o.key !== 'custom'), res.pace] }
+          : v);
+        setPace('custom');
+        setPrevSim(null); setEditedKey(null); setSim(null);
+        healTries.current = 0;
+        pollNonce.current++;
+        prepareSimulation(id, 'custom').catch(() => {}).finally(() => setPollTick(t => t + 1));
+        return true;
+      })
+      .catch(() => false);
+  }, []);
+
   /** Pace pill switch: simulate THAT config and replay (owner decision 2).
    *  Polling resumes whether or not the prepare lands — a lost POST is then
    *  repaired by the poll loop's self-heal. */
@@ -308,7 +329,7 @@ export function useCoachFlow() {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
     pace, setPace, chosenOdds, chosenStatement, buildOriginal,
     assumptions, quickPicks, missingRequired, fixAssumption,
-    sim, prevSim, editedKey, editInput, switchPace, verdictAnswers,
+    sim, prevSim, editedKey, editInput, switchPace, priceCustom, verdictAnswers,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan,
   };
 }

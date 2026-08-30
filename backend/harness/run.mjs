@@ -63,27 +63,40 @@ function leakIn(res) {
   return null;
 }
 
-// Near-verbatim repeat detection: word-set Jaccard overlap of question CORES
-// (the "asked me the same thing twice" defect, 2026-08-24). Cores, because
-// the model dresses repeats in fresh preambles that dilute whole-text overlap
-// below every threshold — mirror of the server's questionCore.
-function questionCore(t) {
+// Near-verbatim repeat detection, mirroring the server exactly: every
+// question-marked SEGMENT compared pairwise (repeats hide behind fresh
+// preambles AND fresh trailing clauses), word-set Jaccard, and the server's
+// own thresholds — 0.72 against the immediately previous question, 0.80
+// against older ones (the permitted ask-once-more-in-different-words lives
+// between the two).
+function questionAsks(t) {
   const segments = t.split(/(?<=[?])\s+|[—:;]\s+/).map(s => s.trim()).filter(Boolean);
   const asks = segments.filter(s => s.includes('?'));
-  return (asks.length ? asks[asks.length - 1] : segments[segments.length - 1] ?? t);
+  return asks.length ? asks : segments.slice(-1);
 }
 function similarity(a, b) {
-  const words = t => new Set(questionCore(t).toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
-  const A = words(a), B = words(b);
-  const inter = [...A].filter(w => B.has(w)).length;
-  const union = new Set([...A, ...B]).size;
-  return union ? inter / union : 0;
+  // Containment over the smaller segment (padding-proof), Jaccard for tiny
+  // segments — the server's exact scoring.
+  const words = t => new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
+  const score = (A, B) => {
+    const inter = [...A].filter(w => B.has(w)).length;
+    const smaller = Math.min(A.size, B.size);
+    if (smaller >= 5) return inter / smaller;
+    const union = new Set([...A, ...B]).size;
+    return union ? inter / union : 0;
+  };
+  let best = 0;
+  for (const A of questionAsks(a).map(words)) for (const B of questionAsks(b).map(words)) best = Math.max(best, score(A, B));
+  return best;
 }
 
 const DELEGATION_CHIP = /no idea|you decide|whatever you think/i;
 // COACH_SYSTEM promises 3-4 quick-picks per question and ASK_TOOL's schema
 // bounds it; this is the bar that proves it in the live pipeline.
-const MIN_CHIPS = 3;
+// 2 (was 3): an honest either/or question ("quit date, or taper?") ships two
+// genuine chips — padding a binary to three would be the delegation-chip sin
+// wearing a costume. Chip-less is still only legal on exact-figure asks.
+const MIN_CHIPS = 2;
 // Mirrors backend/src/coach.ts: 5 is the normal ceiling; 6 is legal only while required manifest fields are missing AND answers still yield them (P2a soft cap).
 const MIN_Q = 3;
 const MAX_Q = 6;
@@ -121,7 +134,7 @@ async function runGoalFixture(f) {
     // Against ALL prior questions, not just the last — a field chased four
     // times in lightly reworded forms (the read-nightly regression) is a
     // repeat even when no two adjacent askings cross the threshold.
-    if (askedTexts.some(prev => similarity(prev, q.question) > 0.75)) dupQuestion = true;
+    if (askedTexts.some((prev, i) => similarity(prev, q.question) > (i === askedTexts.length - 1 ? 0.72 : 0.8))) dupQuestion = true;
     askedTexts.push(q.question);
     const chips = q.suggested_answers ?? [];
     if (!EXACT_ASK.test(q.question) && chips.length < MIN_CHIPS) thinChipQ = q.question;
@@ -158,6 +171,18 @@ async function runGoalFixture(f) {
         (outcome === 'feasible'
           ? origProb === null || origProb === probability
           : origProb !== null && origProb < probability);
+  // v28 reads: the carved verdict — every feasible/counter verdict must ship
+  // subtitle + exactly one 'for', 'risk', 'move' read, each tracing to a
+  // collected key (the server drops invalid sets, so absence here means the
+  // model stopped carving or the sanitizer had to discard the carve).
+  const reads = verdict?.reads;
+  const readsOk =
+    outcome !== 'feasible' && outcome !== 'counter_offer'
+      ? true
+      : Array.isArray(reads) && reads.length === 3 &&
+        ['for', 'risk', 'move'].every(k => reads.some(r => r.kind === k)) &&
+        reads.every(r => r.line && r.detail && Array.isArray(r.from) && r.from.length > 0) &&
+        typeof verdict?.subtitle === 'string' && verdict.subtitle.length > 0;
   const leak = f.noLeak ? leakIn(res) : null;
   let pass = matches(f.expect, outcome) && !leak;
   if (f.minQuestions && questions < f.minQuestions) pass = false;
@@ -202,7 +227,7 @@ async function runGoalFixture(f) {
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
     pillarsOk,
-    pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, ms: Date.now() - t0,
+    pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -303,6 +328,8 @@ const bars = {
     goalResults.every(r => r.probOk),
   'feasible verdicts offer 2-3 ordered paces':
     goalResults.every(r => r.paceOk),
+  'verdicts carve into subtitle + 3 traced reads':
+    goalResults.every(r => r.readsOk),
   'physique protocols cover the pillars':
     goalResults.every(r => r.pillarsOk === null || r.pillarsOk === true),
   [`questions tappable (${MIN_CHIPS}+ chips) or exact-figure asks`]:

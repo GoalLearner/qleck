@@ -35,7 +35,13 @@ export const GOAL_FIXTURES = [
     // answer the baseline question, and the two-ask-per-field ceiling makes
     // one honest follow-up the CORRECT behavior — the old 3 encoded the
     // pre-v27 model settling for a vague baseline on the first pass.
-    id: 'read-nightly', category: 'realistic', protocol: true, maxQuestions: 4,
+    // maxQuestions 4→5 (v28): the structural max for this fixture's shape —
+    // its positional answers never actually answer the baseline, so a clean
+    // interview can legitimately cost: baseline ×2 (the permitted re-ask),
+    // context, past attempts, plus ONE discretionary question after the
+    // turn-4 collection budget freezes the steer. Anything above 5 means
+    // repeats got past the guard again.
+    id: 'read-nightly', category: 'realistic', protocol: true, maxQuestions: 5,
     goal: 'Read 10 minutes before bed every night for the next month.',
     answers: [
       'I get into bed around 11 most nights.',

@@ -36,6 +36,11 @@ export interface Verdict {
   /** Parallel to success_factors: one line each on how the factor moves the
    *  odds. Absent on verdicts stored before prompt v18. */
   success_factor_notes?: string[];
+  /** v28: one line under the goal title — the verdict's essence. */
+  subtitle?: string;
+  /** v28 (design turn 7): the assessment carved into three tap-to-expand
+   *  read cards; server-validated, absent on older verdicts. */
+  reads?: { kind: 'for' | 'risk' | 'move'; line: string; detail: string; lever?: string; from: string[] }[];
   /** feasible only: 2-3 paces for the same goal; steady mirrors the verdict's
    *  own duration and probability. Absent before prompt v19, and dropped by
    *  the server when malformed. */

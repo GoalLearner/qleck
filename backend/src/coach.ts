@@ -92,32 +92,55 @@ export interface Verdict {
   /** Parallel to success_factors: one line each on how the factor moves the
    *  odds. Absent on verdicts stored before prompt v18. */
   success_factor_notes?: string[];
+  /** v28: one line under the goal title — the verdict's essence. */
+  subtitle?: string;
+  /** v28 (design turn 7): the assessment carved into three tap-to-expand
+   *  read cards — 'for' (going for you), 'risk' (the honest risk, priced
+   *  in), 'move' (Qoach's concrete answer to it). Each traces to collected
+   *  answer keys; the server drops the whole set unless all three survive
+   *  validation, and the client then falls back to the classic page. */
+  reads?: { kind: 'for' | 'risk' | 'move'; line: string; detail: string; lever?: string; from: string[] }[];
   /** feasible only: 2-3 paces for the same goal; steady mirrors the verdict's
    *  own duration and probability. Absent before prompt v19, and dropped by
    *  the server when malformed. */
   pace_options?: PaceOption[];
 }
 
-/** The interrogative core of a coach question. The model dresses repeats in
- *  fresh preambles ("One more thing that'll set how gently we ramp — ") and
- *  whole-text Jaccard dilutes below every threshold; the actual ask is the
- *  LAST question-marked segment, so compare that. Third-time training-history
- *  chase on the 10k-steps fixture is the proof case. */
-function questionCore(t: string): string {
+/** Every interrogative segment of a coach question. The model dresses
+ *  repeats in fresh preambles AND fresh trailing clauses ("…? Have you ever
+ *  counted?" vs "…? If you've never…") — comparing only whole texts or only
+ *  the last segment both get gamed (read-nightly asked its baseline FIVE
+ *  times that way). So: split on question marks and long punctuation, keep
+ *  each ask-shaped segment, and a repeat is ANY pair of segments that
+ *  matches. */
+function questionAsks(t: string): string[] {
   const segments = t.split(/(?<=[?])\s+|[—:;]\s+/).map(s => s.trim()).filter(Boolean);
   const asks = segments.filter(s => s.includes('?'));
-  return (asks.length ? asks[asks.length - 1] : segments[segments.length - 1] ?? t);
+  return asks.length ? asks : segments.slice(-1);
 }
 
-/** Word-set Jaccard similarity over question CORES — the repeat detector. */
+/** Ask-segment similarity, maximized over all pairs — the repeat detector.
+ *  CONTAINMENT (shared words over the SMALLER segment) rather than Jaccard:
+ *  the model pads rephrases with fluff ("roughly", "even a page", "in a
+ *  typical week") and padding grows the union until Jaccard ducks every
+ *  threshold, while containment stays 1.0 for a rephrase no matter how much
+ *  is bolted on. Tiny segments fall back to Jaccard so two short unrelated
+ *  asks can't collide. */
 function questionSimilarity(a: string, b: string): number {
-  const words = (t: string) => new Set(questionCore(t).toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
-  const A = words(a);
-  const B = words(b);
-  let inter = 0;
-  for (const w of A) if (B.has(w)) inter++;
-  const union = new Set([...A, ...B]).size;
-  return union ? inter / union : 0;
+  const words = (t: string) => new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean));
+  const score = (A: Set<string>, B: Set<string>) => {
+    let inter = 0;
+    for (const w of A) if (B.has(w)) inter++;
+    const smaller = Math.min(A.size, B.size);
+    if (smaller >= 5) return smaller ? inter / smaller : 0;
+    const union = new Set([...A, ...B]).size;
+    return union ? inter / union : 0;
+  };
+  const as = questionAsks(a).map(words);
+  const bs = questionAsks(b).map(words);
+  let best = 0;
+  for (const A of as) for (const B of bs) best = Math.max(best, score(A, B));
+  return best;
 }
 
 function lastQuestion(session: SessionRow): string | null {
@@ -421,12 +444,22 @@ export async function coachTurn(
       role: 'user',
       content: '[app note] This goal is too vague to plan or classify yet. Your next question must pin it down to ONE concrete, measurable outcome the user actually wants (offer 3-4 concrete candidate directions as the suggested answers).',
     });
-  } else if (!mustVerdict && missing.length > 0) {
+  } else if (!mustVerdict && missing.length > 0 && session.clarify_turns < 4) {
     steer.push({
       role: 'user',
       content:
         `[app note] MISSING REQUIRED FIELDS for this ${structure.domain} goal — your next question must collect one or more of these (batch related ones; quick-picks become suggested_answers; ONLY fields marked EXACT VALUE request a specific figure and get no range/bucket chips — do not demand exact numbers for other fields). HARD CEILING: at most TWO questions per field across the whole interview, in genuinely different words — never a rephrase. If the second ask still doesn't land the answer, take the best available reading or leave it for an explicit assumption and MOVE ON to the next field:\n` +
         missing.map(fieldForPrompt).join('\n'),
+    });
+  } else if (!mustVerdict && missing.length > 0) {
+    // The collection budget is spent (read-nightly asked its baseline FIVE
+    // times under the every-turn "must collect" pressure — determinism beats
+    // prose ceilings). From question 5 on, uncollected requireds stop being
+    // demanded: they become explicit assumptions at generation time.
+    steer.push({
+      role: 'user',
+      content:
+        `[app note] Required fields remain uncollected (${missing.map(f => f.key).join(', ')}), but the interview's collection budget is SPENT — do NOT ask about them again in any wording. Ask one further question ONLY if something genuinely new is needed; otherwise issue the verdict. Uncollected fields become explicit assumptions on the plan.`,
     });
   }
   const result = await callModel(env, { ...meta, kind: mustVerdict ? 'verdict_turn' : 'coach_turn' }, {

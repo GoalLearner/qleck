@@ -448,6 +448,26 @@ function FeasibleVerdict({
   // The lane replay, handed up by SimVerdict so the dial's tap can fire it.
   const replayRef = useRef<(() => void) | null>(null);
 
+  // v28, design turn 7 ("carved for reading"): when the verdict ships the
+  // three read cards, they REPLACE both the assessment wall and the drivers
+  // list — nothing is said twice. Old verdicts without reads fall back to
+  // the classic assessment + drivers page.
+  const carved = !!v.reads && v.reads.length === 3;
+  const [readOpen, setReadOpen] = useState(-1);
+  const READ_META: Record<'for' | 'risk' | 'move', { g: string; c: string; lab: string }> = {
+    for: { g: '✓', c: night.accent, lab: 'GOING FOR YOU' },
+    risk: { g: '⚑', c: '#E8B04B', lab: 'THE HONEST RISK' },
+    move: { g: '→', c: night.accent, lab: "QOACH'S MOVE" },
+  };
+  // An answer chip opens the first read card it feeds.
+  const readIndexFor = (key: string) => (v.reads ?? []).findIndex(r => r.from.includes(key));
+  const chipText = (val: string) => {
+    const t = val.toUpperCase().replace(/\s+/g, ' ').trim();
+    if (t.length <= 20) return t;
+    const cut = t.slice(0, 20);
+    return cut.slice(0, cut.lastIndexOf(' ') > 8 ? cut.lastIndexOf(' ') : 20);
+  };
+
   // The paces, when the verdict offers them: the same goal at 2-3 runways,
   // each with its own honestly-priced odds. Steady is the coach's pick and
   // mirrors the verdict's own numbers, so the fallback path is identical.
@@ -550,9 +570,10 @@ function FeasibleVerdict({
     </View>
   ) : null;
 
-  // When the sim owns the factors, the whole classic drivers column retires
-  // (its header was double-rendering beside SimVerdict's own).
-  const drivers = simActive && sim?.status === 'done' ? null : (
+  // v28: the read cards ARE the factor display — a carved verdict retires
+  // the whole classic drivers column (nothing is said twice). It also
+  // retires when the sim owns the factors (lanes era, behind the flag).
+  const drivers = carved || (simActive && sim?.status === 'done') ? null : (
     <View style={{ flex: wide ? 1 : undefined, gap: 9 }}>
       <OddsCardHeader
         left={odds !== undefined ? 'WHAT MOVES THE NUMBER' : 'WHAT WILL DECIDE IT'}
@@ -567,6 +588,82 @@ function FeasibleVerdict({
     </View>
   );
 
+  // v28 read cards + answer chips — the carved verdict's whole right column
+  // (design turn 7): BUILT FROM YOUR ANSWERS chips that open the read card
+  // they feed, then QOACH'S READ with the levers inside, then the footer.
+  const readsCol = carved && v.reads ? (
+    <View style={{ flex: wide ? 1 : undefined, gap: 8 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: 2 }}>
+        <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 1.6, fontWeight: '700', color: night.textMuted }}>BUILT FROM YOUR ANSWERS</Text>
+        <Text style={{ fontFamily: MONO, fontSize: 8, letterSpacing: 0.5, color: night.textGhost }}>TAP ONE</Text>
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {Object.entries(answers ?? {}).slice(0, 6).map(([key, val]) => {
+          const target = readIndexFor(key);
+          const on = target >= 0 && readOpen === target;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => { if (target >= 0) setReadOpen(target); }}
+              style={{
+                paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999,
+                backgroundColor: on ? night.accentSoft : night.surface,
+                borderWidth: 1, borderColor: on ? night.accentBorder : night.hairline,
+              }}
+            >
+              <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.6, fontWeight: '600', color: on ? night.accentText : night.textSoft }}>
+                {chipText(val)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: 2, marginTop: 10 }}>
+        <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 1.6, fontWeight: '700', color: night.textMuted }}>QOACH'S READ</Text>
+        <Text style={{ fontFamily: MONO, fontSize: 8, letterSpacing: 0.5, color: night.textGhost }}>TAP — THE LEVERS ARE INSIDE</Text>
+      </View>
+      {v.reads.map((r, i) => {
+        const m = READ_META[r.kind];
+        const on = readOpen === i;
+        // The risk card's lever is ALWAYS the derived priced-in line (design
+        // turn 7): it explains the number itself, so it must track the live
+        // odds — a model-written lever here would go stale on a pace switch.
+        const lever = r.kind === 'risk'
+          ? (odds !== undefined ? `PRICED IN → WHY IT'S ${odds}, NOT ${Math.min(97, odds + 10)}` : undefined)
+          : r.lever;
+        return (
+          <View key={r.kind} style={{ backgroundColor: night.surface, borderWidth: 1, borderColor: on ? (r.kind === 'risk' ? 'rgba(232,176,75,0.5)' : night.accentBorder) : night.hairline, borderRadius: 18, overflow: 'hidden' }}>
+            <Pressable onPress={() => setReadOpen(cur => (cur === i ? -1 : i))} style={{ padding: 13, paddingHorizontal: 15 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: m.c }}>{m.g}</Text>
+                <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 1.3, fontWeight: '700', color: m.c }}>{m.lab}</Text>
+                <View style={{ flex: 1 }} />
+                <Text style={{ fontSize: 10, color: night.textGhost }}>{on ? '◆' : '◇'}</Text>
+              </View>
+              <Text style={{ marginTop: 7, fontFamily: nightFonts.bodyMedium, fontSize: 13, lineHeight: 19, color: night.text }}>{r.line}</Text>
+            </Pressable>
+            {on ? (
+              <View style={{ paddingHorizontal: 15, paddingBottom: 13 }}>
+                <Text style={{ fontFamily: nightFonts.body, fontSize: 12, lineHeight: 18.5, color: night.textSoft }}>{r.detail}</Text>
+                {lever ? (
+                  <Text style={{ marginTop: 8, fontFamily: MONO, fontSize: 8.5, lineHeight: 14, letterSpacing: 0.7, fontWeight: '700', color: m.c }}>{lever}</Text>
+                ) : null}
+                <Text style={{ marginTop: 6, fontFamily: MONO, fontSize: 8, letterSpacing: 0.7, fontWeight: '600', color: night.textGhost }}>
+                  FROM: {r.from.map(k => k.replace(/_/g, ' ').toUpperCase()).join(' · ')}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
+      {odds !== undefined ? (
+        <Text style={{ marginTop: 4, textAlign: 'center', fontFamily: nightFonts.body, fontSize: 11, lineHeight: 16.5, color: night.textGhost }}>
+          {`${odds} today isn't ${odds} forever — skip weeks and Qoach revises it.`}
+        </Text>
+      ) : null}
+    </View>
+  ) : null;
+
   return (
     <Screen>
       <View style={{ width: '100%', maxWidth: 920, alignSelf: 'center' }}>
@@ -575,11 +672,12 @@ function FeasibleVerdict({
           {v.goal_statement}
         </Title>
         <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 23, color: night.textMuted, maxWidth: 660 }}>
-          {v.assessment}
+          {carved && v.subtitle ? v.subtitle : v.assessment}
         </Text>
         <View style={{ flexDirection: wide ? 'row' : 'column', gap: 20, marginTop: 24 }}>
           {dialCard}
           {drivers}
+          {readsCol}
         </View>
         <View style={{ marginTop: 26 }}>
           <PrimaryButton

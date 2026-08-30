@@ -16,6 +16,13 @@
 // end of their run and want to keep the habit rather than stop.
 // v14: suggested_answers bounded 3-4 in the tool schema — a chipless question
 // degrades to a bare text prompt, and no bar used to catch it.
+// v28 (design turn 7, "carved for reading"): the verdict page is probability-
+// only (SIMULATIONS off) and the assessment wall is carved into subtitle +
+// three read cards ('for' | 'risk' | 'move'), each tracing to collected
+// answer keys — the reads ARE the factor display; the drivers list retires
+// when they exist. Server drops the set unless all three validate
+// (sanitizeOdds), and old verdicts without reads fall back to the classic
+// assessment + drivers page.
 // v27 (owner spec, TestFlight build 5): exact-figure questions. Stats the
 // plan does ARITHMETIC on (bodyweight, current lifts, dollar amounts,
 // follower/view counts) ship NO suggested_answers — the user types the real
@@ -196,6 +203,14 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
    ALWAYS emit factors: 3-6 {key, direction, weight} entries naming which STRUCTURED ANSWER KEYS pushed the probability up or down (weight 1-3). Only keys shown to you as collected answers (or 'goal_text') are legal — a factor citing data never collected is dropped by the app.
 
    Alongside success_factors, emit success_factor_notes — parallel arrays, same length: for each factor, ONE short sentence in your coach voice on how it moves the number (e.g. "Protect the mornings and the number holds", "Recovery is training too — skip it and the odds quietly leak"). Concrete and a little wry, never a percentage per factor.
+   QOACH'S READ — on every feasible and counter_offer verdict, ALSO carve the assessment into subtitle + reads (the page shows these instead of a wall of text):
+   - subtitle: ONE line, under ~90 characters, under the goal title. The verdict's essence, no numbers.
+   - reads: EXACTLY three, kinds in order 'for' → 'risk' → 'move':
+     · for — the strongest things genuinely going for them, drawn from their own answers.
+     · risk — the honest risk. Its detail must make clear this risk is already PRICED INTO the probability — an explanation of the number, never a warning stacked on top of it.
+     · move — the ONE concrete thing the plan will do about that risk (a checkpoint, a floor, a rule), phrased as your move.
+   - line ≤110 chars and a complete thought (it renders collapsed); detail is the 1-3 sentence expansion; lever ('for' and 'move' only) names the concrete lever(s) in short caps style; from lists the collected answer keys the read traces to — only keys you were shown (or 'goal_text'), at least one each.
+   - Never say something in a read that the assessment contradicts; the reads ARE the assessment, carved.
    This number is your judgment as a coach, never a statistic: no field you write may imply it was measured from other users' outcomes.
    - "declined": pursuing it would be unsafe or impossible IN EVERY REFRAMING. This should be vanishingly rare — a separate safety gate runs before you, and almost any over-ambitious goal has a scaled version worth offering. "Marathon in 3 weeks, never run" is NOT declined — it's a counter_offer for a longer runway or a shorter first race. If you can imagine a realistic cousin of the goal, you MUST counter_offer it.
 
@@ -247,6 +262,26 @@ export const VERDICT_TOOL = {
       assessment: {
         type: 'string',
         description: '2-4 sentences to the user: why this verdict, in coach voice. For counter_offer, explain what changed and why the original timeline was off.',
+      },
+      subtitle: {
+        type: 'string',
+        description: "ONE short line (under ~90 chars) shown under the goal title — the verdict's essence in coach voice, no numbers. e.g. \"Real and achievable — just a slow game, and you already hold the two levers that matter.\"",
+      },
+      reads: {
+        type: 'array',
+        description: "EXACTLY 3 read cards carving the assessment for tapping (see QOACH'S READ). Kinds in order: 'for' (what's going for them), 'risk' (the honest risk — already priced into the odds), 'move' (the ONE concrete thing the plan does about it). line = collapsed text, <=110 chars, a complete thought. detail = expanded explanation, 1-3 sentences. lever = the concrete lever(s) in short caps-mono style, for 'for' and 'move' only (e.g. \"LOAD CREEPS WEEKLY · SURPLUS HIT DAILY\"). from = the structured answer keys this read traces to (each MUST be a collected key or 'goal_text'; at least one per read).",
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['kind', 'line', 'detail', 'from'],
+          properties: {
+            kind: { type: 'string', enum: ['for', 'risk', 'move'] },
+            line: { type: 'string' },
+            detail: { type: 'string' },
+            lever: { type: 'string' },
+            from: { type: 'array', items: { type: 'string' } },
+          },
+        },
       },
       original_request: {
         type: 'string',

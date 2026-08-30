@@ -850,6 +850,36 @@ function sanitizeOdds(v: Verdict, answers: Record<string, string>): void {
     .map(f => ({ key: f.key, direction: f.direction, weight: Math.round(f.weight) }));
   v.factors = factors.length ? factors : undefined;
 
+  // v28 reads (the carved verdict): exactly one 'for', one 'risk', one
+  // 'move', each tracing to collected keys — anything less and the whole
+  // set is dropped, so the client falls back to the classic assessment +
+  // drivers page rather than rendering a partial carve.
+  if (Array.isArray(v.reads)) {
+    const cleanedReads = v.reads
+      .filter(r =>
+        r && (r.kind === 'for' || r.kind === 'risk' || r.kind === 'move') &&
+        typeof r.line === 'string' && r.line.trim().length > 0 && r.line.length <= 140 &&
+        typeof r.detail === 'string' && r.detail.trim().length > 0)
+      .map(r => ({
+        kind: r.kind,
+        line: r.line.trim(),
+        detail: r.detail.trim(),
+        lever: typeof r.lever === 'string' && r.lever.trim() ? r.lever.trim().slice(0, 90) : undefined,
+        from: (Array.isArray(r.from) ? r.from : []).filter(k => typeof k === 'string' && legalKeys.has(k)).slice(0, 4),
+      }))
+      .filter(r => r.from.length > 0);
+    const byKind = (k: string) => cleanedReads.find(r => r.kind === k);
+    const set = ['for', 'risk', 'move'].map(byKind);
+    v.reads = set.every(Boolean) && cleanedReads.length === 3
+      ? (set as NonNullable<Verdict['reads']>)
+      : undefined;
+  } else {
+    v.reads = undefined;
+  }
+  v.subtitle = typeof v.subtitle === 'string' && v.subtitle.trim() && v.subtitle.length <= 140
+    ? v.subtitle.trim()
+    : undefined;
+
   // Pace options: 2-3 honest paces, or nothing. Steady is force-aligned to
   // the verdict's own (already sanitized) numbers so the recommended pill can
   // never disagree with the dial, orderings are hard rules, and a sprint

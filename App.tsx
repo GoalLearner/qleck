@@ -7,6 +7,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+
+// Hold the brand splash (owner fix, build 11): keep it up while the app
+// boots, and never less than ~1.4s total — it used to blink away.
+const SPLASH_MIN_MS = 1400;
+const SPLASH_T0 = Date.now();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 // Fonts are vendored into assets/fonts rather than imported from the
 // @expo-google-fonts packages. Expo emits a package-sourced asset under
 // dist/assets/node_modules/..., and some static hosts (Netlify Drop among
@@ -92,6 +99,18 @@ function AppShell() {
     DMSans_400Regular: require('./assets/fonts/DMSans_400Regular.ttf'),
     DMSans_500Medium: require('./assets/fonts/DMSans_500Medium.ttf'),
   });
+
+  // Owner fix (build 11): the brand splash blinked away as soon as JS was
+  // ready. Hold it for at least SPLASH_MIN_MS from launch — hideAsync fires
+  // only once fonts + session state are ready AND the minimum has elapsed.
+  useEffect(() => {
+    if ((fontsLoaded || fontError) && loggedIn !== null) {
+      const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - SPLASH_T0));
+      const t = setTimeout(() => { SplashScreen.hideAsync().catch(() => {}); }, wait);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [fontsLoaded, fontError, loggedIn]);
 
   // Render anyway if a face fails to load. A missing font is a cosmetic
   // problem; a permanently blank screen is a broken app, and that is exactly

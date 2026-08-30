@@ -140,8 +140,10 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
           <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.sectionLabel }}>›</Text>
         </View>
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 }}>
-        <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.successBg }}>
+      {/* flexWrap: three chips + the week track overflowed the card when a
+          phase title ran long ("Solid odds · 85%" clipped off the edge). */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 14 }}>
+        <View style={{ maxWidth: '100%', paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.successBg }}>
           <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.success }}>Now: {m.phase.title}</Text>
         </View>
         <View style={{ paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.chipBg }}>

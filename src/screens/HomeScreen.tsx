@@ -58,24 +58,104 @@ function dotStyle(kind: WeekDay['kind']) {
   }
 }
 
-function WeekDots({ days }: { days: WeekDay[] }) {
+function WeekDots({ days, selected, onPick }: {
+  days: WeekDay[];
+  /** The date being viewed (defaults to today's own styling). */
+  selected?: string;
+  /** Owner fix 3 (build 11): the dots are tappable — any day of the week
+   *  opens as a read-only peek (past shows what was banked). */
+  onPick?: (d: WeekDay) => void;
+}) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2 }}>
-      {days.map(d => (
-        <View key={d.date} style={{ alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, color: d.isToday ? colors.ink : colors.sectionLabel }}>{d.letter}</Text>
-          <View style={[{ width: 10, height: 10, borderRadius: 5, borderWidth: 2 }, dotStyle(d.kind)]} />
-        </View>
-      ))}
+      {days.map(d => {
+        const sel = selected != null && d.date === selected;
+        return (
+          <Pressable
+            key={d.date}
+            onPress={onPick ? () => onPick(d) : undefined}
+            disabled={!onPick}
+            hitSlop={8}
+            style={{ alignItems: 'center', gap: 6 }}
+          >
+            <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, color: sel || d.isToday ? colors.ink : colors.sectionLabel }}>{d.letter}</Text>
+            <View
+              style={[
+                { width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
+                dotStyle(d.kind),
+                sel && !d.isToday ? { borderColor: colors.ink } : null,
+              ]}
+            />
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
-function WeekStrip({ days }: { days: WeekDay[] }) {
+function WeekStrip({ days, selected, onPick }: { days: WeekDay[]; selected?: string; onPick?: (d: WeekDay) => void }) {
   return (
     <View style={{ marginTop: 22, marginHorizontal: 24, paddingHorizontal: 4 }}>
-      <WeekDots days={days} />
+      <WeekDots days={days} selected={selected} onPick={onPick} />
     </View>
+  );
+}
+
+/* ── day peek: tap a week dot to read any day (owner fix 3, build 11) ────
+   Past days show what was actually banked; future days show what's
+   scheduled. Nothing here is checkable — banking belongs to today. */
+function DayPeek({ goals, byGoal, date, today, onBack }: {
+  goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>;
+  date: string; today: string; onBack: () => void;
+}) {
+  const per = goals
+    .map((g, i) => ({
+      goal: g, dot: goalDot(i),
+      reps: repsForDate(g.protocol, g.startedOn, date, byGoal[g.id] ?? []),
+    }))
+    .filter(p => p.reps.length > 0);
+  const total = per.reduce((n, p) => n + p.reps.length, 0);
+  const done = per.reduce((n, p) => n + p.reps.filter(r => r.checked).length, 0);
+  const past = date < today;
+  const label = weekdayName(date).toUpperCase();
+  return (
+    <>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel }}>
+          {label}{past ? "'S REPS" : ' — SCHEDULED'}
+        </Text>
+        <Text numberOfLines={1} style={{ flexShrink: 1, textAlign: 'right', fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: past && total > 0 && done === total ? colors.success : colors.sectionLabel }}>
+          {total === 0 ? 'REST DAY' : past ? `${done} OF ${total} BANKED` : `${total} REP${total === 1 ? '' : 'S'}`}
+        </Text>
+      </View>
+      {total === 0 ? (
+        <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 26, padding: 18 }}>
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 13, lineHeight: 19, color: colors.muted }}>
+            Nothing {past ? 'was' : 'is'} on the plan — a rest day.
+          </Text>
+        </View>
+      ) : (
+        per.map(p =>
+          p.reps.map(rep => (
+            <RepCard
+              key={`${p.goal.id}:${rep.step.id}`}
+              rep={rep}
+              stacked
+              readOnly
+              loggedValue={loggedValueFor(byGoal[p.goal.id] ?? [], rep.step.id, date)}
+              onCheck={() => {}}
+              onUncheck={() => {}}
+            />
+          )),
+        )
+      )}
+      <Pressable
+        onPress={onBack}
+        style={{ alignSelf: 'center', marginTop: 4, paddingHorizontal: 18, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: colors.ink }}>← BACK TO TODAY</Text>
+      </Pressable>
+    </>
   );
 }
 
@@ -157,7 +237,7 @@ function QtyInput({ qty, stacked }: { qty: QtyControls; stacked: boolean }) {
   );
 }
 
-function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false }: {
+function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false, readOnly = false }: {
   rep: DayRep;
   onCheck: () => void;
   onUncheck: () => void;
@@ -165,6 +245,8 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false }:
   qty?: QtyControls;
   /** Phone layout: the stepper gets its own row under the title. */
   stacked?: boolean;
+  /** Day peek: the check displays state but takes no taps. */
+  readOnly?: boolean;
 }) {
   const chip = kindChip(rep);
   const scale = useRef(new Animated.Value(1)).current;
@@ -183,13 +265,14 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false }:
   const stackStepper = showStepper && stacked;
 
   const check = (
-    <Pressable onPress={rep.checked ? onUncheck : onCheck} hitSlop={6}>
+    <Pressable onPress={readOnly ? undefined : rep.checked ? onUncheck : onCheck} disabled={readOnly} hitSlop={6}>
       <Animated.View
         style={{
           width: 46, height: 46, borderRadius: 23,
           backgroundColor: rep.checked ? colors.success : 'transparent',
           borderWidth: 2, borderColor: rep.checked ? colors.success : colors.outline,
           alignItems: 'center', justifyContent: 'center',
+          opacity: readOnly && !rep.checked ? 0.45 : 1,
           transform: [{ scale }],
         }}
       >
@@ -604,11 +687,27 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
   useCelebrateOnDone(m.allDone, celebrate);
   useGoalCelebrations(m, headerRefs, miniBurst);
   const qtyFor = useQtyControls(checkInStep);
+  // Owner fix 3 (build 11): tap a week dot to peek at any day of the week.
+  // null = live today. All today-machinery (celebrations, folding, banners)
+  // stays keyed to the real today — the peek is a read-only overlay.
+  const [peek, setPeek] = useState<string | null>(null);
+
+  if (peek) {
+    return (
+      <>
+        <Header title={greeting(false, profile.firstName)} sub={`Peeking at ${weekdayName(peek)} — today keeps the clock`} />
+        <WeekStrip days={m.strip} selected={peek} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
+        <View style={{ flex: 1, gap: 14, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 130 }}>
+          <DayPeek goals={goals} byGoal={byGoal} date={peek} today={m.today} onBack={() => setPeek(null)} />
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
       <Header title={greeting(m.restDay && !m.allDone, profile.firstName)} sub={headerSub(m)} />
-      <WeekStrip days={m.strip} />
+      <WeekStrip days={m.strip} selected={m.today} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
 
       <View style={{ flex: 1, gap: 14, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 130 }}>
         {m.missed && !m.allDone && <MissedBanner />}
@@ -623,9 +722,11 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
           <RestDay preview={m.preview} />
         ) : (
           <>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
               <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel }}>TODAY'S REPS</Text>
-              <Text numberOfLines={1} style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: multi ? colors.success : colors.sectionLabel }}>
+              {/* flexShrink: without it a long right label ("SOLID ODDS · 85%
+                  · BUILD THE EASY-MILE HABIT") rammed into the left one. */}
+              <Text numberOfLines={1} style={{ flexShrink: 1, textAlign: 'right', fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: multi ? colors.success : colors.sectionLabel }}>
                 {multi ? `${m.done} OF ${m.total} BANKED` : singleHeaderLabel(m.perGoal[0], byGoal, m.today)}
               </Text>
             </View>
@@ -751,6 +852,8 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
   const nudge = nudgeLine(m.done, m.total);
 
   const qtyFor = useQtyControls(checkInStep);
+  // Owner fix 3 (build 11): the sidebar's week dots peek any day, read-only.
+  const [peek, setPeek] = useState<string | null>(null);
 
   return (
     <View style={{ width: '100%', maxWidth: 1060, alignSelf: 'center' }}>
@@ -761,7 +864,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
             {greeting(m.restDay && !m.allDone, profile.firstName)}
           </Text>
           <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 6 }}>
-            {headerSub(m)}
+            {peek ? `Peeking at ${weekdayName(peek)} — today keeps the clock` : headerSub(m)}
           </Text>
         </View>
         <Pressable onPress={() => navigation.navigate('You')}>
@@ -771,6 +874,11 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
 
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 22, paddingHorizontal: 40, paddingTop: 22, paddingBottom: 110 }}>
         {/* left column: the day's work */}
+        {peek ? (
+          <View style={{ flex: 1, minWidth: 0, gap: 12 }}>
+            <DayPeek goals={goals} byGoal={byGoal} date={peek} today={m.today} onBack={() => setPeek(null)} />
+          </View>
+        ) : (
         <View style={{ flex: 1, minWidth: 0, gap: 12 }}>
           {m.missed && !m.allDone && <MissedBanner />}
 
@@ -825,6 +933,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
             </>
           )}
         </View>
+        )}
 
         {/* right column: the living sidebar */}
         <View style={{ width: 264, gap: 12 }}>
@@ -848,7 +957,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
 
           <SideCard>
             <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.4, color: colors.sectionLabel, marginBottom: 12 }}>THIS WEEK</Text>
-            <WeekDots days={m.strip} />
+            <WeekDots days={m.strip} selected={peek ?? m.today} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
             {m.perGoal.length === 1 && (
               <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.muted, marginTop: 12 }}>
                 week {m.perGoal[0].week} of {m.perGoal[0].goal.protocol.duration_weeks}

@@ -6,7 +6,7 @@
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { answerCoachQuestion, generateProtocol, getSimulation, postAnswer, prepareSimulation, priceCustomPace, startCoachSession } from '../api/coach';
+import { answerCoachQuestion, generateProtocol, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, startCoachSession } from '../api/coach';
 import type { PaceKey, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
 import {
   CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
@@ -134,6 +134,7 @@ export function useCoachFlow() {
     const id = sessionId.current;
     if (!id) return;
     setVariant('offer');
+    setPickedOdds(null);
     setPhase('building');
     generateProtocol(id, pace).then(
       res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
@@ -141,12 +142,31 @@ export function useCoachFlow() {
     );
   }, [fail, pace]);
 
+  // Tier-1B: the commitment picker's repriced odds — dropping commitments
+  // before locking can only lower the number, and this is where the lowered
+  // number lives (the lock and the reveal chip both prefer it).
+  const [pickedOdds, setPickedOdds] = useState<number | null>(null);
+  const repriceWithDrops = useCallback((ids: string[]): Promise<{ refused: { step_id: string; reason: string }[] } | null> => {
+    const id = sessionId.current;
+    if (!id || !ids.length) return Promise.resolve(null);
+    return repriceProtocol(id, ids)
+      .then(res => {
+        if (res.protocol && typeof res.odds === 'number') {
+          setProtocol(res.protocol);
+          setPickedOdds(res.odds);
+        }
+        return { refused: res.refused ?? [] };
+      })
+      .catch(() => null);
+  }, []);
+
   /** The attempt: build the ORIGINAL ask, eyes open. Server enforces the
    *  20% floor; this only exists on counter-offers that clear it. */
   const buildOriginal = useCallback(() => {
     const id = sessionId.current;
     if (!id) return;
     setVariant('original');
+    setPickedOdds(null);
     setPhase('building');
     generateProtocol(id, undefined, 'original').then(
       res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
@@ -161,6 +181,7 @@ export function useCoachFlow() {
     const id = sessionId.current;
     if (!id || !value.trim()) return;
     setPhase('rebuilding');
+    setPickedOdds(null);
     postAnswer(id, key, value.trim())
       .then(() => generateProtocol(id))
       .then(
@@ -300,6 +321,7 @@ export function useCoachFlow() {
     pollNonce.current++;
     healTries.current = 0;
     healing.current = false;
+    setPickedOdds(null);
     setProtocol(null);
     setError(null);
     setPhase('intake');
@@ -322,12 +344,12 @@ export function useCoachFlow() {
     protocol && verdict
       // durationWeeks comes from the PROTOCOL: a sprint or relaxed pace means
       // the verdict's headline weeks and the generated plan's weeks differ.
-      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: chosenOdds, protocol, coachSessionId: sessionId.current ?? undefined }
+      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: pickedOdds ?? chosenOdds, protocol, coachSessionId: sessionId.current ?? undefined }
       : null;
 
   return {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
-    pace, setPace, chosenOdds, chosenStatement, buildOriginal,
+    pace, setPace, chosenOdds, pickedOdds, repriceWithDrops, chosenStatement, buildOriginal,
     assumptions, quickPicks, missingRequired, fixAssumption,
     sim, prevSim, editedKey, editInput, switchPace, priceCustom, verdictAnswers,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan,

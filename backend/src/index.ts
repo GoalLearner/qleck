@@ -20,7 +20,7 @@
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
 import { verifyAppleToken } from './apple';
-import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
+import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
@@ -643,6 +643,28 @@ export default {
         return json({ sessionId: session.id, pace: out.pace }, 200, cors);
       }
 
+      /* POST /coach/sessions/:id/protocol/reprice {dropped_step_ids} —
+       * Tier-1B commitment picker: trim the accepted (unlocked) protocol,
+       * refuse structure-breaking drops with reasons, re-price the rest. */
+      const repriceMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol\/reprice$/);
+      if (repriceMatch && request.method === 'POST') {
+        const session = await loadSession(env, repriceMatch[1], deviceId);
+        if (!session) return json({ error: 'session_not_found' }, 404, cors);
+        if (session.status !== 'protocol' || !session.protocol || !session.verdict) {
+          return json({ error: 'no_protocol_yet', status: session.status }, 409, cors);
+        }
+        const ids = Array.isArray(body.dropped_step_ids)
+          ? (body.dropped_step_ids as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 40)
+          : [];
+        if (!ids.length) return json({ error: 'nothing_dropped' }, 400, cors);
+        const out = await repriceTrimmedProtocol(env, { ...meta, sessionId: session.id }, session, ids);
+        if ('error' in out) {
+          const status = out.error === 'all_refused' ? 200 : out.error === 'nothing_dropped' ? 400 : 502;
+          return json({ sessionId: session.id, ...out }, status, cors);
+        }
+        return json({ sessionId: session.id, ...out }, 200, cors);
+      }
+
       /* POST /coach/sessions/:id/protocol — generate for a verdict session. */
       const protoMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol$/);
       if (protoMatch) {
@@ -972,7 +994,14 @@ async function runCoachTurn(
     // quick-pick degrades safely, a shrug-chip on a fact question does not.
     if (Array.isArray(result.question.suggested_answers)) {
       result.question.suggested_answers = result.question.suggested_answers
-        .filter((c: string) => !/no idea|you decide|not sure|whatever you think|up to you/i.test(c));
+        .filter((c: string) => !/no idea|you decide|not sure|whatever you think|up to you/i.test(c))
+        // v29 enforcement: the model keeps re-inventing stat-bucket chips at
+        // some rate no matter what the prompt says ("Stalled around 60-65kg")
+        // — a range chip carrying an arithmetic unit is stripped HERE, so it
+        // can never reach a screen. Same predicate as the harness bar.
+        .filter((c: string) =>
+          !((/\b(under|over|about|around)\b|[0-9][^a-z]{0,3}[-–][^a-z]{0,3}[0-9]/i.test(c)) &&
+            (/kg\b|lbs?\b|\$|dollar|follower|subscriber|view/i.test(c))));
     }
     transcript.push({ question: result.question.question, why: result.question.why_it_matters });
     await env.DB
@@ -985,7 +1014,29 @@ async function runCoachTurn(
   }
 
   if (result.type === 'verdict' && result.verdict) {
+    // A verdict without a legal decision is unusable — one full resample
+    // before anything downstream trusts it (seen in the wild: the model
+    // emitted a verdict missing `decision` entirely).
+    if (!['feasible', 'counter_offer', 'declined'].includes(result.verdict.decision as string)) {
+      const redo = await resampleVerdict(
+        env, { ...meta, sessionId: session.id }, session, result.verdict,
+        'Your verdict below is MALFORMED (its decision field is missing or invalid).',
+      );
+      if (redo && ['feasible', 'counter_offer', 'declined'].includes(redo.decision as string)) result.verdict = redo;
+    }
     sanitizeOdds(result.verdict, sessionStructure(session).answers);
+    // v29: the carve is part of the contract. When a verdict arrives without
+    // valid reads (model skipped them, or the sanitizer had to drop the set),
+    // ONE corrective resample asks for the carve alone — and only subtitle +
+    // reads are taken from it, never the numbers, so pricing stays stable.
+    if ((result.verdict.decision === 'feasible' || result.verdict.decision === 'counter_offer') && !result.verdict.reads) {
+      const carve = await retryCarve(env, { ...meta, sessionId: session.id }, session, result.verdict);
+      if (carve.reads) {
+        result.verdict.reads = carve.reads;
+        if (carve.subtitle && !result.verdict.subtitle) result.verdict.subtitle = carve.subtitle;
+        sanitizeOdds(result.verdict, sessionStructure(session).answers);
+      }
+    }
     // Fix 2 (owner spec): odds must never be null. sanitizeOdds DROPS
     // malformed numbers by design; when that leaves no probability, the
     // deterministic rubric floor takes over — band-conservative constants,

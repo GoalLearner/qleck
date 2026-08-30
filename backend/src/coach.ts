@@ -1173,6 +1173,52 @@ export async function simStep(
   return 'done';
 }
 
+/** v29: one corrective full-verdict resample with a named complaint. */
+export async function resampleVerdict(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  broken: Verdict,
+  complaint: string,
+): Promise<Verdict | null> {
+  try {
+    const result = await callModel(env, { ...meta, kind: 'verdict_turn' }, {
+      model: modelsFor(env).coach,
+      system: COACH_SYSTEM,
+      messages: [
+        ...coachMessages(session, undefined),
+        {
+          role: 'user',
+          content: `[app note] ${complaint} Re-issue the COMPLETE verdict:\n${JSON.stringify(broken)}`,
+        },
+      ],
+      tools: [VERDICT_TOOL],
+      toolChoice: { type: 'tool', name: VERDICT_TOOL.name },
+      maxTokens: 2048,
+    });
+    return result.toolName === VERDICT_TOOL.name ? (result.toolInput as Verdict) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * v29: one corrective resample when a verdict arrives without its carve.
+ * Only subtitle + reads are consumed from the retry — numbers never move.
+ */
+export async function retryCarve(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  verdict: Verdict,
+): Promise<{ subtitle?: string; reads?: Verdict['reads'] }> {
+  const v2 = await resampleVerdict(
+    env, meta, session, verdict,
+    "Your verdict below is missing the QOACH'S READ carve. Keep the decision, probabilities, paces and factors IDENTICAL — add subtitle and EXACTLY three reads ('for' → 'risk' → 'move', each tracing to collected answer keys).",
+  );
+  return v2 ? { subtitle: v2.subtitle, reads: v2.reads } : {};
+}
+
 /**
  * v29 "Your pace": price the SAME goal at a user-named runway. The result is
  * clamped into the existing ladder's ordering (a shorter runway can never
@@ -1229,6 +1275,98 @@ export async function priceCustomPace(
     .bind(session.verdict, session.id)
     .run();
   return { pace };
+}
+
+/**
+ * Tier-1B commitment picker: the user drops commitments from the accepted
+ * (not-yet-locked) protocol; the server is the gate. Structure is law —
+ * a drop that breaks the validators (an emptied phase, a lost pillar, a
+ * broken session) is refused with the reason — and the surviving trim is
+ * re-priced by the same procedure, clamped to NEVER exceed the current
+ * odds: removing commitments can only cost.
+ */
+export async function repriceTrimmedProtocol(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  droppedIds: string[],
+): Promise<
+  | { protocol: Protocol; odds: number; note: string; refused: { step_id: string; reason: string }[] }
+  | { error: string; refused?: { step_id: string; reason: string }[] }
+> {
+  const verdict = JSON.parse(session.verdict!) as Verdict;
+  const full = JSON.parse(session.protocol!) as Protocol;
+  const allSteps = full.phases.flatMap(ph => ph.steps);
+  const allIds = new Set(allSteps.map(s => s.id));
+  let wanted = [...new Set(droppedIds)].filter(id => allIds.has(id));
+  if (!wanted.length) return { error: 'nothing_dropped' };
+
+  const trim = (p: Protocol, ids: Set<string>): Protocol => ({
+    ...p,
+    phases: p.phases.map(ph => ({ ...ph, steps: ph.steps.filter(s => !ids.has(s.id)) })),
+  });
+  const firstError = (p: Protocol): string | null => {
+    if (p.phases.some(ph => ph.steps.length === 0)) return 'that phase would be left with nothing to do';
+    const errs = [
+      ...validateProtocol(p),
+      ...sessionErrors(p),
+      ...physiquePillarErrors(verdict.goal_statement, p),
+    ];
+    return errs.length ? String(errs[0]) : null;
+  };
+
+  const refused: { step_id: string; reason: string }[] = [];
+  if (firstError(trim(full, new Set(wanted)))) {
+    // Bisect: a step whose SOLO removal breaks the plan is individually
+    // refused; the rest retry together. An interaction failure refuses all.
+    const ok: string[] = [];
+    for (const id of wanted) {
+      const solo = firstError(trim(full, new Set([id])));
+      if (solo) refused.push({ step_id: id, reason: solo });
+      else ok.push(id);
+    }
+    wanted = ok;
+    if (wanted.length) {
+      const together = firstError(trim(full, new Set(wanted)));
+      if (together) {
+        for (const id of wanted) refused.push({ step_id: id, reason: together });
+        wanted = [];
+      }
+    }
+    if (!wanted.length) return { error: 'all_refused', refused };
+  }
+
+  const trimmed = trim(full, new Set(wanted));
+  const cur = typeof verdict.success_probability === 'number' ? verdict.success_probability : 75;
+  const droppedTitles = allSteps.filter(s => wanted.includes(s.id)).map(s => s.title);
+  const keptTitles = trimmed.phases.flatMap(ph => ph.steps).map(s => s.title);
+  const result = await callModel(env, { ...meta, kind: 'verdict_turn' }, {
+    model: modelsFor(env).coach,
+    system: COACH_SYSTEM,
+    messages: [{
+      role: 'user',
+      content:
+        `A plan was accepted for this goal (currently priced ${cur}% at ${trimmed.duration_weeks} weeks):\n${verdict.goal_statement}\n\n` +
+        `Before locking it, the user REMOVED these commitments:\n${droppedTitles.map(t => `- ${t}`).join('\n')}\n\n` +
+        `Kept commitments:\n${keptTitles.map(t => `- ${t}`).join('\n')}\n\n` +
+        `Re-price the SAME goal at the SAME duration with only the kept commitments, using the SUCCESS PROBABILITY procedure. Removing real supports lowers the odds; a genuinely cosmetic removal may leave them unchanged. NEVER price above ${cur}.`,
+    }],
+    tools: [PRICE_TOOL],
+    toolChoice: { type: 'tool', name: PRICE_TOOL.name },
+    maxTokens: 300,
+  });
+  const input = result.toolName === PRICE_TOOL.name
+    ? (result.toolInput as { success_probability: number; note: string })
+    : null;
+  let p = input ? Math.round(Number(input.success_probability)) : NaN;
+  if (!Number.isFinite(p)) return { error: 'price_failed', refused };
+  p = Math.max(1, Math.min(cur, p)); // dropping can only cost
+  session.protocol = JSON.stringify(trimmed);
+  await env.DB
+    .prepare(`UPDATE coach_sessions SET protocol = ?, updated_at = datetime('now') WHERE id = ?`)
+    .bind(session.protocol, session.id)
+    .run();
+  return { protocol: trimmed, odds: p, note: String(input?.note ?? '').trim().slice(0, 220), refused };
 }
 
 /** Initialize the simulation state for a config (planned lanes, empty). */

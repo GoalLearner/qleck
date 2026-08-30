@@ -133,13 +133,22 @@ function stepMetric(step: ProtocolStep): string {
   return `✓ ${freq}`;
 }
 
-function StepRow({ step, onFixAssumption }: { step: ProtocolStep; onFixAssumption?: (key: string) => void }) {
+function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onToggleDrop }: {
+  step: ProtocolStep;
+  onFixAssumption?: (key: string) => void;
+  /** Tier-1B commitment picker: this step is marked for removal. */
+  dropped?: boolean;
+  /** Qoach refused the drop — the structural reason, shown in amber. */
+  refusedReason?: string;
+  onToggleDrop?: () => void;
+}) {
   const k = kindStyle(step.kind);
   return (
     <View
       style={{
         flexDirection: 'row', alignItems: 'flex-start', gap: 11,
         paddingVertical: 10, borderTopWidth: 1, borderTopColor: night.hairline,
+        opacity: dropped ? 0.45 : 1,
       }}
     >
       <View
@@ -151,9 +160,14 @@ function StepRow({ step, onFixAssumption }: { step: ProtocolStep; onFixAssumptio
         <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: k.fg }}>{k.glyph}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 18, color: night.text }}>
+        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 18, color: night.text, textDecorationLine: dropped ? 'line-through' : 'none' }}>
           {step.title}
         </Text>
+        {refusedReason ? (
+          <Text style={{ marginTop: 3, fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: '#F7B32B' }}>
+            Qoach kept it — {refusedReason}
+          </Text>
+        ) : null}
         {/* The canvas' rep detail: the "how", one line under the what. */}
         {step.details ? (
           <Text style={{ marginTop: 3, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: night.textDim }}>
@@ -184,13 +198,29 @@ function StepRow({ step, onFixAssumption }: { step: ProtocolStep; onFixAssumptio
       <View style={{ backgroundColor: k.pill, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginTop: 1 }}>
         <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: k.fg }}>{stepMetric(step)}</Text>
       </View>
+      {onToggleDrop ? (
+        <Pressable
+          onPress={onToggleDrop}
+          hitSlop={8}
+          style={{
+            width: 26, height: 26, borderRadius: 13, marginTop: 1,
+            borderWidth: 1.5, borderColor: dropped ? night.accentBorder : night.border,
+            backgroundColor: dropped ? night.accentSoft : 'transparent',
+            alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontFamily: MONO, fontSize: 12, fontWeight: '700', color: dropped ? night.accentText : night.textGhost }}>
+            {dropped ? '+' : '×'}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 /** One phase: a header that always shows, reps only while open. */
 function PhaseCard({
-  phase, open, isLast, milestones, onToggle, onFixAssumption,
+  phase, open, isLast, milestones, onToggle, onFixAssumption, dropped, refused, onToggleDrop,
 }: {
   phase: ProtocolPhase;
   open: boolean;
@@ -198,6 +228,9 @@ function PhaseCard({
   milestones: ProtocolMilestone[];
   onToggle: () => void;
   onFixAssumption?: (key: string) => void;
+  dropped?: Set<string>;
+  refused?: Record<string, string>;
+  onToggleDrop?: (id: string) => void;
 }) {
   const weeks = phase.start_week === phase.end_week
     ? `WEEK ${phase.start_week}`
@@ -246,7 +279,16 @@ function PhaseCard({
 
       {open ? (
         <View style={{ paddingHorizontal: 16 }}>
-          {phase.steps.map(step => <StepRow key={step.id} step={step} onFixAssumption={onFixAssumption} />)}
+          {phase.steps.map(step => (
+            <StepRow
+              key={step.id}
+              step={step}
+              onFixAssumption={onFixAssumption}
+              dropped={dropped?.has(step.id) ?? false}
+              refusedReason={refused?.[step.id]}
+              onToggleDrop={onToggleDrop ? () => onToggleDrop(step.id) : undefined}
+            />
+          ))}
         </View>
       ) : null}
 
@@ -919,7 +961,7 @@ function CounterVerdict({
  * strip gives the whole span at a glance, and locking in actually pays off.
  */
 function ProtocolReveal({
-  protocol, statement, odds, onLock, onRestart, quickPicks, onFixAssumption,
+  protocol, statement, odds, onLock, onRestart, quickPicks, onFixAssumption, onReprice,
 }: {
   protocol: Protocol;
   statement: string;
@@ -928,8 +970,47 @@ function ProtocolReveal({
   onRestart: () => void;
   quickPicks?: Record<string, string[]>;
   onFixAssumption?: (key: string, value: string) => void;
+  /** Tier-1B: drop commitments → server refuses structural drops with
+   *  reasons and re-prices the rest (the odds prop then updates). */
+  onReprice?: (ids: string[]) => Promise<{ refused: { step_id: string; reason: string }[] } | null>;
 }) {
   const [open, setOpen] = useState(0);
+  // Commitment picker state: what the user marked for removal, what Qoach
+  // refused (with reasons), and the before→after odds delta.
+  const [droppedIds, setDroppedIds] = useState<Set<string>>(new Set());
+  const [refused, setRefused] = useState<Record<string, string>>({});
+  const [repricing, setRepricing] = useState(false);
+  const [delta, setDelta] = useState<{ from: number; to: number } | null>(null);
+  const toggleDrop = (id: string) => {
+    setRefused(cur => { const { [id]: _gone, ...rest } = cur; return rest; });
+    setDroppedIds(cur => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const repriceNow = () => {
+    if (!onReprice || repricing || droppedIds.size === 0) return;
+    const from = odds;
+    setRepricing(true);
+    onReprice([...droppedIds])
+      .then(res => {
+        if (!res) return;
+        const refusedMap: Record<string, string> = {};
+        for (const r of res.refused) refusedMap[r.step_id] = r.reason;
+        setRefused(refusedMap);
+        // Refused ids stay in the plan — un-mark them; accepted drops are now
+        // GONE from the protocol, so the set resets entirely.
+        setDroppedIds(new Set());
+        if (from !== undefined) setDelta(d => ({ from: d?.from ?? from, to: from }));
+      })
+      .finally(() => setRepricing(false));
+  };
+  // The odds prop updates when the reprice lands — close the delta with it.
+  useEffect(() => {
+    if (delta && odds !== undefined && odds !== delta.to) setDelta({ from: delta.from, to: odds });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [odds]);
   // "Assumed ~170 lb — fix": which manifest key is being edited, and the
   // typed value. Quick-picks submit immediately; typed values via Rebuild.
   const [fixingKey, setFixingKey] = useState<string | null>(null);
@@ -1018,9 +1099,37 @@ function ProtocolReveal({
                 milestones={milestones.filter(m => m.week >= phase.start_week && m.week <= phase.end_week)}
                 onToggle={() => setOpen(cur => (cur === i ? -1 : i))}
                 onFixAssumption={onFixAssumption ? (key) => { setFixingKey(key); setFixValue(''); } : undefined}
+                dropped={droppedIds}
+                refused={refused}
+                onToggleDrop={onReprice && !locked ? toggleDrop : undefined}
               />
             ))}
           </View>
+
+          {delta && delta.from !== delta.to ? (
+            <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 14, color: night.textFaint, textDecorationLine: 'line-through' }}>{delta.from}</Text>
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 12, color: night.accent }}>→</Text>
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: night.accent }}>{delta.to}</Text>
+              <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.6, color: night.textMuted }}>YOUR PLAN, YOUR PRICE</Text>
+            </View>
+          ) : null}
+
+          {droppedIds.size > 0 && !locked ? (
+            <Pressable
+              onPress={repriceNow}
+              disabled={repricing}
+              style={{
+                marginTop: 12, height: 44, borderRadius: 22,
+                backgroundColor: repricing ? night.hairline : night.accent,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 0.8, fontWeight: '700', color: repricing ? night.textMuted : night.accentInk }}>
+                {repricing ? 'RE-PRICING…' : `RE-PRICE WITHOUT ${droppedIds.size} ${droppedIds.size === 1 ? 'COMMITMENT' : 'COMMITMENTS'}`}
+              </Text>
+            </Pressable>
+          ) : null}
 
           {fixingKey && onFixAssumption ? (
             <View style={{
@@ -1602,11 +1711,12 @@ export default function FirstGoalScreen({
       <ProtocolReveal
         protocol={coach.protocol}
         statement={coach.chosenStatement ?? coach.verdict.goal_statement}
-        odds={coach.chosenOdds}
+        odds={coach.pickedOdds ?? coach.chosenOdds}
         quickPicks={coach.quickPicks}
         onFixAssumption={coach.fixAssumption}
         onLock={lockIn}
         onRestart={coach.reset}
+        onReprice={coach.repriceWithDrops}
       />
     );
   }

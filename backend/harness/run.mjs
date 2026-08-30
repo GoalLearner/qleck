@@ -109,6 +109,7 @@ async function runGoalFixture(f) {
   let questions = 0;
   const askedTexts = [];
   let dupQuestion = false;
+  const dupFlags = [];
   let badChip = null;
   // Chip ergonomics, owner spec 2026-08-29: a question is either TAPPABLE
   // (3+ chips) or an EXACT-FIGURE ask (bodyweight, 1RM, dollars, followers,
@@ -117,7 +118,7 @@ async function runGoalFixture(f) {
   // chip-less question that is NOT an exact ask silently gets harder to
   // answer, and a RANGE chip on an exact ask is the bug itself — the
   // harness is the only place either can be caught.
-  const EXACT_ASK = /\b(weigh(t|ing)?|body\s?weight|1\s?rm|one[-\s]rep|best (set|lift|effort)|current (bench|squat|deadlift|lift)|saved|savings|balance|contribut|income|set aside|followers?|subscribers?|avg\.? views|average views|views per|opens per)\b/i;
+  const EXACT_ASK = /\b(weigh(t|ing)?|body\s?weight|1\s?rm|one[-\s]rep|best (set|lift|effort)|current (bench|squat|deadlift|lift|capacity)|how far|how many minutes|minutes could|longest (run|walk|ride|distance)|current pace|saved|savings|balance|contribut|income|set aside|followers?|subscribers?|avg\.? views|average views|views per|opens per)\b/i;
   // A STAT BUCKET is a range-shaped chip carrying an arithmetic unit
   // (weight, money, audience counts). v27 removed every legitimate one from
   // the manifests, so ANY sighting on ANY question is the model re-inventing
@@ -134,7 +135,13 @@ async function runGoalFixture(f) {
     // Against ALL prior questions, not just the last — a field chased four
     // times in lightly reworded forms (the read-nightly regression) is a
     // repeat even when no two adjacent askings cross the threshold.
-    if (askedTexts.some((prev, i) => similarity(prev, q.question) > (i === askedTexts.length - 1 ? 0.72 : 0.8))) dupQuestion = true;
+    // The spec PERMITS exactly one re-ask of a stat the numbers require
+    // (item E, "explaining why you need it") — so one flagged repeat is
+    // tolerated when the repeat is an exact-figure ask; a second repeat, or
+    // a repeated non-stat question, is the real defect.
+    if (askedTexts.some((prev, i) => similarity(prev, q.question) > (i === askedTexts.length - 1 ? 0.72 : 0.8))) {
+      dupFlags.push(EXACT_ASK.test(q.question));
+    }
     askedTexts.push(q.question);
     const chips = q.suggested_answers ?? [];
     if (!EXACT_ASK.test(q.question) && chips.length < MIN_CHIPS) thinChipQ = q.question;
@@ -190,7 +197,11 @@ async function runGoalFixture(f) {
   // walking a trivial habit goal all the way to the cap purely because the
   // model kept choosing to ask; this is the alarm for that regression.
   if (f.maxQuestions && questions > f.maxQuestions) pass = false;
-  if (dupQuestion || badChip) pass = false;
+  // dupFlags -> dupQuestion: one stat re-ask is spec-permitted; anything
+  // more, or a repeated non-stat question, is the defect. A repeat AT the
+  // question floor stays the server's documented lesser evil.
+  dupQuestion = dupFlags.some(isStat => !isStat) || dupFlags.length > 1;
+  if ((dupQuestion && questions > MIN_Q) || badChip) pass = false;
   if (thinChipQ || statBucketChip) pass = false;
 
   // v29 custom-pace leg (fixtures flagged priceCheck): a user-named runway
@@ -226,6 +237,26 @@ async function runGoalFixture(f) {
       if (pLeak) { pass = false; }
     }
   }
+  // Tier-1B commitment-picker leg (priceCheck fixtures): drop the last step
+  // of phase 1 and re-price. Either Qoach refuses the drop with a structural
+  // reason, or the trimmed plan prices AT OR BELOW the verdict — removing a
+  // commitment must never raise the number.
+  let repriceOk = null;
+  if (f.priceCheck && protocol && typeof probability === 'number') {
+    const p1Steps = protocol.phases[0]?.steps ?? [];
+    const target = p1Steps[p1Steps.length - 1];
+    if (target && p1Steps.length > 1) {
+      const r = await api(`/coach/sessions/${sessionId}/protocol/reprice`, { dropped_step_ids: [target.id] });
+      repriceOk =
+        r.status === 200 &&
+        (r.body?.error === 'all_refused'
+          ? Array.isArray(r.body.refused) && r.body.refused.length > 0 && !!r.body.refused[0].reason
+          : typeof r.body?.odds === 'number' && r.body.odds <= probability &&
+            !!r.body?.protocol && !r.body.protocol.phases.flatMap(ph => ph.steps).some(s => s.id === target.id));
+      if (repriceOk === false) pass = false;
+    }
+  }
+
   // Physique pillar audit (prompt v21): the plan must carry the whole
   // hypertrophy/fat-loss playbook — training, a progression rule, energy
   // balance, protein, sleep — and phase 1 must hold at least five steps.
@@ -249,7 +280,7 @@ async function runGoalFixture(f) {
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
     pillarsOk,
-    pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, priceOk, ms: Date.now() - t0,
+    pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, priceOk, repriceOk, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -337,7 +368,7 @@ const bars = {
   'protocol valid ≥95%': protoRate >= 0.95,
   'revisions preserve past': revisionAttempts.length > 0 && revisionValid === revisionAttempts.length,
   'zero leaks': leaks === 0,
-  'no repeated questions': goalResults.every(r => !r.dupQuestion),
+  'no repeated questions (above the floor)': goalResults.every(r => !r.dupQuestion || r.questions <= MIN_Q),
   'no delegation chips': goalResults.every(r => !r.badChip),
   // The question band is the whole point of PROMPT_VERSION 15: a goal that
   // reaches a verdict must have earned it with at least MIN_Q questions, and
@@ -354,6 +385,8 @@ const bars = {
     goalResults.every(r => r.readsOk),
   'custom paces obey the ladder':
     goalResults.every(r => r.priceOk === null || r.priceOk === true),
+  'dropping commitments never raises the odds':
+    goalResults.every(r => r.repriceOk === null || r.repriceOk === true),
   'physique protocols cover the pillars':
     goalResults.every(r => r.pillarsOk === null || r.pillarsOk === true),
   [`questions tappable (${MIN_CHIPS}+ chips) or exact-figure asks`]:

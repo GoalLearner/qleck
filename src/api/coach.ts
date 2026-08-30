@@ -137,6 +137,19 @@ export function priceCustomPace(sessionId: string, weeks: number): Promise<{ pac
   return post(`/coach/sessions/${sessionId}/price`, { weeks });
 }
 
+/** Tier-1B commitment picker: drop commitments from the accepted (unlocked)
+ *  protocol. The server refuses structure-breaking drops with reasons and
+ *  re-prices the surviving trim (never above the current odds). */
+export function repriceProtocol(sessionId: string, droppedStepIds: string[]): Promise<{
+  protocol?: import('./coachTypes').Protocol;
+  odds?: number;
+  note?: string;
+  refused?: { step_id: string; reason: string }[];
+  error?: string;
+}> {
+  return post(`/coach/sessions/${sessionId}/protocol/reprice`, { dropped_step_ids: droppedStepIds });
+}
+
 export function generateProtocol(sessionId: string, pace?: string, variant?: 'original'): Promise<ProtocolResponse> {
   return post<ProtocolResponse>(`/coach/sessions/${sessionId}/protocol`, {
     ...(pace ? { pace } : {}),

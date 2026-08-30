@@ -92,7 +92,7 @@ export function weekStart(local: string): string {
   return addDays(local, -weekdayIndex(local));
 }
 
-function stepPinnedOn(step: ProtocolStep, local: string): boolean {
+export function stepPinnedOn(step: ProtocolStep, local: string): boolean {
   const days = step.frequency.days;
   if (!days || days.length === 0) return false;
   const key = DAY_KEYS[weekdayIndex(local)];

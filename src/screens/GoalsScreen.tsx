@@ -401,6 +401,16 @@ export default function GoalsScreen() {
                 </Pressable>
               </View>
 
+              {goals.length > 0 && (
+                <Pressable
+                  onPress={() => navigation.navigate('Ledger')}
+                  style={{ alignSelf: 'flex-start', marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: colors.outline }}
+                >
+                  <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, letterSpacing: 1, color: colors.ink }}>THE LEDGER</Text>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.sectionLabel }}>week by week ›</Text>
+                </Pressable>
+              )}
+
               <View style={{ gap: 12, marginTop: 24 }}>
                 {goals.length === 0 && (
                   <View style={{ backgroundColor: colors.navy, borderRadius: 26, padding: 24 }}>

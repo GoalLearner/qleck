@@ -104,12 +104,18 @@ export function useCoachFlow() {
     }
   }, []);
 
-  const submitGoal = useCallback((text: string) => {
+  // Tier-2: whether this session is an own-plan REVIEW (the user brought
+  // their plan; Qoach priced it) — flips the verdict/reveal copy.
+  const [ownPlanMode, setOwnPlanMode] = useState(false);
+
+  const submitGoal = useCallback((text: string, ownPlan?: string) => {
     const goal = text.trim();
     if (!goal) return;
+    const plan = ownPlan?.trim() || undefined;
     setGoalText(goal);
+    setOwnPlanMode(!!plan);
     setPhase('thinking');
-    startCoachSession(goal).then(handleTurn, err => fail(err, () => submitGoal(goal)));
+    startCoachSession(goal, plan).then(handleTurn, err => fail(err, () => submitGoal(goal, plan)));
   }, [fail, handleTurn]);
 
   const answerQuestion = useCallback((answer: string) => {
@@ -324,6 +330,7 @@ export function useCoachFlow() {
     setPickedOdds(null);
     setProtocol(null);
     setError(null);
+    setOwnPlanMode(false);
     setPhase('intake');
   }, []);
 
@@ -352,7 +359,7 @@ export function useCoachFlow() {
     pace, setPace, chosenOdds, pickedOdds, repriceWithDrops, chosenStatement, buildOriginal,
     assumptions, quickPicks, missingRequired, fixAssumption,
     sim, prevSim, editedKey, editInput, switchPace, priceCustom, verdictAnswers,
-    submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan,
+    submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan, ownPlanMode,
   };
 }
 

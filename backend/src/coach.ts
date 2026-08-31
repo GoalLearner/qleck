@@ -6,7 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PRICE_TOOL, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
@@ -42,6 +42,8 @@ export interface SessionRow {
   answers: string;
   draft_protocol?: string | null;
   simulation?: string | null;
+  /** Tier-2: the user's own plan under review (NULL = coached intake). */
+  own_plan?: string | null;
   /** Transient (never persisted): keys the latest extraction added. Fuels the
    *  progress gate — a 6th question must be EARNED by a productive 5th. */
   last_extract_added?: number;
@@ -247,7 +249,7 @@ export async function extractAnswers(
         'You extract structured facts from a goal-coaching interview. Fill ONLY fields the user has actually stated, from the goal text or their answers — verbatim-faithful short values ("205 lbs", "3 days", "about 15/day", "stalled at 285 last year"). Ranges and approximations are fine as given. NEVER infer, compute, or guess a value the user did not state. A filler or non-answer ("nothing unusual", "steady week to week", "whatever you think") states NOTHING — omit the field. Never fill a field by restating the goal itself. Omit every unknown field entirely.',
       messages: [{
         role: 'user',
-        content: `Goal:\n${goalAsData(session.goal_text)}\n\nInterview so far:\n${qa || '(none yet)'}${latestBlock}`,
+        content: `Goal:\n${sessionGoalData(session)}\n\nInterview so far:\n${qa || '(none yet)'}${latestBlock}`,
       }],
       tools: [{
         name: 'record_answers',
@@ -289,7 +291,12 @@ export async function enrichStructure(
     const said = tx.filter(t => t.answer !== undefined).map(t => t.answer as string);
     if (latest?.answer) said.push(latest.answer);
     const ctx = { ...structure.answers, ...(said.length ? { clarified_in_conversation: said.join(' | ').slice(0, 600) } : {}) };
-    const cls = await classifyDomain(env, meta, session.goal_text, ctx);
+    // Own-plan sessions classify from goal + plan together — "get fitter"
+    // with a plan of runs is endurance, and the plan usually says so.
+    const clsText = session.own_plan
+      ? `${session.goal_text}\nTheir own plan: ${session.own_plan}`
+      : session.goal_text;
+    const cls = await classifyDomain(env, meta, clsText, ctx);
     session.domain = cls.domain;
     session.needs_clarification = cls.concrete ? 0 : 1;
     structure = sessionStructure(session);
@@ -310,6 +317,16 @@ export async function enrichStructure(
 function goalAsData(goalText: string): string {
   // Injection hygiene: user text always travels inside tags, flagged as data.
   return `<goal_text>\n${goalText}\n</goal_text>`;
+}
+
+/** The goal as the pipeline sees it — plus, on own-plan sessions, the plan
+ *  under review. Same injection hygiene: the plan is DATA in its own tags.
+ *  Used everywhere goal context feeds a model (interview, extraction,
+ *  generation) so a review session never forgets what it is reviewing. */
+function sessionGoalData(session: SessionRow): string {
+  const goal = goalAsData(session.goal_text);
+  if (!session.own_plan) return goal;
+  return `${goal}\nMy own plan — review THIS, don't replace it:\n<own_plan_text>\n${session.own_plan}\n</own_plan_text>`;
 }
 
 /** Step 1 — the cheap-tier safety gate. */
@@ -337,7 +354,7 @@ export async function classifyGoal(
 function coachMessages(session: SessionRow, pendingAnswer?: string): ChatMessage[] {
   const transcript: TranscriptEntry[] = JSON.parse(session.transcript);
   const messages: ChatMessage[] = [
-    { role: 'user', content: `My goal:\n${goalAsData(session.goal_text)}` },
+    { role: 'user', content: `My goal:\n${sessionGoalData(session)}` },
   ];
   for (const entry of transcript) {
     messages.push({ role: 'assistant', content: `Clarifying question: ${entry.question}` });
@@ -407,10 +424,19 @@ export async function coachTurn(
   const progressing =
     session.last_extract_added === undefined || session.last_extract_added > 0 || needsConcreteness;
   const wantsMore = (missing.length > 0 || needsConcreteness) && progressing;
-  const ceiling = wantsMore ? MAX_CLARIFY_TURNS + 1 : MAX_CLARIFY_TURNS;
+  // Tier-2 own-plan reviews: the plan itself carries most of what an
+  // interview collects, and the user's posture is "check my work", not
+  // "coach me" — so the band tightens to 1-2 questions, no extension. One
+  // question is still FORCED: odds priced with zero user facts would be the
+  // exact dishonesty the coached lane's floor exists to prevent.
+  const ownPlanMode = !!session.own_plan;
+  const minTurns = ownPlanMode ? 1 : MIN_CLARIFY_TURNS;
+  const ceiling = ownPlanMode
+    ? 2
+    : wantsMore ? MAX_CLARIFY_TURNS + 1 : MAX_CLARIFY_TURNS;
   const atCeiling = session.clarify_turns >= ceiling;
   const forceAsk =
-    session.clarify_turns < MIN_CLARIFY_TURNS ||
+    session.clarify_turns < minTurns ||
     (!atCeiling && wantsMore);
 
   // Between the floor and the ceiling, the auditor decides whether there is
@@ -430,6 +456,14 @@ export async function coachTurn(
   const mustVerdict = atCeiling || nothingLeftToAsk;
 
   const steer: ChatMessage[] = [];
+  if (ownPlanMode) {
+    steer.push({
+      role: 'user',
+      content: mustVerdict
+        ? `[app note] OWN-PLAN REVIEW: issue the verdict FOR THE USER'S OWN PLAN AS WRITTEN (inside <own_plan_text>). Price their plan, not the plan you would have designed. Amend only what honesty forces (see OWN-PLAN REVIEW in your instructions).`
+        : `[app note] OWN-PLAN REVIEW: the user brought their own plan (inside <own_plan_text>) and wants it checked, not replaced. Your interview budget here is ONE or TWO questions TOTAL — spend them on the fact(s) that most move the odds for THEIR plan (current capacity or baseline, a safety-critical constraint), and never ask anything the plan or goal already states.`,
+    });
+  }
   // The verdict's factors must cite collected keys — which the model can
   // only do if it SEES them by name. Shown on every turn where the verdict
   // tool is available.
@@ -694,7 +728,7 @@ export async function generateProtocol(
       role: 'user',
       content:
         `Accepted verdict:\n${JSON.stringify(verdict)}\n\n` +
-        `Original goal:\n${goalAsData(session.goal_text)}\n\n` +
+        `Original goal:\n${sessionGoalData(session)}\n\n` +
         (qa ? `Clarifying Q&A:\n${qa}\n\n` : '') +
         structuredBlock + '\n' +
         `Generate the protocol for "${targetStatement}"${targetWeeks ? ` over ${targetWeeks} weeks` : ' over its own stated timeline'}.` +
@@ -705,6 +739,9 @@ export async function generateProtocol(
           ? paceOpt.key === 'sprint'
             ? ` The user chose the time-crunch pacing (${paceWeeks} weeks at ${paceOpt.success_probability}% odds) — tighter than your recommended pace. Week one still starts almost too easy; the later phases carry the compression, and the plan should say out loud where the discipline has to hold.`
             : ` The user chose the no-rush pacing (${paceWeeks} weeks at ${paceOpt.success_probability}% odds) — more air than your recommended pace. Keep a firm weekly rhythm so the extra room never becomes drift.`
+          : '') +
+        (session.own_plan
+          ? ` This is an OWN-PLAN REVIEW: build the protocol FROM the commitments inside <own_plan_text> (see OWN-PLAN REVIEW in your instructions). Every step carries source — 'user' for a step realizing one of their commitments, 'qoach' only where a non-negotiable forces an addition, with the reason opening its details.`
           : ''),
     },
   ];
@@ -753,6 +790,13 @@ export async function generateProtocol(
           for (const st of ph.steps ?? []) delete st.assumption;
         }
       }
+      // source is own-plan provenance; on a coached build a stray one is
+      // decoration — strip it rather than burning a retry.
+      if (!session.own_plan) {
+        for (const ph of (repaired as Protocol).phases ?? []) {
+          for (const st of ph.steps ?? []) delete st.source;
+        }
+      }
       // 2b repair: an attached step with missing/short days inherits its
       // session's days (owner spec: auto-set if missing) — the validator
       // then enforces equality, so only genuine mismatches burn a retry.
@@ -775,6 +819,7 @@ export async function generateProtocol(
       errors.push(...exhaustedKeyErrors(repaired as Protocol, session.domain, assumableKeys, structure.answers));
       errors.push(...sessionErrors(repaired as Protocol));
       errors.push(...milestoneProvenanceErrors(repaired as Protocol, structure.answers, assumableKeys, session.domain));
+      errors.push(...ownPlanErrors(repaired as Protocol, session.own_plan ?? null));
     }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: repaired as Protocol };
@@ -1214,7 +1259,8 @@ export async function retryCarve(
 ): Promise<{ subtitle?: string; reads?: Verdict['reads'] }> {
   const v2 = await resampleVerdict(
     env, meta, session, verdict,
-    "Your verdict below is missing the QOACH'S READ carve. Keep the decision, probabilities, paces and factors IDENTICAL — add subtitle and EXACTLY three reads ('for' → 'risk' → 'move', each tracing to collected answer keys).",
+    "Your verdict below is missing the QOACH'S READ carve. Keep the decision, probabilities, paces and factors IDENTICAL — add subtitle and EXACTLY three reads ('for' → 'risk' → 'move', each tracing to collected answer keys" +
+      (session.own_plan ? " — or 'own_plan' for facts their plan itself states" : '') + ').',
   );
   return v2 ? { subtitle: v2.subtitle, reads: v2.reads } : {};
 }

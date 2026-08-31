@@ -102,8 +102,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 /* ── the three coach calls ──────────────────────────────────────────────── */
 
-export function startCoachSession(goalText: string): Promise<CoachTurnResponse> {
-  return post<CoachTurnResponse>('/coach/sessions', { goalText });
+export function startCoachSession(goalText: string, ownPlan?: string): Promise<CoachTurnResponse> {
+  return post<CoachTurnResponse>('/coach/sessions', { goalText, ...(ownPlan?.trim() ? { ownPlan: ownPlan.trim() } : {}) });
 }
 
 export function answerCoachQuestion(sessionId: string, answer: string): Promise<CoachTurnResponse> {

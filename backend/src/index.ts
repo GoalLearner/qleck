@@ -29,6 +29,7 @@ import { applyRevision, proposeRevision, type ReviseBody } from './revision';
 import type { Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
+const MAX_OWN_PLAN_CHARS = 1000; // Tier-2: the user's own plan, ~10-12 commitment lines
 const MAX_ANSWER_CHARS = 600;
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
@@ -442,6 +443,13 @@ export default {
         if (!goalText || goalText.length > MAX_GOAL_CHARS) {
           return json({ error: 'invalid_goal_text', max: MAX_GOAL_CHARS }, 400, cors);
         }
+        // Tier-2: the own-plan fork. Optional; non-empty flips the whole
+        // pipeline to review mode (1-2 question band, verdict prices the
+        // plan as written, protocol built from it with provenance).
+        const ownPlan = String(body.ownPlan ?? '').trim() || null;
+        if (ownPlan && ownPlan.length > MAX_OWN_PLAN_CHARS) {
+          return json({ error: 'invalid_own_plan', max: MAX_OWN_PLAN_CHARS }, 400, cors);
+        }
 
         // Verdict memory: the same device re-submitting the same goal within
         // 48h gets the SAME verdict back, not a fresh roll. Calibration showed
@@ -453,23 +461,27 @@ export default {
         // transcript keeps the protocol step working on the new session.
         if (!isHarness) {
           const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+          // The match key carries the own plan too: the same goal coached vs
+          // reviewed (or reviewed against a different plan) is a different
+          // negotiation and must never inherit the other's verdict.
+          const memKey = (goal: string, plan: string | null) => `${norm(goal)} § ${norm(plan ?? '')}`;
           const recent = await env.DB
             .prepare(
-              `SELECT id, goal_text, transcript, clarify_turns, verdict, domain, needs_clarification, answers, draft_protocol, simulation FROM coach_sessions
+              `SELECT id, goal_text, own_plan, transcript, clarify_turns, verdict, domain, needs_clarification, answers, draft_protocol, simulation FROM coach_sessions
                WHERE device_id = ? AND status = 'verdict' AND updated_at > datetime('now', '-2 days')
                ORDER BY updated_at DESC LIMIT 10`,
             )
             .bind(deviceId)
-            .all<{ id: string; goal_text: string; transcript: string; clarify_turns: number; verdict: string; domain: string | null; needs_clarification: number; answers: string; draft_protocol: string | null; simulation: string | null }>();
-          const prior = (recent.results ?? []).find(r => norm(r.goal_text) === norm(goalText));
+            .all<{ id: string; goal_text: string; own_plan: string | null; transcript: string; clarify_turns: number; verdict: string; domain: string | null; needs_clarification: number; answers: string; draft_protocol: string | null; simulation: string | null }>();
+          const prior = (recent.results ?? []).find(r => memKey(r.goal_text, r.own_plan) === memKey(goalText, ownPlan));
           if (prior?.verdict) {
             const reusedId = crypto.randomUUID();
             await env.DB
               .prepare(
-                `INSERT INTO coach_sessions (id, device_id, goal_text, transcript, clarify_turns, status, verdict, domain, needs_clarification, answers, draft_protocol, simulation)
-                 VALUES (?, ?, ?, ?, ?, 'verdict', ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO coach_sessions (id, device_id, goal_text, own_plan, transcript, clarify_turns, status, verdict, domain, needs_clarification, answers, draft_protocol, simulation)
+                 VALUES (?, ?, ?, ?, ?, ?, 'verdict', ?, ?, ?, ?, ?, ?)`,
               )
-              .bind(reusedId, deviceId, goalText, prior.transcript, prior.clarify_turns, prior.verdict, prior.domain, prior.needs_clarification, prior.answers ?? '{}', prior.draft_protocol, prior.simulation)
+              .bind(reusedId, deviceId, goalText, prior.own_plan, prior.transcript, prior.clarify_turns, prior.verdict, prior.domain, prior.needs_clarification, prior.answers ?? '{}', prior.draft_protocol, prior.simulation)
               .run();
             return json({ sessionId: reusedId, type: 'verdict', verdict: JSON.parse(prior.verdict) }, 200, cors);
           }
@@ -477,11 +489,16 @@ export default {
 
         const sessionId = crypto.randomUUID();
         await env.DB
-          .prepare(`INSERT INTO coach_sessions (id, device_id, goal_text) VALUES (?, ?, ?)`)
-          .bind(sessionId, deviceId, goalText)
+          .prepare(`INSERT INTO coach_sessions (id, device_id, goal_text, own_plan) VALUES (?, ?, ?, ?)`)
+          .bind(sessionId, deviceId, goalText, ownPlan)
           .run();
 
-        const safety = await classifyGoal(env, { ...meta, sessionId }, goalText);
+        // The safety gate reads goal + plan together — "lose some weight"
+        // is safe while its plan of skipped meals is not.
+        const safety = await classifyGoal(
+          env, { ...meta, sessionId },
+          ownPlan ? `${goalText}\n\nTheir own plan for it:\n${ownPlan}` : goalText,
+        );
         if (safety.refusalMessage) {
           await env.DB
             .prepare(`UPDATE coach_sessions SET status = 'refused', updated_at = datetime('now') WHERE id = ?`)
@@ -859,7 +876,7 @@ function assumptionPayload(session: SessionRow, protocol: Protocol): {
  * those rules is DROPPED, not clamped: a missing gauge degrades safely, a
  * clamped number would be a lie.
  */
-function sanitizeOdds(v: Verdict, answers: Record<string, string>): void {
+function sanitizeOdds(v: Verdict, answers: Record<string, string>, ownPlan = false): void {
   const clean = (n: unknown): number | undefined => {
     if (typeof n !== 'number' || !Number.isFinite(n)) return undefined;
     const r = Math.round(n);
@@ -881,7 +898,9 @@ function sanitizeOdds(v: Verdict, answers: Record<string, string>): void {
     v.decision === 'counter_offer' && Number.isFinite(od) && od >= 1 && od <= 52 ? Math.round(od) : undefined;
   // P2a factors: same trust-nothing stance — a factor citing a key that was
   // never collected is dropped, not displayed. Degrades to no factors.
-  const legalKeys = new Set([...Object.keys(answers), 'goal_text']);
+  // v30: on own-plan reviews the plan itself is load-bearing evidence, so
+  // 'own_plan' joins 'goal_text' as a legal citation sentinel.
+  const legalKeys = new Set([...Object.keys(answers), 'goal_text', ...(ownPlan ? ['own_plan'] : [])]);
   const rawFactors = Array.isArray(v.factors) ? v.factors : [];
   const factors = rawFactors
     .filter(f =>
@@ -1024,7 +1043,7 @@ async function runCoachTurn(
       );
       if (redo && ['feasible', 'counter_offer', 'declined'].includes(redo.decision as string)) result.verdict = redo;
     }
-    sanitizeOdds(result.verdict, sessionStructure(session).answers);
+    sanitizeOdds(result.verdict, sessionStructure(session).answers, !!session.own_plan);
     // v29: the carve is part of the contract. When a verdict arrives without
     // valid reads (model skipped them, or the sanitizer had to drop the set),
     // ONE corrective resample asks for the carve alone — and only subtitle +
@@ -1034,7 +1053,7 @@ async function runCoachTurn(
       if (carve.reads) {
         result.verdict.reads = carve.reads;
         if (carve.subtitle && !result.verdict.subtitle) result.verdict.subtitle = carve.subtitle;
-        sanitizeOdds(result.verdict, sessionStructure(session).answers);
+        sanitizeOdds(result.verdict, sessionStructure(session).answers, !!session.own_plan);
       }
     }
     // Fix 2 (owner spec): odds must never be null. sanitizeOdds DROPS

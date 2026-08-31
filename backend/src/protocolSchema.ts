@@ -39,6 +39,10 @@ export interface ProtocolStep {
   /** 2c: born from a simulated failure — the plan's answer to a way the
    *  scenario runs actually died. */
   contingency?: boolean;
+  /** Tier-2 own-plan reviews: 'user' = realizes a commitment the user's own
+   *  plan states; 'qoach' = added because a non-negotiable demanded it (its
+   *  details open with the reason). Absent on coached builds. */
+  source?: 'user' | 'qoach';
 }
 
 /** 2b: the weekly skeleton. Steps attach to sessions; a conditional rep
@@ -185,6 +189,10 @@ export const PROTOCOL_TOOL_SCHEMA = {
                 contingency: {
                   type: 'boolean',
                   description: 'true ONLY on steps added as a response to a simulated failure (a stall-breaker, a catch-up rule).',
+                },
+                source: {
+                  type: 'string', enum: ['user', 'qoach'],
+                  description: "OWN-PLAN REVIEWS ONLY (the prompt says when): 'user' when this step realizes a commitment the user's own plan states; 'qoach' when a non-negotiable forced you to add it. Omit entirely on a normal coached build.",
                 },
                 week_progression: { type: 'string' },
               },
@@ -548,6 +556,32 @@ export function validateProtocol(p: unknown): string[] {
     if (!Number.isFinite(m.week) || m.week < 1 || m.week > proto.duration_weeks) {
       errs.push(`milestone "${m.id}" week out of range`);
     }
+  }
+  return errs;
+}
+
+/** Tier-2 own-plan reviews: the protocol must remain the USER'S plan.
+ *  Every step declares provenance, their commitments survive as user-sourced
+ *  steps, and Qoach's required additions never outnumber the plan they were
+ *  added to — a review that rewrites everything is a coached build wearing a
+ *  costume. Returns [] on coached builds (ownPlan null/empty). */
+export function ownPlanErrors(p: Protocol, ownPlan: string | null): string[] {
+  if (!ownPlan?.trim()) return [];
+  const errs: string[] = [];
+  const steps = (p.phases ?? []).flatMap(ph => ph.steps ?? []);
+  const unsourced = steps.filter(st => st.source !== 'user' && st.source !== 'qoach');
+  if (unsourced.length > 0) {
+    errs.push(`own-plan review: every step must set source 'user' or 'qoach' — missing on: ${unsourced.map(st => `"${st.title}"`).join(', ')}`);
+  }
+  const userSteps = steps.filter(st => st.source === 'user').length;
+  const qoachSteps = steps.filter(st => st.source === 'qoach').length;
+  const planLines = ownPlan.split(/\n+/).map(l => l.trim()).filter(l => l.length > 2).length;
+  const minUser = Math.min(2, Math.max(1, planLines));
+  if (userSteps < minUser) {
+    errs.push(`own-plan review: at least ${minUser} step(s) must realize the user's own commitments (source 'user') — their plan has ${planLines} commitment line(s) but only ${userSteps} step(s) carry source 'user'. Keep their commitments as steps; amend amounts only where the verdict said so.`);
+  }
+  if (qoachSteps > userSteps + 4) {
+    errs.push(`own-plan review: ${qoachSteps} added steps against ${userSteps} of the user's own — this rewrites their plan instead of reviewing it. Add only what a non-negotiable forces; fold nice-to-haves into details.`);
   }
   return errs;
 }

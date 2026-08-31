@@ -36,6 +36,8 @@ for (let i = 2; i < process.argv.length; i += 2) {
 const LABEL = args.label ?? 'run';
 const RUNS = Number(args.runs ?? 5);
 const GOAL = args.goal;
+// v30: optional own-plan arm — calibrates the REVIEW lane (--ownplan "line\nline").
+const OWN_PLAN = args.ownplan ?? null;
 const FACTS = JSON.parse(args.facts ?? '{}');
 if (!GOAL) { console.error('need --goal'); process.exit(2); }
 
@@ -93,7 +95,7 @@ async function oneSession(run) {
   const device = crypto.randomUUID();
   const used = new Set();
   const qs = [];
-  let res = await post('/coach/sessions', { goalText: GOAL }, device);
+  let res = await post('/coach/sessions', { goalText: GOAL, ...(OWN_PLAN ? { ownPlan: OWN_PLAN } : {}) }, device);
   let sid = res.body.sessionId;
   let n = 0;
   while (res.status === 200 && res.body.type === 'question' && n < 7) {

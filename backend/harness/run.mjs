@@ -103,7 +103,7 @@ const MAX_Q = 6;
 
 async function runGoalFixture(f) {
   const t0 = Date.now();
-  let res = await api('/coach/sessions', { goalText: f.goal });
+  let res = await api('/coach/sessions', { goalText: f.goal, ...(f.ownPlan ? { ownPlan: f.ownPlan } : {}) });
   const sessionId = res.body.sessionId;
   const answers = [...(f.answers ?? [])];
   let questions = 0;
@@ -257,6 +257,23 @@ async function runGoalFixture(f) {
     }
   }
 
+  // v30 own-plan leg: the review's protocol must stay the USER'S plan —
+  // every step declares provenance, at least one of their commitments
+  // survives as a source:'user' step, and qoach additions never swamp them.
+  // (The server's ownPlanErrors enforces the same contract inside the
+  // generation retry loop; this proves it held through the live pipeline.)
+  let ownPlanOk = null;
+  if (f.ownPlan && protocol) {
+    const steps = protocol.phases.flatMap(ph => ph.steps);
+    const user = steps.filter(s => s.source === 'user').length;
+    const qoach = steps.filter(s => s.source === 'qoach').length;
+    const allSourced = steps.every(s => s.source === 'user' || s.source === 'qoach');
+    ownPlanOk = allSourced && user >= 1 && qoach <= user + 4
+      ? true
+      : `sourced=${allSourced} user=${user} qoach=${qoach}`;
+    if (ownPlanOk !== true) pass = false;
+  }
+
   // Physique pillar audit (prompt v21): the plan must carry the whole
   // hypertrophy/fat-loss playbook — training, a progression rule, energy
   // balance, protein, sleep — and phase 1 must hold at least five steps.
@@ -279,7 +296,7 @@ async function runGoalFixture(f) {
   }
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
-    pillarsOk,
+    pillarsOk, ownPlan: !!f.ownPlan, ownPlanOk,
     pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, priceOk, repriceOk, ms: Date.now() - t0,
     _sessionId: sessionId, _protocol: protocol,
   };
@@ -376,7 +393,14 @@ const bars = {
   // answers those before the coach ever asks anything (their outcome is
   // 'refused:<category>', never a bare 'refused').
   [`coached goals ask ${MIN_Q}-${MAX_Q} questions`]:
-    goalResults.every(r => r.outcome.startsWith('refused') || (r.questions >= MIN_Q && r.questions <= MAX_Q)),
+    goalResults.every(r => r.outcome.startsWith('refused') || r.ownPlan || (r.questions >= MIN_Q && r.questions <= MAX_Q)),
+  // v30: the review lane's whole promise — a 1-2 question check, and a
+  // protocol that is still the user's plan (provenance held end to end).
+  'own-plan reviews ask 1-2 questions and keep the user\'s steps':
+    goalResults.every(r =>
+      !r.ownPlan ||
+      ((r.outcome.startsWith('refused') || (r.questions >= 1 && r.questions <= 2)) &&
+        (r.ownPlanOk === null || r.ownPlanOk === true))),
   'verdicts carry a calibrated probability':
     goalResults.every(r => r.probOk),
   'feasible verdicts offer 2-3 ordered paces':

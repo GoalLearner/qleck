@@ -160,6 +160,11 @@ function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onTogg
         <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: k.fg }}>{k.glyph}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
+        {step.source === 'qoach' ? (
+          <Text style={{ fontFamily: MONO, fontSize: 8.5, fontWeight: '700', letterSpacing: 1.2, color: night.violetText, marginBottom: 2 }}>
+            QOACH ADDED
+          </Text>
+        ) : null}
         <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 18, color: night.text, textDecorationLine: dropped ? 'line-through' : 'none' }}>
           {step.title}
         </Text>
@@ -462,7 +467,7 @@ const PACE_LABELS: Record<PaceKey, string> = {
 /** Canvas 5a/5c — feasible verdict with the odds dial, at 2-3 paces. */
 function FeasibleVerdict({
   v, pace, onPace, onBuild, onReset, missingRequired,
-  sim, prevSim, editedKey, answers, quickPicks, onEditInput, onPriceCustom,
+  sim, prevSim, editedKey, answers, quickPicks, onEditInput, onPriceCustom, ownPlanMode,
 }: {
   v: Verdict;
   pace: PaceKey;
@@ -478,6 +483,8 @@ function FeasibleVerdict({
   onEditInput?: (key: string, value: string) => void;
   /** v29: price a user-named runway; resolves false when pricing failed. */
   onPriceCustom?: (weeks: number) => Promise<boolean>;
+  /** Tier-2: this verdict REVIEWS the user's own plan — the header says so. */
+  ownPlanMode?: boolean;
 }) {
   // The futures strip renders only once a LIVE simulation for this pace
   // actually exists — never by default. The old null-default flashed the
@@ -727,7 +734,7 @@ function FeasibleVerdict({
                   <Text style={{ marginTop: 8, fontFamily: MONO, fontSize: 8.5, lineHeight: 14, letterSpacing: 0.7, fontWeight: '700', color: m.c }}>{lever}</Text>
                 ) : null}
                 <Text style={{ marginTop: 6, fontFamily: MONO, fontSize: 8, letterSpacing: 0.7, fontWeight: '600', color: night.textGhost }}>
-                  FROM: {r.from.map(k => k.replace(/_/g, ' ').toUpperCase()).join(' · ')}
+                  FROM: {r.from.map(k => (k === 'own_plan' ? 'YOUR PLAN' : k.replace(/_/g, ' ').toUpperCase())).join(' · ')}
                 </Text>
               </View>
             ) : null}
@@ -745,7 +752,7 @@ function FeasibleVerdict({
   return (
     <Screen>
       <View style={{ width: '100%', maxWidth: 920, alignSelf: 'center' }}>
-        <VerdictChips label={'✓ FEASIBLE'} labelColor={night.accent} weeks={`${weeks} WEEKS`} />
+        <VerdictChips label={ownPlanMode ? '✓ YOUR PLAN, PRICED' : '✓ FEASIBLE'} labelColor={night.accent} weeks={`${weeks} WEEKS`} />
         <Title style={{ fontSize: wide ? 31 : 25, lineHeight: wide ? 36 : 30, marginTop: 18, marginBottom: 10 }}>
           {v.goal_statement}
         </Title>
@@ -774,13 +781,15 @@ function FeasibleVerdict({
 const ATTEMPT_FLOOR = 20;
 
 function CounterVerdict({
-  v, goalText, onBuild, onBuildOriginal, onReset,
+  v, goalText, onBuild, onBuildOriginal, onReset, ownPlanMode,
 }: {
   v: Verdict;
   goalText: string;
   onBuild: () => void;
   onBuildOriginal: () => void;
   onReset: () => void;
+  /** Tier-2: the countered thing is the user's own plan, not just a goal. */
+  ownPlanMode?: boolean;
 }) {
   const { width } = useWindowDimensions();
   const wide = width >= 880;
@@ -798,8 +807,8 @@ function CounterVerdict({
   const goalCards = (
     <View style={{ gap: 10 }}>
       {[
-        { key: 'asked' as const, label: 'AS YOU ASKED', text: v.original_request ?? goalText, ac: night.warn },
-        { key: 'offer' as const, label: "QOACH'S VERSION", text: v.goal_statement, ac: night.accent },
+        { key: 'asked' as const, label: ownPlanMode ? 'YOUR PLAN AS WRITTEN' : 'AS YOU ASKED', text: v.original_request ?? goalText, ac: night.warn },
+        { key: 'offer' as const, label: ownPlanMode ? "QOACH'S AMENDMENTS" : "QOACH'S VERSION", text: v.goal_statement, ac: night.accent },
       ].map(g => {
         const on = hasPair ? view === g.key : g.key === 'offer';
         return (
@@ -1545,6 +1554,12 @@ export default function FirstGoalScreen({
   const [answer, setAnswer] = useState('');
   const [boxFocused, setBoxFocused] = useState(false);
   const [shakeCount, setShakeCount] = useState(0);
+  // Tier-2: the second door — the user brings their own plan and Qoach
+  // reviews it instead of authoring one. Open = the plan box is showing;
+  // an open-but-empty box still takes the coached lane.
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planDraft, setPlanDraft] = useState('');
+  const [planFocused, setPlanFocused] = useState(false);
 
   const lockIn = () => {
     if (coach.acceptedPlan) onLocked(coach.acceptedPlan);
@@ -1552,8 +1567,9 @@ export default function FirstGoalScreen({
 
   /* intake — the stage, not a form (canvas section 3) */
   if (coach.phase === 'intake') {
+    const reviewing = planOpen && !!planDraft.trim();
     const ask = () => {
-      if (draft.trim()) coach.submitGoal(draft);
+      if (draft.trim()) coach.submitGoal(draft, planOpen ? planDraft : undefined);
       else setShakeCount(c => c + 1);
     };
     return (
@@ -1611,13 +1627,44 @@ export default function FirstGoalScreen({
                     shadowColor: night.accent, shadowOpacity: 0.28, shadowRadius: 12, shadowOffset: { width: 0, height: 8 },
                   })}
                 >
-                  <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: night.accentInk }}>Ask Qoach</Text>
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: night.accentInk }}>{reviewing ? 'Review my plan' : 'Ask Qoach'}</Text>
                 </Pressable>
               </View>
             </View>
           </Shake>
 
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 10.5, letterSpacing: 1.6, color: night.textGhost, textAlign: 'center', marginTop: 26, marginBottom: 10 }}>
+          <Pressable onPress={() => setPlanOpen(o => !o)} hitSlop={8} style={{ marginTop: 13, alignSelf: 'center' }}>
+            <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, color: planOpen ? night.violetText : night.textGhost, textAlign: 'center' }}>
+              {planOpen ? '— NEVER MIND, COACH ME' : '+ I ALREADY HAVE A PLAN'}
+            </Text>
+          </Pressable>
+          {planOpen ? (
+            <View
+              style={{
+                marginTop: 10, backgroundColor: night.surface, borderRadius: 18,
+                borderWidth: 1.5, borderColor: planFocused ? night.violet : night.hairline,
+              }}
+            >
+              <TextInput
+                value={planDraft}
+                onChangeText={setPlanDraft}
+                onFocus={() => setPlanFocused(true)}
+                onBlur={() => setPlanFocused(false)}
+                multiline
+                placeholder={'Your commitments, one per line —\nRun 3 mornings a week\nNo phone in the bedroom'}
+                placeholderTextColor={night.textGhost}
+                style={{
+                  height: 92, color: night.text, fontFamily: nightFonts.body, fontSize: 14,
+                  lineHeight: 21, paddingHorizontal: 16, paddingTop: 12, textAlignVertical: 'top',
+                }}
+              />
+              <Text style={{ paddingHorizontal: 16, paddingBottom: 10, fontFamily: nightFonts.body, fontSize: 11, lineHeight: 15.5, color: night.textGhost }}>
+                Qoach reviews it: honest odds for your plan as written, plus only the fixes it truly needs.
+              </Text>
+            </View>
+          ) : null}
+
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 10.5, letterSpacing: 1.6, color: night.textGhost, textAlign: 'center', marginTop: planOpen ? 18 : 26, marginBottom: 10 }}>
             OR STEAL ONE
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 9 }}>
@@ -1688,6 +1735,7 @@ export default function FirstGoalScreen({
         quickPicks={coach.quickPicks}
         onEditInput={coach.editInput}
         onPriceCustom={coach.priceCustom}
+        ownPlanMode={coach.ownPlanMode}
       />
     );
   }
@@ -1701,6 +1749,7 @@ export default function FirstGoalScreen({
         onBuild={coach.buildPlan}
         onBuildOriginal={coach.buildOriginal}
         onReset={coach.reset}
+        ownPlanMode={coach.ownPlanMode}
       />
     );
   }

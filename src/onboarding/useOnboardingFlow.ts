@@ -344,6 +344,7 @@ export function useOnboardingFlow({
       setContactErr(
         code === 'rate_limited' ? 'Too many codes for that email — give it an hour.'
         : code === 'email_unavailable' ? 'Email codes aren’t live on this build yet — use Continue with Apple for now.'
+        : code === 'send_failed' ? 'Couldn’t deliver to that address right now — try again, or use Continue with Apple.'
         : OFFLINE_ERR,
       );
     }
@@ -397,6 +398,7 @@ export function useOnboardingFlow({
       setForgotErr(
         code === 'rate_limited' ? 'Too many codes for that email — give it an hour.'
         : code === 'email_unavailable' ? 'Email codes aren’t live on this build yet — hang tight.'
+        : code === 'send_failed' ? 'Couldn’t deliver to that address right now — try again in a minute.'
         : OFFLINE_ERR,
       );
     }

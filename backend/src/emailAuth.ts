@@ -130,14 +130,20 @@ export type CodePurpose = 'signup' | 'login' | 'reset';
  *  send with the Resend key leaves nothing recoverable at rest. */
 export async function startEmailCode(
   env: Env, email: string, purpose: CodePurpose, ip: string, peekable: boolean,
-): Promise<{ ok: true } | { error: 'rate_limited' }> {
+): Promise<{ ok: true } | { error: 'rate_limited' | 'send_failed' }> {
   const [byEmail, byIp] = await env.DB.batch([
     env.DB.prepare(`SELECT COUNT(*) n FROM auth_codes WHERE email = ? AND created_at > datetime('now', '-1 hour')`).bind(email),
     env.DB.prepare(`SELECT COUNT(*) n FROM auth_codes WHERE ip = ? AND created_at > datetime('now', '-1 day')`).bind(ip),
   ]);
   const nEmail = Number((byEmail.results?.[0] as { n?: number } | undefined)?.n ?? 0);
   const nIp = Number((byIp.results?.[0] as { n?: number } | undefined)?.n ?? 0);
-  if (nEmail >= SENDS_PER_EMAIL_HOUR || nIp >= SENDS_PER_IP_DAY) return { error: 'rate_limited' };
+  // The per-IP budget is a prod anti-abuse knob: Cloudflare always supplies
+  // a real CF-Connecting-IP there, so ip 'local' only exists in dev — where
+  // every suite run and browser funnel shares it and would starve each
+  // other (bitten 2026-08-31: two check:auth runs burned the day's 15).
+  // Per-EMAIL stays enforced everywhere; the rate-limit bar tests that one.
+  const ipBudgetApplies = ip !== 'local' && !peekable;
+  if (nEmail >= SENDS_PER_EMAIL_HOUR || (ipBudgetApplies && nIp >= SENDS_PER_IP_DAY)) return { error: 'rate_limited' };
   const id = crypto.randomUUID();
   const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
   const storeDev = peekable || !env.RESEND_API_KEY;
@@ -145,7 +151,14 @@ export async function startEmailCode(
     .prepare(`INSERT INTO auth_codes (id, email, code_hash, purpose, dev_code, ip, expires_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+${CODE_TTL_MINUTES} minutes'))`)
     .bind(id, email, await hmac(env, `${id}.${code}`), purpose, storeDev ? code : null, ip)
     .run();
-  await sendCodeEmail(env, email, code, purpose);
+  const delivered = await sendCodeEmail(env, email, code, purpose);
+  // A real send that FAILED (Resend refused — e.g. the shared resend.dev
+  // sender only delivers to the account owner's address until a domain is
+  // verified) must not read as "code sent": kill the code and say so.
+  if (!delivered) {
+    await env.DB.prepare(`UPDATE auth_codes SET consumed_at = datetime('now') WHERE id = ?`).bind(id).run().catch(() => {});
+    return { error: 'send_failed' };
+  }
   return { ok: true };
 }
 
@@ -178,10 +191,11 @@ export async function verifyEmailCode(
  *  retrievable through the harness-gated peek (dev + evals) and is logged
  *  locally. Beta sender defaults to Resend's shared onboarding address until
  *  the owner verifies a domain (SPF/DKIM — the roadmap's inbox test). */
-async function sendCodeEmail(env: Env, email: string, code: string, purpose: CodePurpose): Promise<void> {
+async function sendCodeEmail(env: Env, email: string, code: string, purpose: CodePurpose): Promise<boolean> {
   if (!env.RESEND_API_KEY) {
+    // Dev/harness lane: nothing to deliver — the peek is the inbox.
     console.log(`[email-auth] no RESEND_API_KEY — code for ${email} (${purpose}): ${code}`);
-    return;
+    return true;
   }
   const subject = purpose === 'reset' ? `${code} — reset your Qleck password` : `${code} is your Qleck code`;
   const text =
@@ -194,8 +208,10 @@ async function sendCodeEmail(env: Env, email: string, code: string, purpose: Cod
       body: JSON.stringify({ from: env.RESEND_FROM ?? 'Qleck <onboarding@resend.dev>', to: [email], subject, text }),
     });
     if (!res.ok) console.error('[email-auth] resend send failed:', res.status, await res.text().catch(() => ''));
+    return res.ok;
   } catch (err) {
     console.error('[email-auth] resend unreachable:', err);
+    return false;
   }
 }
 

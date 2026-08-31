@@ -399,7 +399,9 @@ export default {
           return json({ error: 'email_unavailable' }, 503, cors);
         }
         const started = await startEmailCode(env, email, purpose, authIp, isHarnessAuth);
-        if ('error' in started) return json({ error: started.error }, 429, cors);
+        if ('error' in started) {
+          return json({ error: started.error }, started.error === 'rate_limited' ? 429 : 502, cors);
+        }
         return json({ ok: true, exists, sent: true }, 200, cors);
       }
 

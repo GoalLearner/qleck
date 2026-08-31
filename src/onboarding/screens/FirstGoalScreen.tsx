@@ -1585,8 +1585,10 @@ export default function FirstGoalScreen({
           </View>
         </View>
 
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 34, lineHeight: 38, color: night.text, textAlign: 'center', marginBottom: 12 }}>
+        {/* With the plan box open the stage outgrows small screens — top-align
+            so nothing climbs under the header; centered otherwise. */}
+        <View style={{ flex: 1, justifyContent: planOpen ? 'flex-start' : 'center', paddingTop: planOpen ? 14 : 0 }}>
+          <Text style={{ fontFamily: nightFonts.display, fontSize: planOpen ? 27 : 34, lineHeight: planOpen ? 31 : 38, color: night.text, textAlign: 'center', marginBottom: 12 }}>
             What do you want to <Text style={{ color: night.accent }}>pull off?</Text>
           </Text>
           <Text style={{ fontFamily: nightFonts.body, fontSize: 15.5, lineHeight: 23, color: night.textMuted, textAlign: 'center', marginBottom: 26 }}>

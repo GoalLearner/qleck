@@ -42,10 +42,10 @@ Configured entirely in code. Do **not** mix in Expo Router.
   `Tabs` is a bottom-tab navigator (Today / Goals / You) with a custom
   floating pill tab bar (`src/components/RallyTabBar.tsx`) whose center "+"
   opens `NewGoal` — the in-app Qoach intake modal. The app is **purely the
-  coach** (owner call 2026-08-24): Rally-era social surfaces (Plans, Streaks,
-  Create, Friends, Event/Challenge detail screens) are quarantined out of the
-  shell — files kept, routes removed — and return behind real backends per
-  ROADMAP P6. Qoach surfaces (intake, chat thread, verdicts, NewGoal modal)
+  coach** (owner call 2026-08-24): the Rally-era social surfaces (Plans,
+  Streaks, Create, Friends, Event/Challenge detail) live in `src/demo/`,
+  routes removed and behind `DEMO_ENABLED` since P2b, returning on real
+  backends per ROADMAP P6. Qoach surfaces (intake, chat thread, verdicts, NewGoal modal)
   keep their own token names but follow the shared appearance setting — the
   old "Electric Night lives inside the app" exception is retired (see
   Appearance above). A locked protocol renders via
@@ -55,26 +55,32 @@ Configured entirely in code. Do **not** mix in Expo Router.
 - `App.tsx` — fonts (Young Serif + Plus Jakarta Sans), providers, navigators.
 - `src/theme.ts` — colors / category palettes / fonts / radii (single source of
   styling truth, ported 1:1 from the design canvas).
-- `src/data/` — `types.ts` shapes + `mockData.ts` (people, events, challenges,
-  polls, achievements).
-- `src/state/RallyContext.tsx` — app state: RSVP, invites, check-ins, follow
-  graph, poll votes, cheers, team-progress logging, create flow. Also owns
-  **who you are**: `profile` (`UserProfile`, seeded from `DEFAULT_PROFILE` =
-  the demo's "Dana") and `applyOnboarding(result)`, which folds an
-  `OnboardingResult` in — blank fields keep the default, so the log-in-only
-  path doesn't wipe your name. Read people through `people`, **not** the raw
-  `FRIENDS` map: `people` is `FRIENDS` with `'d'` ("you") rewritten from the
-  live profile, so your own name and initial are right in every avatar stack
-  and leaderboard.
-- `src/components/` — Avatar, ProgressRing, EventRow, WeekDots, PollCard,
-  AchievementCard, FollowPill, RallyTabBar, SectionLabel, FadeInUp, YouAvatar
-  (your own avatar — the gradient you picked in onboarding, or the cream chip
-  when you never picked one).
-- `src/screens/` — Home, Plans, Challenges (Streaks), Profile (You),
-  Friends, FriendProfile, EventDetail, ChallengeDetail, Create (3-step flow:
-  plan / challenge [streak or team total] / poll). `LoginScreen.tsx` is the
-  older cream-palette login — superseded by `src/onboarding/`, kept for
-  reference and no longer wired into `App.tsx`.
+- `src/data/types.ts` — the REAL shared types. `UserProfile` and nothing
+  social: the Rally-era model moved to `src/demo/` at P2b.
+- `src/state/RallyContext.tsx` — the real app state and **only** that: who you
+  are (`profile`, seeded from `DEFAULT_PROFILE` = the demo's "Dana";
+  `applyOnboarding(result)` folds an `OnboardingResult` in, and blank fields
+  keep the default so the log-in-only path doesn't wipe your name),
+  `currentUserId` (the server's user UUID — the app's ONLY identity), your
+  goals, and your check-ins. **It may never import from `src/demo/`.**
+- **`src/demo/` — the Rally-era world, mock only (P2b).** Invented people,
+  events, challenges, polls and the follow graph, keyed by the toy `FriendKey`
+  ('d' = you), plus their screens and components and `DemoContext`. One rule,
+  guarded by `npm run check:demo`: **demo may read the real app; the real app
+  may never read demo.** The keys stay letters on purpose — a letter is
+  obviously fake, a UUID would look real. Unmounted today (routes gone,
+  `DEMO_ENABLED = false`); at P6 these surfaces return on real backends and
+  the toy types are REPLACED, not migrated. See `src/demo/README.md`.
+- `src/components/` — the live set: ProgressRing, RallyTabBar, SectionLabel,
+  FadeInUp, Confetti, NudgeManager, protocolViews, YouAvatar (your own avatar
+  — the gradient you picked in onboarding, or the cream chip when you never
+  picked one).
+- `src/screens/` — the live set: Home (Today), Goals, Profile (You), NewGoal,
+  Graduation, AdjustPlan, Ledger, Help. `LoginScreen.tsx` is the older
+  cream-palette login — superseded by `src/onboarding/`, kept for reference
+  and no longer wired into `App.tsx`.
+- `docs/REGRESSION.md` — the manual checklist to run on web + device before
+  handing a build to anyone. `npm run check` runs the automated half.
 - `src/onboarding/` — the whole logged-out funnel, ported from
   `Qleck Onboarding.dc.html`. `theme.ts` (Electric Night tokens), `ui.tsx`
   (shell / buttons / inputs / the canvas' keyframes as Animated wrappers),

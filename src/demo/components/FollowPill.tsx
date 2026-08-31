@@ -1,11 +1,11 @@
 import React from 'react';
 import { Pressable, Text } from 'react-native';
-import { FriendKey } from '../data/types';
-import { useRally } from '../state/RallyContext';
-import { colors, fonts, radii } from '../theme';
+import { FriendKey } from '../types';
+import { useDemo } from '../DemoContext';
+import { colors, fonts, radii } from '../../theme';
 
 export default function FollowPill({ friendKey, wide }: { friendKey: FriendKey; wide?: boolean }) {
-  const { following, toggleFollow } = useRally();
+  const { following, toggleFollow } = useDemo();
   const on = !!following[friendKey];
   return (
     <Pressable

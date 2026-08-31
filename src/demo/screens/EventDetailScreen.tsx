@@ -4,10 +4,10 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Rect } from 'react-native-svg';
 import Avatar from '../components/Avatar';
-import FadeInUp from '../components/FadeInUp';
-import { RsvpStatus } from '../data/types';
-import { useRally } from '../state/RallyContext';
-import { CATS, colors, fonts, radii } from '../theme';
+import FadeInUp from '../../components/FadeInUp';
+import { RsvpStatus } from '../types';
+import { useDemo } from '../DemoContext';
+import { CATS, colors, fonts, radii } from '../../theme';
 
 // Diagonal-stripe placeholder standing in for the event photo.
 function StripedBanner({ bg, fg }: { bg: string; fg: string }) {
@@ -68,7 +68,7 @@ export default function EventDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { events, setRsvp, people } = useRally();
+  const { events, setRsvp, people } = useDemo();
 
   const event = events.find(e => e.id === route.params?.id) ?? events[0];
   const cat = CATS[event.cat];

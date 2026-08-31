@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, View, ViewStyle } from 'react-native';
-import { Friend } from '../data/types';
-import { fonts } from '../theme';
+import { Friend } from '../types';
+import { fonts } from '../../theme';
 
 interface Props {
   friend: Pick<Friend, 'i' | 'c' | 'd'>;

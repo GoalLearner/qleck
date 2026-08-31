@@ -5,18 +5,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AchievementCard from '../components/AchievementCard';
 import Avatar from '../components/Avatar';
 import EventRow from '../components/EventRow';
-import FadeInUp from '../components/FadeInUp';
+import FadeInUp from '../../components/FadeInUp';
 import FollowPill from '../components/FollowPill';
-import SectionLabel from '../components/SectionLabel';
-import { FriendKey } from '../data/types';
-import { teamTotal, useRally } from '../state/RallyContext';
-import { colors, fonts, radii } from '../theme';
+import SectionLabel from '../../components/SectionLabel';
+import { FriendKey } from '../types';
+import { teamTotal, useDemo } from '../DemoContext';
+import { colors, fonts, radii } from '../../theme';
 
 export default function FriendProfileScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { events, challenges, achievements, following, people } = useRally();
+  const { events, challenges, achievements, following, people } = useDemo();
 
   const k: FriendKey = route.params?.key ?? 'm';
   const f = people[k];

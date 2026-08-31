@@ -3,14 +3,14 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import EventRow from '../components/EventRow';
-import FadeInUp from '../components/FadeInUp';
-import { sortedEvents, useRally } from '../state/RallyContext';
-import { colors, fonts, radii } from '../theme';
+import FadeInUp from '../../components/FadeInUp';
+import { sortedEvents, useDemo } from '../DemoContext';
+import { colors, fonts, radii } from '../../theme';
 
 export default function PlansScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { events } = useRally();
+  const { events } = useDemo();
   const evs = sortedEvents(events);
   const hosted = evs.filter(e => e.hosting).length;
 

@@ -3,16 +3,16 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
-import FadeInUp from '../components/FadeInUp';
+import FadeInUp from '../../components/FadeInUp';
 import FollowPill from '../components/FollowPill';
-import SectionLabel from '../components/SectionLabel';
-import { PICKABLE_FRIENDS, SUGGESTED_PEOPLE } from '../data/mockData';
-import { FriendKey } from '../data/types';
-import { useRally } from '../state/RallyContext';
-import { colors, fonts, radii } from '../theme';
+import SectionLabel from '../../components/SectionLabel';
+import { PICKABLE_FRIENDS, SUGGESTED_PEOPLE } from '../mockData';
+import { FriendKey } from '../types';
+import { useDemo } from '../DemoContext';
+import { colors, fonts, radii } from '../../theme';
 
 function PersonRow({ k, onOpen, last }: { k: FriendKey; onOpen: () => void; last: boolean }) {
-  const { people } = useRally();
+  const { people } = useDemo();
   const f = people[k];
   return (
     <View
@@ -38,7 +38,7 @@ function PersonRow({ k, onOpen, last }: { k: FriendKey; onOpen: () => void; last
 export default function FriendsScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { following, people } = useRally();
+  const { following, people } = useDemo();
   const [query, setQuery] = useState('');
 
   const everyone: FriendKey[] = [...PICKABLE_FRIENDS, ...SUGGESTED_PEOPLE];

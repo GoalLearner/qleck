@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, View } from 'react-native';
-import { Challenge } from '../data/types';
-import { colors, fonts } from '../theme';
+import { Challenge } from '../types';
+import { colors, fonts } from '../../theme';
 
 const DAY_LETTERS = 'MTWTFSS';
 

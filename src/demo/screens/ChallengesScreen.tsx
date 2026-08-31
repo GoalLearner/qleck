@@ -3,16 +3,16 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
-import FadeInUp from '../components/FadeInUp';
-import ProgressRing from '../components/ProgressRing';
+import FadeInUp from '../../components/FadeInUp';
+import ProgressRing from '../../components/ProgressRing';
 import WeekDots from '../components/WeekDots';
-import { teamTotal, useRally, weekProgress } from '../state/RallyContext';
-import { colors, fonts, radii } from '../theme';
+import { teamTotal, useDemo, weekProgress } from '../DemoContext';
+import { colors, fonts, radii } from '../../theme';
 
 export default function ChallengesScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { challenges, checkIn, logTeamProgress, people } = useRally();
+  const { challenges, checkIn, logTeamProgress, people } = useDemo();
 
   return (
     <FadeInUp style={{ flex: 1 }}>

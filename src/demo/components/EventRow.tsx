@@ -1,9 +1,9 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { RallyEvent } from '../data/types';
-import { statusPill, useRally } from '../state/RallyContext';
+import { RallyEvent } from '../types';
+import { statusPill, useDemo } from '../DemoContext';
 import Avatar from './Avatar';
-import { CATS, colors, fonts, radii } from '../theme';
+import { CATS, colors, fonts, radii } from '../../theme';
 
 interface Props {
   event: RallyEvent;
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export default function EventRow({ event, onPress, showAvatars = false }: Props) {
-  const { people } = useRally();
+  const { people } = useDemo();
   const cat = CATS[event.cat];
   const st = statusPill(event);
   return (

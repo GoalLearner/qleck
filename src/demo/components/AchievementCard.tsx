@@ -1,12 +1,12 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { Achievement } from '../data/types';
-import { useRally } from '../state/RallyContext';
+import { Achievement } from '../types';
+import { useDemo } from '../DemoContext';
 import Avatar from './Avatar';
-import { colors, fonts, radii } from '../theme';
+import { colors, fonts, radii } from '../../theme';
 
 export default function AchievementCard({ achievement }: { achievement: Achievement }) {
-  const { cheer, people } = useRally();
+  const { cheer, people } = useDemo();
   const who = people[achievement.who];
   const others = achievement.cheers.filter(k => k !== 'd');
   const cheerLine = others.length

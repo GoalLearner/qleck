@@ -3,12 +3,12 @@ import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-na
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
-import FadeInUp from '../components/FadeInUp';
-import SectionLabel from '../components/SectionLabel';
-import { DAY_OPTIONS, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS } from '../data/mockData';
-import { Draft, FriendKey } from '../data/types';
-import { useRally } from '../state/RallyContext';
-import { colors, fonts, radii } from '../theme';
+import FadeInUp from '../../components/FadeInUp';
+import SectionLabel from '../../components/SectionLabel';
+import { DAY_OPTIONS, PICKABLE_FRIENDS, TARGET_OPTIONS, TIME_OPTIONS } from '../mockData';
+import { Draft, FriendKey } from '../types';
+import { useDemo } from '../DemoContext';
+import { colors, fonts, radii } from '../../theme';
 
 const INITIAL_DRAFT: Draft = {
   kind: 'plan', title: '', dayIdx: 2, timeIdx: 2, place: '', aud: 'picks',
@@ -53,7 +53,7 @@ const inputStyle = () => ({
 export default function CreateScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { sendRally, people } = useRally();
+  const { sendRally, people } = useDemo();
 
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);

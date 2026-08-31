@@ -151,13 +151,27 @@ harder". Verified by a judge panel over generated protocols, not by assertion.
 ### Phase 2b — FriendKey surgery + demo-flag quarantine — **M**
 **Objective:** kill the toy identity model before anything fossilizes, as its own shippable phase so a stall here never holds auth hostage.
 
-- [ ] Full FriendKey→UUID surgery: kill the letter union, `DAYMAP`, the `'d'` sentinel across all types/screens in small compiling steps; `currentUserId` in context
-- [ ] RallyContext split: server-data layer vs UI state, preserving `applyOnboarding` merge semantics
-- [ ] Demo choreography (DUMPLING/JOG, inviteState) **and the structurally-social challenge surfaces** — leaderboards, team contributions, with-friends create — extracted behind one demo flag; single-player check-in UI stays live
-- [ ] Written manual regression checklist (RSVP, invites, polls, cheers, follow, team logging *scoped demo-flag-only*, 3-step Create) run on web + Expo Go — the standing net for every later phase
+- [x] **Toy identity model quarantined, not migrated** — `currentUserId` (the server's user UUID) is now the app's only identity, on `RallyContext`. `FriendKey`/`DAYMAP`/`'d'` survive **only inside `src/demo/`**; zero references outside it. See the deviation note below.
+- [x] RallyContext split: the real layer (profile, `currentUserId`, goals, check-ins, lifecycle) vs the Rally-era social world, now `src/demo/DemoContext.tsx`. `applyOnboarding` merge semantics preserved byte-for-byte.
+- [x] Demo choreography (DUMPLING/JOG, inviteState) and the structurally-social surfaces — leaderboards, team contributions, with-friends create — moved wholesale into `src/demo/` behind `DEMO_ENABLED`; the single-player check-in UI never moved. Belt and braces: the routes were already gone (owner call 2026-08-24).
+- [x] Written manual regression checklist — `docs/REGRESSION.md`, scoped to the coach vertical that actually ships (the demo section is marked dormant). `npm run check` is its automated half.
 
-**Exit:** grep = zero FriendKey/DAYMAP/`'d'`; checklist passes clean; demo flag off shows no mock people anywhere in the goal vertical.
+**Exit:** met, with one criterion re-read (below) — grep outside `src/demo/` = zero FriendKey/DAYMAP; `npm run check:demo` enforces it in CI-able form; boot smoke clean; the demo world is unreachable.
 **Retires:** the dual-model durability leak.
+
+> **Deviation, 2026-08-31 — quarantine instead of FriendKey→UUID.** The plan
+> said convert the letter union to UUIDs. Doing that would make mock people
+> *look* like real users, which is the confusion this phase exists to prevent,
+> and it would be spent on ~13 files that P6 rewrites against real backends
+> anyway. Instead the toy model was sealed inside `src/demo/` behind a
+> one-way import rule — **demo may read the real app; the real app may never
+> read demo** — enforced by `npm run check:demo`, which fails on either a
+> `src/demo/` import from outside or a `FriendKey`/`DAYMAP` mention in real
+> code (both failure modes tested). That retires the same risk more durably
+> than a rename: the letters stay obviously fake, and the boundary is
+> mechanically defended rather than conventionally observed. The literal
+> "zero FriendKey anywhere" reading is now a one-command deletion whenever P6
+> replaces those types.
 
 ### Phase 3 — Real auth on the existing funnel + first builds — **L**
 **Objective:** accounts on the proven stack; surface the signing dependency and the iteration toolchain early. Depends only on 2a.

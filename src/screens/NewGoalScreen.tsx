@@ -10,6 +10,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import FirstGoalScreen from '../onboarding/screens/FirstGoalScreen';
 import { night } from '../onboarding/theme';
+import { ensureNudgePermission } from '../lib/nudges';
 import { useRally } from '../state/RallyContext';
 
 export default function NewGoalScreen() {
@@ -33,6 +34,9 @@ export default function NewGoalScreen() {
           setGoalPlan(plan);
           if (replaceGoalId) dropGoal(replaceGoalId);
           navigation.goBack();
+          // P4: protocol acceptance IS the notification-permission moment —
+          // the plan they just locked is the reason the nudges exist.
+          void ensureNudgePermission();
         }}
       />
     </View>

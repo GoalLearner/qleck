@@ -10,7 +10,7 @@
 // decide whether a finished goal celebrates or rots into a permanent rest day.
 import {
   planIsOver, planEndDate, weekOf, weekOfUncapped, planStats,
-  repsForDate, missedYesterday,
+  repsForDate, missedYesterday, missedTwice,
 } from './protocolTime.ts';
 
 let failed = 0;
@@ -135,6 +135,25 @@ const gapped = planStats(PROTOCOL, START, [
   ci('ph1-s1', day(5)), ci('ph1-s1', day(6)),
 ]);
 eq('best streak is the longest run, not the last', gapped.bestStreak, 3);
+
+// ── never miss twice (P4): counted over SCHEDULED days, rest days skipped ──
+// A Mon/Wed/Fri pinned plan starting Monday 2026-08-24.
+const MWF = {
+  schema_version: 1, goal_statement: 'MWF', short_title: 'MWF', duration_weeks: 4,
+  phases: [{
+    id: 'ph1', title: 'Go', focus: 'x', start_week: 1, end_week: 4,
+    steps: [{ id: 'ph1-s1', title: 'Session', kind: 'binary', frequency: { per_week: 3, days: ['mon', 'wed', 'fri'] }, details: '' }],
+  }],
+  milestones: [], coach_notes: '',
+};
+// day(0) = Mon 08-24 · Wed = day(2) · Fri = day(4) · Sat = day(5)
+eq('two scheduled misses trip it across a rest day', missedTwice(MWF, START, day(5), []), true);
+eq('a check on the most recent scheduled day clears it', missedTwice(MWF, START, day(5), [ci('ph1-s1', day(4))]), false);
+eq('a check on the older of the two clears it', missedTwice(MWF, START, day(5), [ci('ph1-s1', day(2))]), false);
+eq('mid-week: Wed+Mon missed trips it on Thursday', missedTwice(MWF, START, day(3), []), true);
+eq('one scheduled day so far is only one miss', missedTwice(MWF, START, day(1), []), false);
+eq('flexible-only plans have no per-day schedule to miss', missedTwice(PROTOCOL, START, day(5), []), false);
+eq('a finished plan cannot slip twice', missedTwice(MWF, START, day(70), []), false);
 
 console.log(failed === 0 ? '\nALL FIXTURES PASS\n' : `\n${failed} FAILED\n`);
 process.exit(failed === 0 ? 0 : 1);

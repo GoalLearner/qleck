@@ -34,6 +34,7 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import { fetchMe } from './src/api/account';
 import { getStoredIdentity } from './src/api/device';
 import { installErrorReporting } from './src/api/errors';
+import NudgeManager from './src/components/NudgeManager';
 // Rally-era social surfaces (Plans/Streaks/Create/Friends/Event/Challenge
 // screens) are quarantined out of the shell per the owner's coach-first call
 // (2026-08-24); they return behind real backends per ROADMAP P6.
@@ -142,6 +143,8 @@ function AppShell() {
   return (
     <SafeAreaProvider>
       <RallyProvider>
+        {/* P4: keeps the pending nudge set mirroring goals + check-ins. */}
+        <NudgeManager />
         <NavigationContainer theme={navThemeFor()}>
           {/* one appearance for every surface — the coach and the tabs agree */}
           <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />

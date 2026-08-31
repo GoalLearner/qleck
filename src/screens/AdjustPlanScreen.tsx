@@ -86,7 +86,14 @@ export default function AdjustPlanScreen() {
   const goalId: string = route.params?.goalId;
   const goal = goals.find(g => g.id === goalId);
 
-  const [reason, setReason] = useState<string | null>(null);
+  // P4 never-miss-twice: the comeback banner opens this screen with a reason
+  // preselected ("Make today easier" = too_hard) so the easier week is two
+  // taps away, not a form.
+  const initialReason: string | null =
+    typeof route.params?.reason === 'string' && REASONS.some(r => r.key === route.params.reason)
+      ? route.params.reason
+      : null;
+  const [reason, setReason] = useState<string | null>(initialReason);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<'proposing' | 'applying' | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -6,7 +6,11 @@ import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deleteAccount } from '../api/account';
 import { getStoredIdentity } from '../api/device';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ensureNudgePermission, fmtTime, getNudgePermission, loadNudgePrefs, saveNudgePrefs,
+  type NudgePermission, type NudgePrefs,
+} from '../lib/nudges';
+import { Linking, Platform, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
@@ -80,6 +84,101 @@ function Card({ children }: { children: React.ReactNode }) {
   );
 }
 
+/* ── P4 nudges: master switch, the two times, per-goal mute ──────────────
+   The manager (NudgeManager) reschedules the moment anything here saves;
+   times step in 30-minute clicks because a time-picker per platform is a
+   worse trade than two arrows. */
+function NudgesCard({ goals }: { goals: { id: string; statement: string; protocol: { short_title?: string } }[] }) {
+  const [prefs, setPrefs] = useState<NudgePrefs | null>(null);
+  const [permission, setPermission] = useState<NudgePermission>('undetermined');
+  useEffect(() => {
+    loadNudgePrefs().then(setPrefs);
+    getNudgePermission().then(setPermission);
+  }, []);
+
+  if (Platform.OS === 'web') {
+    return (
+      <Card>
+        <View style={{ paddingVertical: 15, paddingHorizontal: 16 }}>
+          <Text style={{ fontSize: 13, fontFamily: fonts.semibold, color: colors.muted, lineHeight: 19 }}>
+            Nudges are a phone thing — the morning rep note and the evening streak save arrive on iOS and Android.
+          </Text>
+        </View>
+      </Card>
+    );
+  }
+  if (!prefs) return <Card><View style={{ height: 52 }} /></Card>;
+
+  const save = (next: NudgePrefs) => { setPrefs(next); void saveNudgePrefs(next); };
+  const toggleMaster = async (on: boolean) => {
+    save({ ...prefs, enabled: on });
+    if (on) setPermission(await ensureNudgePermission());
+  };
+  const step = (key: 'morning' | 'evening', delta: number) => {
+    const [lo, hi] = key === 'morning' ? [5 * 60, 13 * 60] : [16 * 60, 23 * 60 + 30];
+    save({ ...prefs, [key]: Math.max(lo, Math.min(hi, prefs[key] + delta)) });
+  };
+  const toggleMute = (id: string, nudging: boolean) => {
+    save({ ...prefs, muted: nudging ? prefs.muted.filter(m => m !== id) : [...prefs.muted, id] });
+  };
+
+  const timeRow = (label: string, key: 'morning' | 'evening') => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: colors.hairline }}>
+      <Text style={{ flex: 1, fontSize: 13.5, fontFamily: fonts.semibold, color: colors.ink }}>{label}</Text>
+      <Pressable onPress={() => step(key, -30)} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 15, fontFamily: fonts.bold, color: colors.ink }}>−</Text>
+      </Pressable>
+      <Text style={{ width: 78, textAlign: 'center', fontSize: 13.5, fontFamily: fonts.extrabold, color: colors.ink }}>{fmtTime(prefs[key])}</Text>
+      <Pressable onPress={() => step(key, 30)} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 15, fontFamily: fonts.bold, color: colors.ink }}>+</Text>
+      </Pressable>
+    </View>
+  );
+
+  return (
+    <Card>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 16 }}>
+        <View style={{ flex: 1, paddingRight: 12 }}>
+          <Text style={{ fontSize: 14, fontFamily: fonts.semibold, color: colors.ink }}>Daily nudges</Text>
+          <Text style={{ fontSize: 11.5, fontFamily: fonts.regular, color: colors.muted, marginTop: 2, lineHeight: 16 }}>
+            A morning rep note and an evening streak save. Rest days stay silent.
+          </Text>
+        </View>
+        <Switch value={prefs.enabled} onValueChange={v => { void toggleMaster(v); }} />
+      </View>
+      {prefs.enabled && (
+        <>
+          {timeRow('Morning nudge', 'morning')}
+          {timeRow('Evening nudge', 'evening')}
+          {goals.length > 1 && goals.map(g => {
+            const nudging = !prefs.muted.includes(g.id);
+            return (
+              <View key={g.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: colors.hairline }}>
+                <Text numberOfLines={1} style={{ flex: 1, paddingRight: 12, fontSize: 13, fontFamily: fonts.semibold, color: nudging ? colors.ink : colors.muted }}>
+                  {goalTitle(g.statement, g.protocol)}
+                </Text>
+                <Switch value={nudging} onValueChange={v => toggleMute(g.id, v)} />
+              </View>
+            );
+          })}
+          {permission === 'denied' && (
+            <View style={{ paddingVertical: 12, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: colors.hairline }}>
+              <Text style={{ fontSize: 12, fontFamily: fonts.semibold, color: colors.muted, lineHeight: 17 }}>
+                Notifications are switched off for Qleck in your phone's Settings.
+              </Text>
+              <Pressable onPress={() => { void Linking.openSettings(); }} hitSlop={6} style={{ marginTop: 4 }}>
+                <Text style={{ fontSize: 12.5, fontFamily: fonts.bold, color: colors.accentLink, textDecorationLine: 'underline' }}>
+                  Open Settings
+                </Text>
+              </Pressable>
+            </View>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
@@ -129,6 +228,9 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
             ))
           )}
         </Card>
+
+        <SectionLabel>NUDGES</SectionLabel>
+        <NudgesCard goals={goals} />
 
         <SectionLabel>SETTINGS</SectionLabel>
         <Card>

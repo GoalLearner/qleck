@@ -212,6 +212,36 @@ export function missedYesterday(
   return phase.steps.some(s => stepPinnedOn(s, y));
 }
 
+/**
+ * Never miss twice (P4): the TWO most recent SCHEDULED days — days a pinned
+ * step actually asked for a rep, rest days skipped — both passed with zero
+ * check-ins. This is the highest-signal moment a habit app has: one miss is
+ * noise, two is the start of a new (absent) habit. Counted over scheduled
+ * days so a Mon/Wed/Fri plan missing Wed and Fri still trips it on Saturday.
+ * Plans with only flexible-quota steps have no per-day schedule and never
+ * trip it — same stance weekStrip's 'missed' takes.
+ */
+export function missedTwice(
+  protocol: Protocol, startedOn: string, today: string, checkIns: CheckIn[],
+): boolean {
+  const checked = new Set(checkIns.map(c => c.local_date));
+  let found = 0;
+  // 14-day lookback bound: beyond that the moment has long passed and the
+  // banner would be an accusation, not a hand back up.
+  for (let back = 1; back <= 14; back++) {
+    const date = addDays(today, -back);
+    if (date < startedOn) break;
+    if (planIsOver(startedOn, protocol.duration_weeks, date)) continue;
+    const phase = phaseForWeek(protocol, weekOf(startedOn, date, protocol.duration_weeks));
+    const scheduled = phase.steps.some(s => stepPinnedOn(s, date));
+    if (!scheduled) continue;
+    if (checked.has(date)) return false; // most recent scheduled days must BOTH be misses
+    found++;
+    if (found >= 2) return true;
+  }
+  return false;
+}
+
 /* ── multi-goal derivations (concurrent goals, 2026-08-24) ──────────────── */
 
 export interface ActiveGoalLike {
@@ -418,6 +448,14 @@ export function mergedMissedYesterday(
   goals: ActiveGoalLike[], byGoal: Record<string, CheckIn[]>, today: string,
 ): boolean {
   return goals.some(g => missedYesterday(g.protocol, g.startedOn, today, byGoal[g.id] ?? []));
+}
+
+/** The goals in the never-miss-twice state — the comeback banner names the
+ *  first and Adjust targets it. Empty when nobody has slipped twice. */
+export function mergedMissedTwice(
+  goals: ActiveGoalLike[], byGoal: Record<string, CheckIn[]>, today: string,
+): ActiveGoalLike[] {
+  return goals.filter(g => missedTwice(g.protocol, g.startedOn, today, byGoal[g.id] ?? []));
 }
 
 /** First upcoming rep across every goal — the banner's one-line preview. */

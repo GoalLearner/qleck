@@ -33,7 +33,7 @@ import type { ProtocolPhase } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { celebrateDay, celebrateGoal, hapticCheck } from '../lib/celebrate';
 import {
-  allCheckIns, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type CheckIn, type DayRep, type WeekDay, weekOf, weekdayName,
+  allCheckIns, mergedMissedTwice, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type ActiveGoalLike, type CheckIn, type DayRep, type WeekDay, weekOf, weekdayName,
 } from '../lib/protocolTime';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -426,6 +426,36 @@ function MissedBanner() {
   );
 }
 
+/** P4 never-miss-twice: two scheduled days in a row passed unbanked. One
+ *  miss is noise and gets the gentle banner above; two is the moment the
+ *  habit is actually deciding, so this one is louder and hands back a rung —
+ *  the rep after a miss, or one tap to an easier week. */
+function ComebackBanner({ goals }: { goals: ActiveGoalLike[] }) {
+  const navigation = useNavigation<any>();
+  const first = goals[0];
+  const name = goalTitle(first.protocol.goal_statement, first.protocol);
+  const title = goals.length > 1 ? `Two misses in a row — ${goals.length} goals waiting.` : `Two misses in a row on ${name}.`;
+  return (
+    <View style={{ backgroundColor: colors.inviteBg, borderWidth: 1.5, borderColor: colors.inviteAccent, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 13, gap: 6 }}>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 13, lineHeight: 19, color: colors.inviteAccent }}>
+        {title}
+      </Text>
+      <Text style={{ fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18.75, color: colors.ink }}>
+        One missed day is noise. The rep after a miss is the one that decides the habit — and today is that rep. Small counts.
+      </Text>
+      <Pressable
+        onPress={() => navigation.navigate('AdjustPlan', { goalId: first.id, reason: 'too_hard' })}
+        hitSlop={6}
+        style={{ alignSelf: 'flex-start', marginTop: 2 }}
+      >
+        <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: colors.accentLink, textDecorationLine: 'underline' }}>
+          Too much right now? Make the weeks ahead easier
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 /* ── shared per-day derivations, merged across every active goal ────────── */
 
 interface GoalToday {
@@ -454,6 +484,7 @@ function useTodayModel(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
     strip: mergedWeekStrip(goals, byGoal, today),
     streak: streakDays(today, allCheckIns(byGoal)),
     missed: mergedMissedYesterday(goals, byGoal, today),
+    missedTwiceGoals: mergedMissedTwice(goals, byGoal, today),
     preview: mergedTomorrowPreview(goals, byGoal, today),
   };
 }
@@ -710,7 +741,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
       <WeekStrip days={m.strip} selected={m.today} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
 
       <View style={{ flex: 1, gap: 14, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 130 }}>
-        {m.missed && !m.allDone && <MissedBanner />}
+        {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
 
         {m.allDone && (
           <Pop>
@@ -880,7 +911,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
           </View>
         ) : (
         <View style={{ flex: 1, minWidth: 0, gap: 12 }}>
-          {m.missed && !m.allDone && <MissedBanner />}
+          {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
 
           {m.allDone && (
             <Pop>

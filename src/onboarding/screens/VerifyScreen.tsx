@@ -1,16 +1,18 @@
 import React, { useRef } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 import { night, nightFonts } from '../theme';
-import { BackButton, DemoChip, Screen, Shake, Spacer, Sub, TextButton, Title } from '../ui';
-import { DEMO_CODE, type OnboardingFlow } from '../useOnboardingFlow';
+import { BackButton, Screen, Shake, Spacer, Sub, TextButton, Title } from '../ui';
+import type { OnboardingFlow } from '../useOnboardingFlow';
 
-export default function VerifyScreen({ flow, demoHints }: { flow: OnboardingFlow; demoHints: boolean }) {
+export default function VerifyScreen({ flow }: { flow: OnboardingFlow; demoHints?: boolean }) {
   const refs = useRef<(TextInput | null)[]>([]);
   const focus = (i: number) => refs.current[i]?.focus();
 
   return (
     <Screen>
-      <BackButton onPress={() => flow.nav('signup')} />
+      {/* The same boxes serve signup (back to the email form) and the reset
+          flow (back to the code-sent screen). */}
+      <BackButton onPress={() => flow.nav(flow.otpPurpose === 'reset' ? 'sent' : 'signup')} />
       <Title style={{ marginTop: 26, marginBottom: 8 }}>Prove it’s you</Title>
       <Sub style={{ marginBottom: 26 }}>
         We sent a 6-digit code to <Text style={{ color: night.text }}>{flow.contactMasked}</Text>.
@@ -52,13 +54,16 @@ export default function VerifyScreen({ flow, demoHints }: { flow: OnboardingFlow
             marginTop: 14, marginHorizontal: 2,
           }}
         >
-          Not quite. Fresh boxes — try again.
+          {flow.otpErrMsg || 'Not quite. Fresh boxes — try again.'}
         </Text>
       )}
 
-      {demoHints && (
-        <View style={{ marginTop: 18 }}>
-          <DemoChip label={`psst — the code is ${DEMO_CODE}`} />
+      {flow.verifying && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 }}>
+          <ActivityIndicator size="small" color={night.accent} />
+          <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13, color: night.textMuted }}>
+            Checking…
+          </Text>
         </View>
       )}
 
@@ -74,7 +79,7 @@ export default function VerifyScreen({ flow, demoHints }: { flow: OnboardingFlow
           Resend in {flow.resendIn}s
         </Text>
       ) : (
-        <TextButton label="Resend code" onPress={flow.startResend} color={night.accent} bold />
+        <TextButton label="Resend code" onPress={flow.resendCode} color={night.accent} bold />
       )}
     </Screen>
   );

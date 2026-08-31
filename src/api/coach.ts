@@ -1,6 +1,6 @@
 // The app's first API client: the qleck-api coach surface (ROADMAP.md P1).
 import { Platform } from 'react-native';
-import { apiBase } from './device';
+import { apiBase, getIdentity } from './device';
 import {
   CoachApiError, type CoachTurnResponse, type ProtocolResponse, type SimulationPoll,
 } from './coachTypes';
@@ -48,9 +48,21 @@ export function resetDeviceId(): void {
   }
 }
 
+/** P3 quota switch: coach calls carry the Bearer too, so a signed-in user is
+ *  metered by account rather than by the spoofable device header. Absent or
+ *  failed identity degrades to the device-keyed quota — never blocks. */
+async function bearerHeader(): Promise<Record<string, string>> {
+  try {
+    const { token } = await getIdentity();
+    return { Authorization: `Bearer ${token}` };
+  } catch {
+    return {};
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(baseUrl() + path, {
-    headers: { 'X-Qleck-Device': getDeviceId() },
+    headers: { 'X-Qleck-Device': getDeviceId(), ...(await bearerHeader()) },
   });
   if (!res.ok) throw new Error(`get_failed_${res.status}`);
   return (await res.json()) as T;
@@ -64,6 +76,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
       headers: {
         'Content-Type': 'application/json',
         'X-Qleck-Device': getDeviceId(),
+        ...(await bearerHeader()),
       },
       body: JSON.stringify(body),
     });

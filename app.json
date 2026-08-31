@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.qleck.app",
-      "buildNumber": "14",
+      "buildNumber": "15",
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -42,7 +42,8 @@
           "backgroundColor": "#f5f2ea"
         }
       ],
-      "./plugins/withQleckIos.js"
+      "./plugins/withQleckIos.js",
+      "expo-secure-store"
     ]
   }
 }

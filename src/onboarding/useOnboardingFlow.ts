@@ -1,19 +1,16 @@
 // The onboarding state machine, ported from the `DCLogic` class in the Claude
 // Design canvas `Qleck Onboarding.dc.html`.
 //
-// Everything here is still the canvas' mock backend: the verification code is
-// 424242, the password is qleck123, and sara@qleck.com is the seeded "account
-// already exists" address. Phase 2 swaps these branches for the real
-// magic-link / password API — the screens and copy stay put.
+// P3: the canvas' mock backend (424242 / qleck123 / sara@qleck.com /
+// TAKEN_USERNAMES) is GONE — every branch talks to qleck-api. The screens
+// and copy stay; each action gained a busy flag and an honest error state.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { appleAuth } from '../api/account';
+import {
+  appleAuth, checkUsername, loginWithPassword, setPassword, startEmailCode, verifyEmailCode,
+} from '../api/account';
 import type { Protocol } from '../api/coachTypes';
 import type { AcceptedPlan } from './useCoachFlow';
-
-export const DEMO_CODE = '424242';
-export const DEMO_PASSWORD = 'qleck123';
-export const DEMO_EXISTING_EMAIL = 'sara@qleck.com';
 
 export type OnbScreen =
   | 'welcome' | 'auth' | 'signup' | 'verify' | 'profile' | 'goal' | 'invite'
@@ -30,9 +27,9 @@ export const SUGGESTED_FRIENDS = [
   { name: 'Sam Ortiz', handle: '@sam.o', initial: 'S', grad: 4 },
 ] as const;
 
-const TAKEN_USERNAMES = ['sara', 'alex', 'runner', 'qleck', 'maya'];
 const RESEND_SECONDS = 24;
 const EMPTY_OTP = ['', '', '', '', '', ''];
+const OFFLINE_ERR = 'Couldn’t reach Qleck — check your connection and try again.';
 
 /** What the funnel collected, handed to the app when onboarding completes. */
 export interface OnboardingResult {
@@ -84,6 +81,19 @@ export function useOnboardingFlow({
   const [resetPw2, setResetPw2] = useState('');
   const [resetErr, setResetErr] = useState('');
   const [toast, setToast] = useState('');
+  // P3 async states: one busy flag per action, honest error copy per screen.
+  const [contactBusy, setContactBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [otpErrMsg, setOtpErrMsg] = useState('');
+  // Which flow the verify screen is serving — signup promotes; reset holds
+  // its session aside for password/set and never adopts it.
+  const [otpPurpose, setOtpPurpose] = useState<'signup' | 'reset'>('signup');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [resetEmail, setResetEmailRaw] = useState('');
+  const [forgotErr, setForgotErr] = useState('');
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const resetToken = useRef<string | null>(null);
 
   const resendTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const faceIdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,38 +192,68 @@ export function useOnboardingFlow({
     if (copyTimer.current) clearTimeout(copyTimer.current);
   }, []);
 
-  /* ── verification code ────────────────────────────────────────────────── */
+  /* ── verification code (real, purpose-aware) ──────────────────────────── */
+
+  const verifyCode = useCallback(async (code: string, focusNext: (i: number) => void) => {
+    const email = (otpPurpose === 'reset' ? resetEmail : contact).trim().toLowerCase();
+    setVerifying(true);
+    try {
+      const result = await verifyEmailCode(email, code, otpPurpose);
+      setVerifying(false);
+      if (otpPurpose === 'reset') {
+        // The verified code proves email possession; its session signs the
+        // password/set call and is then discarded — login stays explicit.
+        resetToken.current = result.token;
+        nav('reset');
+        return;
+      }
+      // Signup: the session was adopted. `existing` means this email already
+      // had an account (raced in since the duplicate check) — that's a login.
+      nav(result.existing ? 'home' : 'profile');
+    } catch (err) {
+      setVerifying(false);
+      const code2 = (err as Error).message;
+      setOtpErr(true);
+      setOtpErrMsg(
+        code2 === 'expired_code' ? 'That code expired — resend a fresh one below.'
+        : code2 === 'too_many_attempts' ? 'Too many tries — resend a fresh code below.'
+        : code2 === 'bad_code' ? '' // the screen's default copy covers it
+        : OFFLINE_ERR,
+      );
+      if (otpTimer.current) clearTimeout(otpTimer.current);
+      otpTimer.current = setTimeout(() => { setOtp(EMPTY_OTP); focusNext(0); }, 700);
+    }
+  }, [contact, nav, otpPurpose, resetEmail]);
 
   const setOtpDigit = useCallback((index: number, value: string, focusNext: (i: number) => void) => {
+    if (verifying) return;
     const digit = value.replace(/\D/g, '').slice(-1);
     setOtp(prev => {
       const next = prev.slice();
       next[index] = digit;
       const code = next.join('');
-      if (code.length === 6) {
-        if (code === DEMO_CODE) {
-          if (otpTimer.current) clearTimeout(otpTimer.current);
-          otpTimer.current = setTimeout(() => nav('profile'), 300);
-        } else {
-          setOtpErr(true);
-          if (otpTimer.current) clearTimeout(otpTimer.current);
-          otpTimer.current = setTimeout(() => { setOtp(EMPTY_OTP); focusNext(0); }, 700);
-        }
-      }
+      if (code.length === 6) void verifyCode(code, focusNext);
       return next;
     });
     setOtpErr(false);
+    setOtpErrMsg('');
     if (digit && index < 5) focusNext(index + 1);
-  }, [nav]);
+  }, [verifying, verifyCode]);
 
-  /* ── username availability ────────────────────────────────────────────── */
+  /* ── username availability (real) ─────────────────────────────────────── */
 
   const checkUname = useCallback((value: string) => {
     if (unameTimer.current) clearTimeout(unameTimer.current);
     if (!value) { setUnameStatus('idle'); return; }
+    if (value.length < 3) { setUnameStatus('short'); return; }
     setUnameStatus('checking');
     unameTimer.current = setTimeout(() => {
-      setUnameStatus(TAKEN_USERNAMES.includes(value) ? 'taken' : value.length >= 3 ? 'free' : 'short');
+      checkUsername(value).then(
+        status => setUnameStatus(status === 'invalid' ? 'short' : status),
+        // Offline: let the claim proceed — the server's unique index still
+        // guards at save; a raced 409 leaves the handle unset, never shared.
+        () => setUnameStatus('free'),
+      );
     }, 450);
   }, []);
 
@@ -238,14 +278,15 @@ export function useOnboardingFlow({
   const firstName = name.trim() ? name.trim().split(/\s+/)[0] : 'friend';
 
   const contactMasked = useMemo(() => {
-    const c = contact.trim();
+    // The verify screen serves both signup (contact) and reset (resetEmail).
+    const c = (otpPurpose === 'reset' ? resetEmail : contact).trim();
     if (!c) return isEmail ? 'your email' : 'your number';
-    if (isEmail && c.includes('@')) {
+    if (c.includes('@')) {
       const [user, domain] = c.split('@');
       return (user[0] || '') + '•••@' + domain;
     }
     return '••• ' + c.replace(/\D/g, '').slice(-3);
-  }, [contact, isEmail]);
+  }, [contact, isEmail, otpPurpose, resetEmail]);
 
   // Password strength, same three checks the canvas runs.
   const strength = useMemo(() => {
@@ -272,8 +313,9 @@ export function useOnboardingFlow({
     setScreen('signup');
   }, []);
 
-  const submitContact = useCallback(() => {
-    const c = contact.trim();
+  const submitContact = useCallback(async () => {
+    const c = contact.trim().toLowerCase();
+    if (contactBusy) return;
     if (isEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c)) {
       setContactErr('That email looks off — one more try?');
       return;
@@ -282,24 +324,86 @@ export function useOnboardingFlow({
       setContactErr('That number looks short — include your country code.');
       return;
     }
-    if (isEmail && c.toLowerCase() === DEMO_EXISTING_EMAIL) {
-      setExistsOpen(true);
+    if (!isEmail) {
+      // The phone path is hidden in real builds (P3) — reachable only under
+      // demo hints, where it stays a tap-through.
+      nav('verify');
       return;
     }
-    nav('verify');
-  }, [contact, isEmail, nav]);
+    setContactBusy(true);
+    try {
+      const { exists } = await startEmailCode(c, 'signup');
+      setContactBusy(false);
+      if (exists) { setExistsOpen(true); return; }
+      setOtpPurpose('signup');
+      setOtp(EMPTY_OTP);
+      nav('verify');
+    } catch (err) {
+      setContactBusy(false);
+      const code = (err as Error).message;
+      setContactErr(
+        code === 'rate_limited' ? 'Too many codes for that email — give it an hour.'
+        : code === 'email_unavailable' ? 'Email codes aren’t live on this build yet — use Continue with Apple for now.'
+        : OFFLINE_ERR,
+      );
+    }
+  }, [contact, contactBusy, isEmail, nav]);
 
+  /** Mock social door — only reachable under demo hints (P3 removed the
+   *  affordance from real builds; SIWA on iOS is the real social door). */
   const socialJoin = useCallback(() => {
     setContact('sara@icloud.com');
     nav('profile');
   }, [nav]);
 
-  const submitLogin = useCallback(() => {
-    if (loginPw === DEMO_PASSWORD && loginEmail.trim().length > 3) nav('home');
-    else setLoginErr(true);
-  }, [loginEmail, loginPw, nav]);
+  const submitLogin = useCallback(async () => {
+    const email = loginEmail.trim().toLowerCase();
+    if (loginBusy || !email || !loginPw) { setLoginErr(true); return; }
+    setLoginBusy(true);
+    try {
+      await loginWithPassword(email, loginPw);
+      setLoginBusy(false);
+      nav('home');
+    } catch {
+      setLoginBusy(false);
+      setLoginErr(true);
+    }
+  }, [loginBusy, loginEmail, loginPw, nav]);
 
-  const saveReset = useCallback(() => {
+  /* ── recovery (real): email a code → verify → set the new password ────── */
+
+  const sendReset = useCallback(async () => {
+    const email = (resetEmail || loginEmail).trim().toLowerCase();
+    if (forgotBusy) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setForgotErr('That email looks off — one more try?');
+      return;
+    }
+    setForgotBusy(true);
+    try {
+      const { exists, sent } = await startEmailCode(email, 'reset');
+      setForgotBusy(false);
+      if (!exists || !sent) {
+        setForgotErr('No Qleck account under that email — double-check it, or sign up fresh.');
+        return;
+      }
+      setResetEmailRaw(email);
+      setOtpPurpose('reset');
+      setOtp(EMPTY_OTP);
+      nav('sent');
+    } catch (err) {
+      setForgotBusy(false);
+      const code = (err as Error).message;
+      setForgotErr(
+        code === 'rate_limited' ? 'Too many codes for that email — give it an hour.'
+        : code === 'email_unavailable' ? 'Email codes aren’t live on this build yet — hang tight.'
+        : OFFLINE_ERR,
+      );
+    }
+  }, [forgotBusy, loginEmail, nav, resetEmail]);
+
+  const saveReset = useCallback(async () => {
+    if (resetBusy) return;
     if (resetPw1.length < 8) {
       setResetErr('Needs 8+ characters — stretch it out.');
       return;
@@ -308,11 +412,35 @@ export function useOnboardingFlow({
       setResetErr('Those two don’t match. One more go.');
       return;
     }
-    setScreen('login');
-    setLoginPw('');
-    setLoginErr(false);
-    setToast('Password updated — log in with the new one.');
-  }, [resetPw1, resetPw2]);
+    if (!resetToken.current) {
+      setResetErr('That reset session expired — start again from “Forgot password”.');
+      return;
+    }
+    setResetBusy(true);
+    try {
+      await setPassword(resetPw1, resetToken.current);
+      setResetBusy(false);
+      resetToken.current = null;
+      setLoginEmail(resetEmail);
+      setScreen('login');
+      setLoginPw('');
+      setLoginErr(false);
+      setToast('Password updated — log in with the new one.');
+    } catch {
+      setResetBusy(false);
+      setResetErr(OFFLINE_ERR);
+    }
+  }, [resetBusy, resetEmail, resetPw1, resetPw2]);
+
+  /** Restart the countdown AND actually send a fresh code (the canvas'
+   *  startResend only ran the timer). */
+  const resendCode = useCallback(() => {
+    if (resendIn > 0) return;
+    startResend();
+    const purpose = otpPurpose === 'reset' || screen === 'sent' ? 'reset' : 'signup';
+    const email = (purpose === 'reset' ? resetEmail : contact).trim().toLowerCase();
+    if (email) void startEmailCode(email, purpose).catch(() => {});
+  }, [contact, otpPurpose, resendIn, resetEmail, screen, startResend]);
 
   const copyLink = useCallback(() => {
     setCopied(true);
@@ -330,12 +458,12 @@ export function useOnboardingFlow({
     // signup
     method, isEmail, pickMethod, socialJoin,
     contact, setContact: (v: string) => { setContact(v); setContactErr(''); },
-    contactErr, submitContact, contactMasked,
+    contactErr, submitContact, contactMasked, contactBusy,
     existsOpen, setExistsOpen,
-    existsLogin: () => { setExistsOpen(false); setLoginEmail(DEMO_EXISTING_EMAIL); nav('login'); },
-    existsReset: () => { setExistsOpen(false); nav('forgot'); },
+    existsLogin: () => { setExistsOpen(false); setLoginEmail(contact.trim().toLowerCase()); nav('login'); },
+    existsReset: () => { setExistsOpen(false); setResetEmailRaw(contact.trim().toLowerCase()); nav('forgot'); },
     // verify
-    otp, otpErr, setOtpDigit, resendIn, startResend,
+    otp, otpErr, otpErrMsg, verifying, otpPurpose, setOtpDigit, resendIn, startResend, resendCode,
     // profile
     name, setName, initials, firstName,
     uname, changeUname, unameStatus, usernameFree, usernameSuggestions,
@@ -352,12 +480,14 @@ export function useOnboardingFlow({
     // login
     loginEmail, setLoginEmail: (v: string) => { setLoginEmail(v); setLoginErr(false); },
     loginPw, setLoginPw: (v: string) => { setLoginPw(v); setLoginErr(false); },
-    loginErr, submitLogin,
+    loginErr, loginBusy, submitLogin,
     // recovery
     resetChannel, setResetChannel,
+    resetEmail, setResetEmail: (v: string) => { setResetEmailRaw(v); setForgotErr(''); },
+    forgotErr, forgotBusy, sendReset,
     resetPw1, setResetPw1: (v: string) => { setResetPw1(v); setResetErr(''); },
     resetPw2, setResetPw2: (v: string) => { setResetPw2(v); setResetErr(''); },
-    resetErr, strength, saveReset,
+    resetErr, resetBusy, strength, saveReset,
     // toast
     toast,
   };

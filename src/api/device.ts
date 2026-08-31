@@ -1,6 +1,8 @@
-// Anonymous device identity (ROADMAP.md P2a): registered once with qleck-api,
-// persisted in AsyncStorage, promoted to a real account at P3 sign-up. All
-// authenticated calls (goals, later check-ins) ride this token.
+// Identity storage (P2a anonymous → P3 accounts). Registered once with
+// qleck-api; anonymous devices hold an eternal token, signed-in accounts hold
+// an expiring access token + a rotating refresh token. Native persists in
+// SecureStore (Keychain/Keystore); web falls back to AsyncStorage. All
+// authenticated calls ride authedFetch, which refreshes once on a 401.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
@@ -9,8 +11,10 @@ const KEY = 'qleck-identity';
 export interface DeviceIdentity {
   userId: string;
   token: string;
-  /** 'apple' once signed in; absent for anonymous device identities. */
-  provider?: 'apple';
+  /** Set once signed in; absent for anonymous device identities. */
+  provider?: 'apple' | 'email';
+  /** P3 accounts only: rotates on every /auth/refresh. */
+  refreshToken?: string;
 }
 
 const PROD_URL = 'https://qleck-api.richmondcampano93.workers.dev';
@@ -31,6 +35,45 @@ export function apiBase(): string {
   return isLocal ? 'http://localhost:8787' : PROD_URL;
 }
 
+/* ── storage: SecureStore on native, AsyncStorage on web ────────────────── */
+
+async function storeRead(): Promise<string | null> {
+  if (Platform.OS === 'web') return AsyncStorage.getItem(KEY).catch(() => null);
+  try {
+    const SecureStore = await import('expo-secure-store');
+    const secure = await SecureStore.getItemAsync(KEY);
+    if (secure) return secure;
+    // One-time migration: identities from builds ≤14 live in AsyncStorage.
+    const legacy = await AsyncStorage.getItem(KEY).catch(() => null);
+    if (legacy) {
+      await SecureStore.setItemAsync(KEY, legacy).catch(() => {});
+      await AsyncStorage.removeItem(KEY).catch(() => {});
+    }
+    return legacy;
+  } catch {
+    return AsyncStorage.getItem(KEY).catch(() => null);
+  }
+}
+
+async function storeWrite(value: string): Promise<void> {
+  if (Platform.OS === 'web') { await AsyncStorage.setItem(KEY, value).catch(() => {}); return; }
+  try {
+    const SecureStore = await import('expo-secure-store');
+    await SecureStore.setItemAsync(KEY, value);
+  } catch {
+    await AsyncStorage.setItem(KEY, value).catch(() => {});
+  }
+}
+
+async function storeClear(): Promise<void> {
+  await AsyncStorage.removeItem(KEY).catch(() => {});
+  if (Platform.OS === 'web') return;
+  try {
+    const SecureStore = await import('expo-secure-store');
+    await SecureStore.deleteItemAsync(KEY);
+  } catch { /* nothing secure to clear */ }
+}
+
 let cached: DeviceIdentity | null = null;
 let inflight: Promise<DeviceIdentity> | null = null;
 
@@ -46,7 +89,7 @@ async function register(): Promise<DeviceIdentity> {
   if (!res.ok) throw new Error(`device register failed (${res.status})`);
   const identity = (await res.json()) as DeviceIdentity;
   if (!identity.userId || !identity.token) throw new Error('device register malformed');
-  await AsyncStorage.setItem(KEY, JSON.stringify(identity)).catch(() => {});
+  await storeWrite(JSON.stringify(identity));
   return identity;
 }
 
@@ -56,7 +99,7 @@ export async function getIdentity(): Promise<DeviceIdentity> {
   if (!inflight) {
     inflight = (async () => {
       try {
-        const stored = await AsyncStorage.getItem(KEY);
+        const stored = await storeRead();
         if (stored) {
           const parsed = JSON.parse(stored) as DeviceIdentity;
           if (parsed.userId && parsed.token) return (cached = parsed);
@@ -68,26 +111,89 @@ export async function getIdentity(): Promise<DeviceIdentity> {
   return inflight;
 }
 
-/** Swap the in-memory identity after a sign-in (storage is written by the
- *  caller). Everything using getIdentity() picks the account up immediately. */
+/** Peek without registering — App's boot gate uses this to decide whether an
+ *  account exists on this device (mid-funnel resume, login-first routing). */
+export async function getStoredIdentity(): Promise<DeviceIdentity | null> {
+  if (cached) return cached;
+  try {
+    const stored = await storeRead();
+    if (!stored) return null;
+    const parsed = JSON.parse(stored) as DeviceIdentity;
+    return parsed.userId && parsed.token ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Swap AND persist the identity after a sign-in or refresh. Everything
+ *  using getIdentity() picks the account up immediately. */
 export function adoptIdentity(identity: DeviceIdentity): void {
   cached = identity;
   inflight = null;
+  void storeWrite(JSON.stringify(identity));
 }
 
 /**
  * Forget this device's identity, so the next call registers a brand new one.
  *
- * Until real accounts land (ROADMAP P3) the device token IS the account: every
- * goal is owned by the user behind it. Keeping the token across a logout meant
- * the next "new account" inherited the previous one's goals wearing a new
- * name. The goals stay on the server — this end simply stops being able to
- * reach them, which is the honest behaviour while sign-up is still mocked.
+ * For anonymous devices the token IS the account: every goal is owned by the
+ * user behind it, so a logout that kept the token would hand the next "new
+ * account" the previous one's goals wearing a new name. The goals stay on
+ * the server — this end simply stops being able to reach them.
  */
 export async function resetIdentity(): Promise<void> {
   cached = null;
   inflight = null;
-  await AsyncStorage.removeItem(KEY).catch(() => {});
+  await storeClear();
+}
+
+/* ── authed fetch: Bearer + one refresh retry on 401 ────────────────────── */
+
+let refreshInflight: Promise<DeviceIdentity | null> | null = null;
+
+/** Rotate the refresh token for a fresh session. Single-flight; a revoked or
+ *  invalid refresh clears the identity (honest global logout — the next call
+ *  starts a fresh anonymous device). */
+async function tryRefresh(current: DeviceIdentity): Promise<DeviceIdentity | null> {
+  if (!current.refreshToken) return null;
+  if (!refreshInflight) {
+    refreshInflight = (async () => {
+      try {
+        const res = await fetch(apiBase() + '/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: current.refreshToken }),
+        });
+        if (res.ok) {
+          const out = (await res.json()) as { userId: string; token: string; refreshToken: string };
+          if (out.userId && out.token) {
+            const next: DeviceIdentity = { ...current, userId: out.userId, token: out.token, refreshToken: out.refreshToken };
+            adoptIdentity(next);
+            return next;
+          }
+        } else if (res.status === 401) {
+          await resetIdentity();
+        }
+      } catch { /* transient network — the original 401 stands */ }
+      return null;
+    })().finally(() => { refreshInflight = null; });
+  }
+  return refreshInflight;
+}
+
+/** fetch(apiBase() + path) with the identity's Bearer attached; on a 401
+ *  from an account identity it refreshes once and retries. */
+export async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const identity = await getIdentity();
+  const withAuth = (token: string): RequestInit => ({
+    ...init,
+    headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` },
+  });
+  const res = await fetch(apiBase() + path, withAuth(identity.token));
+  if (res.status !== 401 || !identity.refreshToken) return res;
+  const refreshed = await tryRefresh(identity);
+  if (!refreshed) return res;
+  return fetch(apiBase() + path, withAuth(refreshed.token));
 }
 
 /** Today's date in the device's local time, as YYYY-MM-DD. */

@@ -70,7 +70,7 @@ export default function NewPasswordScreen({ flow }: { flow: OnboardingFlow }) {
 
       <Spacer />
 
-      <PrimaryButton label="Save & log in" onPress={flow.saveReset} />
+      <PrimaryButton label={flow.resetBusy ? 'Saving…' : 'Save & log in'} onPress={flow.saveReset} />
     </Screen>
   );
 }

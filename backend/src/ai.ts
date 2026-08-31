@@ -34,6 +34,18 @@ export interface Env {
   // so tests can point verification at a locally served fake key set.
   APPLE_BUNDLE_ID?: string;
   APPLE_JWKS_URL?: string;
+  // P3 email auth: Resend sender. No key = codes stay peekable (dev/harness)
+  // and are logged locally instead of mailed. Worker secret in prod.
+  RESEND_API_KEY?: string;
+  RESEND_FROM?: string;
+  // Dev-only escape hatch (.dev.vars): lets /auth/email/start succeed with
+  // no mail key so the local web funnel + evals can run the real flow via
+  // the peek. NEVER set in production — without a mail key prod refuses
+  // honestly (email_unavailable) instead of promising a code nobody sends.
+  EMAIL_AUTH_OPEN?: string;
+  // App Review's demo door: when set, review@qleck.app + this password logs
+  // into a dedicated demo account with no inbox involved. Worker secret.
+  REVIEW_DEMO_PASSWORD?: string;
 }
 
 // Provider-neutral shapes so coach.ts never imports an SDK type.

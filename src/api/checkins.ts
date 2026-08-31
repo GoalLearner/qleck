@@ -4,7 +4,7 @@
 // endless replays safe.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CheckIn } from '../lib/protocolTime';
-import { apiBase, getIdentity } from './device';
+import { authedFetch } from './device';
 
 const OUTBOX_KEY = 'qleck-checkin-outbox';
 const CACHE_KEY = 'qleck-checkins'; // Record<goalId, CheckIn[]> across active goals
@@ -38,18 +38,14 @@ async function writeOutbox(items: OutboxItem[]): Promise<void> {
 
 async function post(item: OutboxItem): Promise<boolean> {
   try {
-    const { token } = await getIdentity();
     if (item.op === 'remove') {
       const qs = `goalId=${item.goalId}&stepId=${encodeURIComponent(item.stepId)}&date=${item.localDate}`;
-      const res = await fetch(`${apiBase()}/check-ins?${qs}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authedFetch(`/check-ins?${qs}`, { method: 'DELETE' });
       return res.ok;
     }
-    const res = await fetch(apiBase() + '/check-ins', {
+    const res = await authedFetch('/check-ins', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(item),
     });
     return res.ok;
@@ -105,11 +101,7 @@ async function readCache(): Promise<Record<string, CheckIn[]>> {
 /** Server truth for a goal's check-ins, cached per goal for offline rendering. */
 export async function fetchCheckIns(goalId: string, from: string, to: string): Promise<CheckIn[]> {
   try {
-    const { token } = await getIdentity();
-    const res = await fetch(
-      `${apiBase()}/check-ins?goalId=${goalId}&from=${from}&to=${to}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    const res = await authedFetch(`/check-ins?goalId=${goalId}&from=${from}&to=${to}`);
     if (!res.ok) throw new Error(String(res.status));
     const rows = ((await res.json()) as { checkIns: CheckIn[] }).checkIns;
     const cache = await readCache();

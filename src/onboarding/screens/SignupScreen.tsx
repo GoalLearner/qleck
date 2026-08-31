@@ -3,10 +3,10 @@ import { Modal, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { night, nightFonts } from '../theme';
 import {
-  BackButton, DemoChip, NightInput, Note, Pop, PrimaryButton, Screen, Segmented, Shake, Spacer,
+  BackButton, NightInput, Note, Pop, PrimaryButton, Screen, Segmented, Shake, Spacer,
   Sub, Title,
 } from '../ui';
-import { DEMO_EXISTING_EMAIL, type OnboardingFlow } from '../useOnboardingFlow';
+import type { OnboardingFlow } from '../useOnboardingFlow';
 
 // "This email already has a Qleck account" — the doc's impersonation guard.
 function AccountExistsSheet({ flow }: { flow: OnboardingFlow }) {
@@ -103,12 +103,16 @@ export default function SignupScreen({ flow, demoHints }: { flow: OnboardingFlow
         </Title>
         <Sub style={{ marginBottom: 22 }}>We’ll send a 6-digit code to make sure it’s really you.</Sub>
 
-        <Segmented
-          options={[{ key: 'email', label: 'Email' }, { key: 'phone', label: 'Phone' }]}
-          value={flow.method}
-          onChange={k => flow.pickMethod(k as 'email' | 'phone')}
-          style={{ marginBottom: 16 }}
-        />
+        {/* P3: the phone path is hidden in real builds — email is the door.
+            The picker survives under demo hints only. */}
+        {demoHints && (
+          <Segmented
+            options={[{ key: 'email', label: 'Email' }, { key: 'phone', label: 'Phone' }]}
+            value={flow.method}
+            onChange={k => flow.pickMethod(k as 'email' | 'phone')}
+            style={{ marginBottom: 16 }}
+          />
+        )}
 
         <NightInput
           value={flow.contact}
@@ -134,23 +138,14 @@ export default function SignupScreen({ flow, demoHints }: { flow: OnboardingFlow
           </Shake>
         )}
 
-        {demoHints && (
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-            <DemoChip label="demo: new@qleck.app" onPress={() => flow.setContact('new@qleck.app')} />
-            <DemoChip
-              label={`existing: ${DEMO_EXISTING_EMAIL}`}
-              tone="danger"
-              onPress={() => flow.setContact(DEMO_EXISTING_EMAIL)}
-            />
-          </View>
-        )}
-
         <Spacer />
 
         <Note>
           Used only to secure your account and for password resets. GDPR-safe — never shared, never leaked.
+          By continuing you accept Qleck’s terms: your goal text goes to our AI coach to build your plan, and
+          you can delete your account and every trace of it anytime from the You tab.
         </Note>
-        <PrimaryButton label="Send my code" onPress={flow.submitContact} />
+        <PrimaryButton label={flow.contactBusy ? 'Sending…' : 'Send my code'} onPress={flow.submitContact} />
       </Screen>
 
       <AccountExistsSheet flow={flow} />

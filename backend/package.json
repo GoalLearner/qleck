@@ -10,7 +10,8 @@
     "harness": "node harness/run.mjs && node harness/outcomes.check.mjs",
     "dev:watch": "node dev-supervisor.mjs",
     "calibrate": "node harness/calibration.mjs",
-    "check:apple": "node harness/apple.check.mjs"
+    "check:apple": "node harness/apple.check.mjs",
+    "check:auth": "node harness/auth.check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest"

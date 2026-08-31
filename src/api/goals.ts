@@ -4,7 +4,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AcceptedPlan } from '../onboarding/useCoachFlow';
 import type { Protocol } from './coachTypes';
-import { apiBase, getIdentity, localDate } from './device';
+import { authedFetch, localDate } from './device';
 
 export interface RemoteGoal {
   id: string;
@@ -25,14 +25,11 @@ function mintId(): string {
 }
 
 async function authed(path: string, init?: RequestInit): Promise<Response> {
-  const { token } = await getIdentity();
-  return fetch(apiBase() + path, {
+  // P3: authedFetch attaches the Bearer and refreshes once on a 401, so an
+  // account's expired access token never surfaces as a failed save.
+  return authedFetch(path, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers ?? {}),
-    },
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
 }
 

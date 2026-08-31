@@ -70,9 +70,10 @@ function Toast({ message }: { message: string }) {
 export default function OnboardingFlow({
   onAuthenticated,
   startScreen = 'welcome',
-  // The canvas ships tap-through affordances (prefilled demo addresses, the
-  // 424242 hint, the qleck123 hint). They stay until Phase 2's real backend.
-  demoHints = true,
+  // P3: auth is REAL — demo hints (mock social doors, the phone path, the
+  // Face ID tap-through) are off by default and exist only for canvas-parity
+  // demos. Real builds never pass true.
+  demoHints = false,
 }: {
   onAuthenticated: (result: OnboardingResult) => void;
   startScreen?: OnbScreen;
@@ -99,7 +100,7 @@ export default function OnboardingFlow({
       {!!flow.toast && <Toast message={flow.toast} />}
 
       {screen === 'welcome' && <WelcomeScreen flow={flow} />}
-      {screen === 'auth' && <AuthScreen flow={flow} />}
+      {screen === 'auth' && <AuthScreen flow={flow} demoHints={demoHints} />}
       {screen === 'signup' && <SignupScreen flow={flow} demoHints={demoHints} />}
       {screen === 'verify' && <VerifyScreen flow={flow} demoHints={demoHints} />}
       {screen === 'profile' && <ProfileSetupScreen flow={flow} />}
@@ -115,7 +116,7 @@ export default function OnboardingFlow({
       {screen === 'done' && <DoneScreen flow={flow} demoHints={demoHints} />}
       {screen === 'login' && <SignInScreen flow={flow} demoHints={demoHints} />}
       {screen === 'faceid' && <FaceIdScreen />}
-      {screen === 'forgot' && <ForgotPasswordScreen flow={flow} />}
+      {screen === 'forgot' && <ForgotPasswordScreen flow={flow} demoHints={demoHints} />}
       {screen === 'sent' && <LinkSentScreen flow={flow} />}
       {screen === 'reset' && <NewPasswordScreen flow={flow} />}
     </View>

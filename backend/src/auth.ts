@@ -4,7 +4,7 @@
 // row promotion, never migration.
 import type { Env } from './ai';
 
-async function hmac(env: Env, payload: string): Promise<string> {
+export async function hmac(env: Env, payload: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(env.AUTH_SECRET ?? ''),
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
@@ -17,18 +17,40 @@ export async function mintToken(env: Env, userId: string): Promise<string> {
   return `${userId}.${await hmac(env, userId)}`;
 }
 
-/** Returns the userId a valid token asserts, else null. Constant-shape check. */
+/** P3 session access token: userId.exp.sig — same HMAC scheme, plus expiry.
+ *  Anonymous devices keep the eternal 2-part form (their token IS the only
+ *  key to their data; expiring it would orphan them); accounts get this one
+ *  and refresh through /auth/refresh. */
+export async function mintAccessToken(env: Env, userId: string, ttlSeconds = 3600): Promise<{ token: string; expiresAt: number }> {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+  return { token: `${userId}.${exp}.${await hmac(env, `${userId}.${exp}`)}`, expiresAt: exp };
+}
+
+function constantEq(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Returns the userId a valid token asserts, else null. Accepts both the
+ *  legacy eternal form (userId.sig) and the P3 expiring form (userId.exp.sig). */
 export async function verifyToken(env: Env, token: string | null): Promise<string | null> {
   if (!env.AUTH_SECRET || !token) return null;
-  const dot = token.lastIndexOf('.');
-  if (dot <= 0) return null;
-  const userId = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
-  const expect = await hmac(env, userId);
-  if (sig.length !== expect.length) return null;
-  let diff = 0;
-  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expect.charCodeAt(i);
-  return diff === 0 ? userId : null;
+  const parts = token.split('.');
+  if (parts.length === 2) {
+    const [userId, sig] = parts;
+    if (!userId) return null;
+    return constantEq(sig, await hmac(env, userId)) ? userId : null;
+  }
+  if (parts.length === 3) {
+    const [userId, expRaw, sig] = parts;
+    const exp = Number(expRaw);
+    if (!userId || !Number.isFinite(exp)) return null;
+    if (!constantEq(sig, await hmac(env, `${userId}.${expRaw}`))) return null;
+    return exp > Math.floor(Date.now() / 1000) ? userId : null;
+  }
+  return null;
 }
 
 /** Create the anonymous user row and hand back its signed token. */

@@ -19,6 +19,10 @@
 //   DELETE /check-ins?goalId=&stepId=&date= — un-check (idempotent by key)
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
+import {
+  hashPassword, mintSession, normEmail, peekCode, revokeRefresh, rotateRefresh,
+  startEmailCode, verifyEmailCode, verifyPassword, type CodePurpose,
+} from './emailAuth';
 import { verifyAppleToken } from './apple';
 import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import type { SimulationState } from './scenarios';
@@ -189,10 +193,16 @@ export default {
         const body = (await request.json().catch(() => ({}))) as { displayName?: unknown; handle?: unknown };
         const displayName = typeof body.displayName === 'string' ? body.displayName.trim().slice(0, 80) : null;
         const handle = typeof body.handle === 'string' ? body.handle.trim().slice(0, 40) : null;
-        await env.DB
-          .prepare(`UPDATE users SET display_name = COALESCE(?, display_name), handle = COALESCE(?, handle) WHERE id = ?`)
-          .bind(displayName, handle, userId)
-          .run();
+        try {
+          await env.DB
+            .prepare(`UPDATE users SET display_name = COALESCE(?, display_name), handle = COALESCE(?, handle) WHERE id = ?`)
+            .bind(displayName, handle, userId)
+            .run();
+        } catch {
+          // P3: handles are unique (idx_users_handle) — a raced claim loses
+          // honestly instead of silently sharing a name.
+          return json({ error: 'handle_taken' }, 409, cors);
+        }
         return json({ ok: true }, 200, cors);
       }
 
@@ -339,6 +349,217 @@ export default {
       }
     }
 
+    /* ── P3 email auth: OTP + password + refresh sessions ───────────────
+     * All branches resolve to the same shape SIWA resolves to — a session
+     * the client swaps into qleck-identity. Sign-up PROMOTES the caller's
+     * anonymous user (goals kept); an email that already has an account
+     * logs in instead (server-wins: the anon row is simply left behind).
+     */
+    if (url.pathname.startsWith('/auth/') && url.pathname !== '/auth/apple') {
+      if (!env.AUTH_SECRET) return json({ error: 'auth_unconfigured' }, 503, cors);
+      const authIp = request.headers.get('CF-Connecting-IP') ?? 'local';
+      const isHarnessAuth = !!env.HARNESS_SECRET && request.headers.get('X-Qleck-Harness') === env.HARNESS_SECRET;
+      const bearerRaw = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+      const bearerUser = await verifyToken(env, bearerRaw || null);
+      const readBody = async () => (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      const emailIdentity = (email: string) => env.DB
+        .prepare(`SELECT user_id FROM identities WHERE provider = 'email' AND provider_id = ?`)
+        .bind(email)
+        .first<{ user_id: string }>();
+
+      /* Username availability — real, case-insensitive, live-typed. */
+      if (url.pathname === '/auth/username' && request.method === 'GET') {
+        const raw = (url.searchParams.get('u') ?? '').toLowerCase();
+        if (!/^[a-z0-9._]*$/.test(raw)) return json({ status: 'invalid' }, 200, cors);
+        if (raw.length < 3) return json({ status: 'short' }, 200, cors);
+        if (raw.length > 24) return json({ status: 'invalid' }, 200, cors);
+        const hit = await env.DB
+          .prepare(`SELECT 1 one FROM users WHERE LOWER(handle) = ? LIMIT 1`)
+          .bind(raw)
+          .first<{ one: number }>();
+        return json({ status: hit ? 'taken' : 'free' }, 200, cors);
+      }
+
+      /* Send (or decline to send) a code. Reveals existence deliberately —
+       * the duplicate-account sheet is a product feature; the rate limits
+       * are what keep enumeration expensive. */
+      if (url.pathname === '/auth/email/start' && request.method === 'POST') {
+        const body = await readBody();
+        const email = normEmail(body.email);
+        const purpose = String(body.purpose ?? 'signup') as CodePurpose;
+        if (!email) return json({ error: 'invalid_email' }, 400, cors);
+        if (!['signup', 'login', 'reset'].includes(purpose)) return json({ error: 'invalid_purpose' }, 400, cors);
+        const exists = !!(await emailIdentity(email));
+        // Signup on an existing account, or login/reset on a missing one:
+        // no code goes out — the client routes on `exists`.
+        if ((purpose === 'signup') === exists) return json({ ok: true, exists, sent: false }, 200, cors);
+        // No mail key = no delivery. Refuse honestly instead of promising a
+        // code nobody sends (dev + harness stay open — codes peek there).
+        if (!env.RESEND_API_KEY && env.EMAIL_AUTH_OPEN !== 'true' && !isHarnessAuth) {
+          return json({ error: 'email_unavailable' }, 503, cors);
+        }
+        const started = await startEmailCode(env, email, purpose, authIp, isHarnessAuth);
+        if ('error' in started) return json({ error: started.error }, 429, cors);
+        return json({ ok: true, exists, sent: true }, 200, cors);
+      }
+
+      /* Verify a code → session. signup attaches the email identity to the
+       * bearer's anon user (row promotion) and stamps ToS acceptance; login
+       * and reset resolve to the email's existing account. */
+      if (url.pathname === '/auth/email/verify' && request.method === 'POST') {
+        const body = await readBody();
+        const email = normEmail(body.email);
+        const code = String(body.code ?? '').trim();
+        const purpose = String(body.purpose ?? 'signup') as CodePurpose;
+        if (!email || !/^\d{6}$/.test(code)) return json({ error: 'bad_code' }, 400, cors);
+        if (!['signup', 'login', 'reset'].includes(purpose)) return json({ error: 'invalid_purpose' }, 400, cors);
+        const check = await verifyEmailCode(env, email, code, purpose);
+        if ('error' in check) return json({ error: check.error }, 400, cors);
+
+        const existing = await emailIdentity(email);
+        if (existing) {
+          // Whatever the purpose, the email's account wins (second-device
+          // conflict = server-wins; the anon row is abandoned, logged here).
+          if (bearerUser && bearerUser !== existing.user_id) {
+            console.log(`[auth] email login abandons anon user ${bearerUser} for ${existing.user_id}`);
+          }
+          await touchUser(env, existing.user_id);
+          return json({ ...(await mintSession(env, existing.user_id)), existing: true }, 200, cors);
+        }
+        if (purpose !== 'signup') return json({ error: 'no_account' }, 404, cors);
+
+        let targetUser = bearerUser;
+        if (targetUser) {
+          // A bearer already claimed by a DIFFERENT email identity is an
+          // account switch, not a rebind — same rule as /auth/apple.
+          const other = await env.DB
+            .prepare(`SELECT provider_id FROM identities WHERE provider = 'email' AND user_id = ?`)
+            .bind(targetUser)
+            .first<{ provider_id: string }>();
+          if (other && other.provider_id !== email) targetUser = null;
+        }
+        if (!targetUser) targetUser = (await registerDevice(env, null)).userId;
+        try {
+          await env.DB
+            .prepare(`INSERT INTO identities (id, user_id, provider, provider_id) VALUES (?, ?, 'email', ?)`)
+            .bind(crypto.randomUUID(), targetUser, email)
+            .run();
+        } catch {
+          const raced = await emailIdentity(email);
+          if (raced) return json({ ...(await mintSession(env, raced.user_id)), existing: true }, 200, cors);
+          return json({ error: 'identity_attach_failed' }, 500, cors);
+        }
+        await env.DB
+          .prepare(`UPDATE users SET tos_accepted_at = COALESCE(tos_accepted_at, datetime('now')) WHERE id = ?`)
+          .bind(targetUser)
+          .run();
+        return json({ ...(await mintSession(env, targetUser)), existing: false }, 200, cors);
+      }
+
+      /* Password login — the documented fallback while email is down. One
+       * fixed error for wrong-anything; the review-demo door lives here too. */
+      if (url.pathname === '/auth/login' && request.method === 'POST') {
+        const body = await readBody();
+        const email = normEmail(body.email);
+        const password = String(body.password ?? '');
+        if (!email || !password) return json({ error: 'bad_login' }, 401, cors);
+        if (env.REVIEW_DEMO_PASSWORD && email === 'review@qleck.app' && password === env.REVIEW_DEMO_PASSWORD) {
+          let demo = await emailIdentity(email);
+          if (!demo) {
+            const fresh = await registerDevice(env, null);
+            await env.DB
+              .prepare(`INSERT INTO identities (id, user_id, provider, provider_id) VALUES (?, ?, 'email', ?)`)
+              .bind(crypto.randomUUID(), fresh.userId, email)
+              .run()
+              .catch(() => {});
+            demo = await emailIdentity(email);
+          }
+          if (demo) return json({ ...(await mintSession(env, demo.user_id)), existing: true }, 200, cors);
+        }
+        const identity = await emailIdentity(email);
+        if (!identity) return json({ error: 'bad_login' }, 401, cors);
+        const row = await env.DB
+          .prepare(`SELECT password_hash FROM users WHERE id = ?`)
+          .bind(identity.user_id)
+          .first<{ password_hash: string | null }>();
+        if (!(await verifyPassword(password, row?.password_hash ?? null))) {
+          return json({ error: 'bad_login' }, 401, cors);
+        }
+        await touchUser(env, identity.user_id);
+        return json({ ...(await mintSession(env, identity.user_id)), existing: true }, 200, cors);
+      }
+
+      /* Set (or reset) the password for the authenticated user. The reset
+       * funnel reaches here holding the session its verified code minted. */
+      if (url.pathname === '/auth/password/set' && request.method === 'POST') {
+        if (!bearerUser) return json({ error: 'unauthorized' }, 401, cors);
+        const body = await readBody();
+        const password = String(body.password ?? '');
+        if (password.length < 8 || password.length > 128) return json({ error: 'weak_password' }, 400, cors);
+        await env.DB
+          .prepare(`UPDATE users SET password_hash = ? WHERE id = ?`)
+          .bind(await hashPassword(password), bearerUser)
+          .run();
+        return json({ ok: true }, 200, cors);
+      }
+
+      /* Refresh rotation. A rotated-or-revoked token presented again is
+       * reuse: the family is already revoked inside rotateRefresh, and the
+       * client treats auth_revoked as a clean global logout. */
+      if (url.pathname === '/auth/refresh' && request.method === 'POST') {
+        const body = await readBody();
+        const rotated = await rotateRefresh(env, String(body.refreshToken ?? ''));
+        if ('error' in rotated) {
+          const status = 401;
+          const error = rotated.error === 'revoked' ? 'auth_revoked' : rotated.error === 'expired' ? 'refresh_expired' : 'invalid_refresh';
+          return json({ error }, status, cors);
+        }
+        return json(rotated, 200, cors);
+      }
+
+      if (url.pathname === '/auth/logout' && request.method === 'POST') {
+        const body = await readBody();
+        const rt = String(body.refreshToken ?? '');
+        if (rt) await revokeRefresh(env, rt);
+        return json({ ok: true }, 200, cors);
+      }
+
+      /* Harness/dev-only peek: complete a REAL verify without an inbox. */
+      if (url.pathname === '/auth/email/peek' && request.method === 'GET') {
+        if (!isHarnessAuth) return json({ error: 'not_found' }, 404, cors);
+        const email = normEmail(url.searchParams.get('email'));
+        const code = email ? await peekCode(env, email) : null;
+        return code ? json({ code }, 200, cors) : json({ error: 'no_code' }, 404, cors);
+      }
+
+      return json({ error: 'not_found' }, 404, cors);
+    }
+
+    /* ── Crash/error reporting (P3): thin, capped, 30-day retention. ──── */
+    if (url.pathname === '/client-errors' && request.method === 'POST') {
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      const message = String(body.message ?? '').slice(0, 500).trim();
+      if (!message) return json({ error: 'empty' }, 400, cors);
+      const bearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+      const errUser = await verifyToken(env, bearer || null);
+      const recent = await env.DB
+        .prepare(`SELECT COUNT(*) n FROM client_errors WHERE created_at > datetime('now', '-1 day')`)
+        .first<{ n: number }>();
+      if ((recent?.n ?? 0) >= 2000) return json({ ok: true, dropped: true }, 200, cors);
+      await env.DB
+        .prepare(`INSERT INTO client_errors (id, user_id, platform, build, message, stack, context) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .bind(
+          crypto.randomUUID(), errUser,
+          String(body.platform ?? '').slice(0, 20) || null,
+          String(body.build ?? '').slice(0, 20) || null,
+          message,
+          String(body.stack ?? '').slice(0, 4000) || null,
+          String(body.context ?? '').slice(0, 500) || null,
+        )
+        .run();
+      return json({ ok: true }, 200, cors);
+    }
+
     /* ── Sign in with Apple (P3) ────────────────────────────────────────
      * The account IS the Apple identity. Four branches, all resolving to a
      * {userId, token} the client swaps into qleck-identity:
@@ -350,10 +571,18 @@ export default {
      */
     if (url.pathname === '/auth/apple' && request.method === 'POST') {
       if (!env.AUTH_SECRET) return json({ error: 'auth_unconfigured' }, 503, cors);
-      const body = (await request.json().catch(() => ({}))) as { identityToken?: unknown };
+      const body = (await request.json().catch(() => ({}))) as { identityToken?: unknown; wantsSession?: unknown };
       const verdict = await verifyAppleToken(env, body.identityToken);
       if (!verdict.ok) return json({ error: verdict.error }, verdict.status, cors);
       const sub = verdict.sub;
+      // P3 clients ask for a refreshing session; older builds keep getting
+      // the eternal token they know how to store (they can't refresh, so an
+      // expiring one would silently log them out an hour in).
+      const wantsSession = body.wantsSession === true;
+      const sessionFor = async (userId: string, existing: boolean) =>
+        wantsSession
+          ? json({ ...(await mintSession(env, userId)), existing }, 200, cors)
+          : json({ userId, token: await mintToken(env, userId), existing }, 200, cors);
 
       const findAccount = () => env.DB
         .prepare(`SELECT user_id FROM identities WHERE provider = 'apple' AND provider_id = ?`)
@@ -363,7 +592,7 @@ export default {
       const existing = await findAccount();
       if (existing) {
         await touchUser(env, existing.user_id);
-        return json({ userId: existing.user_id, token: await mintToken(env, existing.user_id), existing: true }, 200, cors);
+        return sessionFor(existing.user_id, true);
       }
 
       const bearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
@@ -388,12 +617,10 @@ export default {
         // UNIQUE(provider, provider_id) race: someone attached this sub between
         // our SELECT and INSERT — that row wins, fall through to login.
         const raced = await findAccount();
-        if (raced) {
-          return json({ userId: raced.user_id, token: await mintToken(env, raced.user_id), existing: true }, 200, cors);
-        }
+        if (raced) return sessionFor(raced.user_id, true);
         return json({ error: 'identity_attach_failed' }, 500, cors);
       }
-      return json({ userId: targetUser, token: await mintToken(env, targetUser), existing: false }, 200, cors);
+      return sessionFor(targetUser, false);
     }
 
     if (url.pathname === '/health' && request.method === 'GET') {
@@ -423,7 +650,11 @@ export default {
     // engine, so blocking it strands the session mid-simulation. The work it
     // kicks is bounded (one draft with a 3-attempt fuse + one lane set).
     if (!isHarness && !isSimPoll) {
-      const quotaError = await checkQuota(env, deviceId, ip);
+      // P3 quota switch: a signed-in caller is metered by ACCOUNT, not by the
+      // spoofable device header. Anonymous callers keep the device key.
+      const coachBearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+      const quotaKey = (await verifyToken(env, coachBearer || null)) ?? deviceId;
+      const quotaError = await checkQuota(env, quotaKey, ip);
       if (quotaError) return json({ error: quotaError, message: 'Daily coach limit reached — back tomorrow.' }, 429, cors);
     }
 
@@ -821,14 +1052,22 @@ export default {
     }
   },
 
-  /* Nightly retention sweep: payload text >30 days old, except harness runs. */
+  /* Nightly retention sweep: payload text >30 days old (except harness runs),
+   * plus the P3 auth debris — dead codes, long-dead refresh rows, old client
+   * errors. Codes clear after a day (their own expiry gates use). */
   async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
-    await env.DB
-      .prepare(
+    await env.DB.batch([
+      env.DB.prepare(
         `DELETE FROM ai_request_payloads WHERE created_at < datetime('now', '-30 days')
          AND request_id IN (SELECT id FROM ai_requests WHERE synthetic = 0)`,
-      )
-      .run();
+      ),
+      env.DB.prepare(`DELETE FROM auth_codes WHERE created_at < datetime('now', '-1 day')`),
+      env.DB.prepare(
+        `DELETE FROM refresh_tokens WHERE expires_at < datetime('now', '-30 days')
+         OR (revoked_at IS NOT NULL AND revoked_at < datetime('now', '-30 days'))`,
+      ),
+      env.DB.prepare(`DELETE FROM client_errors WHERE created_at < datetime('now', '-30 days')`),
+    ]);
   },
 };
 

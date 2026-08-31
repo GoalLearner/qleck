@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deleteAccount } from '../api/account';
+import { getStoredIdentity } from '../api/device';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -166,12 +167,14 @@ function LogOutRow({ onLogout, goalCount }: { onLogout: () => void; goalCount: n
   const { signOut } = useRally();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  // An Apple-backed identity makes logout recoverable; anonymous stays a
-  // one-way door and the copy has to say so.
-  const [isAccount, setIsAccount] = useState(false);
+  // An account-backed identity (Apple or email, P3) makes logout recoverable;
+  // anonymous stays a one-way door and the copy has to say so. Read through
+  // getStoredIdentity — the identity lives in SecureStore on native now.
+  const [accountProvider, setAccountProvider] = useState<'apple' | 'email' | null>(null);
+  const isAccount = accountProvider !== null;
   useEffect(() => {
-    AsyncStorage.getItem('qleck-identity')
-      .then(raw => { if (raw) setIsAccount((JSON.parse(raw) as { provider?: string }).provider === 'apple'); })
+    getStoredIdentity()
+      .then(identity => setAccountProvider(identity?.provider ?? null))
       .catch(() => {});
   }, [confirming]);
 
@@ -205,7 +208,9 @@ function LogOutRow({ onLogout, goalCount }: { onLogout: () => void; goalCount: n
       <Text style={{ fontSize: 15, fontFamily: fonts.bold, color: colors.ink }}>Log out?</Text>
       <Text style={{ fontSize: 13, lineHeight: 19, fontFamily: fonts.regular, color: colors.inkSoft }}>
         {isAccount
-          ? 'Your goals are saved to your Apple account — sign back in with Apple any time and they come right back.'
+          ? accountProvider === 'apple'
+            ? 'Your goals are saved to your Apple account — sign back in with Apple any time and they come right back.'
+            : 'Your goals are saved to your account — log back in with your email any time and they come right back.'
           : goalCount > 0
             ? `This clears this device, so your ${goalCount} ${goalCount === 1 ? 'goal' : 'goals'} and streak will be gone from the app. On this platform there's no sign-in yet, so there's no way to log back in and get them.`
             : 'This clears this device and starts you over from a blank slate.'}

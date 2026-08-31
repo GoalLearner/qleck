@@ -2,9 +2,9 @@ import React from 'react';
 import { Text, View } from 'react-native';
 import { night, nightFonts } from '../theme';
 import {
-  DemoChip, NightInput, OutlineButton, PrimaryButton, Screen, Shake, Spacer, TextButton, Title,
+  NightInput, OutlineButton, PrimaryButton, Screen, Shake, Spacer, TextButton, Title,
 } from '../ui';
-import { DEMO_PASSWORD, type OnboardingFlow } from '../useOnboardingFlow';
+import type { OnboardingFlow } from '../useOnboardingFlow';
 
 export default function SignInScreen({ flow, demoHints }: { flow: OnboardingFlow; demoHints: boolean }) {
   return (
@@ -27,7 +27,7 @@ export default function SignInScreen({ flow, demoHints }: { flow: OnboardingFlow
         <NightInput
           value={flow.loginEmail}
           onChangeText={flow.setLoginEmail}
-          placeholder="Email or phone"
+          placeholder="Email"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
@@ -60,22 +60,26 @@ export default function SignInScreen({ flow, demoHints }: { flow: OnboardingFlow
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
         <TextButton
           label="Forgot password?"
-          onPress={() => flow.nav('forgot')}
+          onPress={() => { if (flow.loginEmail.trim()) flow.setResetEmail(flow.loginEmail.trim()); flow.nav('forgot'); }}
           color={night.accent}
           bold
           height={40}
         />
-        {demoHints && <DemoChip label={`demo: ${DEMO_PASSWORD}`} />}
       </View>
+      <Text style={{ fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: night.textGhost, marginTop: 2, marginHorizontal: 2 }}>
+        Signed up with a code and never set a password? “Forgot password” sets your first one.
+      </Text>
 
       <Spacer />
 
-      <PrimaryButton label="Log in" onPress={flow.submitLogin} />
-      <OutlineButton
-        label="Unlock with Face ID"
-        onPress={() => flow.nav('faceid')}
-        style={{ height: 50, borderRadius: 25, marginTop: 10 }}
-      />
+      <PrimaryButton label={flow.loginBusy ? 'Logging in…' : 'Log in'} onPress={flow.submitLogin} />
+      {demoHints && (
+        <OutlineButton
+          label="Unlock with Face ID"
+          onPress={() => flow.nav('faceid')}
+          style={{ height: 50, borderRadius: 25, marginTop: 10 }}
+        />
+      )}
       <TextButton label="New here? Create an account" onPress={() => flow.nav('auth')} />
     </Screen>
   );

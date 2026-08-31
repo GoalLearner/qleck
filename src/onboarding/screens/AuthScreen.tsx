@@ -26,14 +26,28 @@ function SolidButton({ label, onPress, busy }: { label: string; onPress: () => v
   );
 }
 
-export default function AuthScreen({ flow }: { flow: OnboardingFlow }) {
+export default function AuthScreen({ flow, demoHints = false }: { flow: OnboardingFlow; demoHints?: boolean }) {
   const ios = Platform.OS === 'ios';
+  const emailDoor = (
+    <Pressable
+      onPress={() => flow.pickMethod('email')}
+      style={({ pressed }) => ({
+        height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: pressed ? 'rgba(43,227,128,0.2)' : night.accentSoft,
+        borderWidth: 1.5, borderColor: 'rgba(43,227,128,0.55)',
+      })}
+    >
+      <Text style={{ fontFamily: nightFonts.display, fontSize: 15.5, color: night.accent }}>
+        Sign up with email
+      </Text>
+    </Pressable>
+  );
   return (
     <Screen>
       <BackButton onPress={() => flow.nav('welcome')} />
       <Title style={{ marginTop: 26, marginBottom: 8 }}>Join Qleck</Title>
       <Sub style={{ marginBottom: 28 }}>
-        {ios ? 'One tap — your goals follow you to any device.' : 'Pick a door — takes under a minute, promise.'}
+        {ios ? 'One tap — your goals follow you to any device.' : 'Under a minute, promise.'}
       </Sub>
 
       {ios ? (
@@ -44,46 +58,42 @@ export default function AuthScreen({ flow }: { flow: OnboardingFlow }) {
               {flow.appleErr}
             </Text>
           ) : null}
-          <Note center>
-            No passwords, no email forms — Apple is the account. New here, it sets you up; already on Qleck, it signs you in.
-          </Note>
-        </View>
-      ) : (
-        <View style={{ gap: 11 }}>
-          <SolidButton label="Continue with Apple" onPress={flow.socialJoin} />
-          <OutlineButton label="Continue with Google" onPress={flow.socialJoin} light />
-
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 6 }}>
             <View style={{ flex: 1, height: 1, backgroundColor: night.hairline }} />
             <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12, color: night.textGhost }}>or</Text>
             <View style={{ flex: 1, height: 1, backgroundColor: night.hairline }} />
           </View>
+          {emailDoor}
+          <Note center>
+            New here, either door sets you up; already on Qleck, both sign you in.
+          </Note>
+        </View>
+      ) : (
+        <View style={{ gap: 11 }}>
+          {/* P3: the mock social doors survive only under demo hints —
+              email is the real door until SIWA-web/Google ship together. */}
+          {demoHints && (
+            <>
+              <SolidButton label="Continue with Apple" onPress={flow.socialJoin} />
+              <OutlineButton label="Continue with Google" onPress={flow.socialJoin} light />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 6 }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: night.hairline }} />
+                <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12, color: night.textGhost }}>or</Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: night.hairline }} />
+              </View>
+            </>
+          )}
 
-          <Pressable
-            onPress={() => flow.pickMethod('email')}
-            style={({ pressed }) => ({
-              height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: pressed ? 'rgba(43,227,128,0.2)' : night.accentSoft,
-              borderWidth: 1.5, borderColor: 'rgba(43,227,128,0.55)',
-            })}
-          >
-            <Text style={{ fontFamily: nightFonts.display, fontSize: 15.5, color: night.accent }}>
-              Sign up with email
-            </Text>
-          </Pressable>
+          {emailDoor}
 
-          <OutlineButton label="Sign up with phone" onPress={() => flow.pickMethod('phone')} />
+          {demoHints && <OutlineButton label="Sign up with phone" onPress={() => flow.pickMethod('phone')} />}
         </View>
       )}
 
       <Spacer />
 
       <Note center>Your details stay yours — GDPR-safe, never sold, never leaked.</Note>
-      {ios ? (
-        <TextButton label="Already on Qleck? Same button — Apple signs you in" onPress={flow.appleSignIn} color={night.accent} bold />
-      ) : (
-        <TextButton label="Already on Qleck? Log in" onPress={() => flow.nav('login')} color={night.accent} bold />
-      )}
+      <TextButton label="Already on Qleck? Log in" onPress={() => flow.nav('login')} color={night.accent} bold />
     </Screen>
   );
 }

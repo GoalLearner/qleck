@@ -6,7 +6,7 @@ import {
 } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
 import { localDate, resetIdentity } from '../api/device';
-import { fetchMe, saveMe } from '../api/account';
+import { fetchMe, logoutServer, saveMe } from '../api/account';
 import { resetDeviceId } from '../api/coach';
 import { planIsOver, planStats, type CheckIn } from '../lib/protocolTime';
 import {
@@ -450,6 +450,9 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     // does — belt and braces, not a race.
     await AsyncStorage.multiRemove(['qleck-goals', 'qleck-profile', 'qleck-checkin-outbox', 'qleck-checkins']).catch(() => {});
     await clearGoalOutbox();
+    // P3: revoke this device's refresh token server-side BEFORE the identity
+    // is forgotten — logout must be real, not just local amnesia.
+    await logoutServer().catch(() => {});
     await resetIdentity();
     resetDeviceId();
   }, []);

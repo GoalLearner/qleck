@@ -5,9 +5,7 @@ import { Float, PrimaryButton, Screen, TextButton, Title } from '../ui';
 import type { OnboardingFlow } from '../useOnboardingFlow';
 
 export default function LinkSentScreen({ flow }: { flow: OnboardingFlow }) {
-  const desc = flow.resetChannel === 'email'
-    ? 'Check s•••a@qleck.com — tap the link inside to set a new password.'
-    : 'Check your texts at +47 ••• •• 842 — tap the link to set a new password.';
+  const desc = `Check ${flow.contactMasked} — type the 6-digit code inside to set a new password.`;
 
   return (
     <Screen scroll={false}>
@@ -24,7 +22,7 @@ export default function LinkSentScreen({ flow }: { flow: OnboardingFlow }) {
           </View>
         </Float>
 
-        <Title style={{ textAlign: 'center' }}>Link sent</Title>
+        <Title style={{ textAlign: 'center' }}>Code sent</Title>
         <Text
           style={{
             fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 22.5,
@@ -55,13 +53,13 @@ export default function LinkSentScreen({ flow }: { flow: OnboardingFlow }) {
               Reset your Qleck password
             </Text>
             <Text numberOfLines={1} style={{ fontFamily: nightFonts.body, fontSize: 12, color: night.textDim }}>
-              Tap the link — it expires in 15 min ⏱
+              Your code expires in 10 min ⏱
             </Text>
           </View>
         </View>
       </View>
 
-      <PrimaryButton label="Open the link (demo)" onPress={() => flow.nav('reset')} />
+      <PrimaryButton label="I have the code" onPress={() => flow.nav('verify')} />
 
       {flow.resendIn > 0 ? (
         <Text
@@ -73,7 +71,7 @@ export default function LinkSentScreen({ flow }: { flow: OnboardingFlow }) {
           Didn’t get it? Resend in {flow.resendIn}s
         </Text>
       ) : (
-        <TextButton label="Resend link" onPress={flow.startResend} color={night.accent} bold />
+        <TextButton label="Resend code" onPress={flow.resendCode} color={night.accent} bold />
       )}
     </Screen>
   );

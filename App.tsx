@@ -29,8 +29,11 @@ import LedgerScreen from './src/screens/LedgerScreen';
 import GraduationScreen from './src/screens/GraduationScreen';
 import HelpScreen from './src/screens/HelpScreen';
 import NewGoalScreen from './src/screens/NewGoalScreen';
-import OnboardingFlow from './src/onboarding/OnboardingFlow';
+import OnboardingFlow, { type OnbScreen } from './src/onboarding/OnboardingFlow';
 import ProfileScreen from './src/screens/ProfileScreen';
+import { fetchMe } from './src/api/account';
+import { getStoredIdentity } from './src/api/device';
+import { installErrorReporting } from './src/api/errors';
 // Rally-era social surfaces (Plans/Streaks/Create/Friends/Event/Challenge
 // screens) are quarantined out of the shell per the owner's coach-first call
 // (2026-08-24); they return behind real backends per ROADMAP P6.
@@ -50,10 +53,11 @@ const navThemeFor = () => ({
 
 // Lives inside RallyProvider so the funnel's result can land in app state
 // before we flip to the tabs.
-function Onboarding({ onDone }: { onDone: () => void }) {
+function Onboarding({ onDone, startScreen }: { onDone: () => void; startScreen?: OnbScreen }) {
   const { applyOnboarding } = useRally();
   return (
     <OnboardingFlow
+      startScreen={startScreen}
       onAuthenticated={result => {
         applyOnboarding(result);
         onDone();
@@ -79,13 +83,28 @@ function Tabs({ onLogout }: { onLogout: () => void }) {
 
 function AppShell() {
   const { mode } = useTheme();
-  // null = still reading the stored session flag (interim until P3 sessions).
+  // null = still reading the stored session flag.
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  // P3 mid-funnel resume: an account identity with no completed funnel means
+  // the app died between verify and profile — pick up at the profile step. A
+  // completed-then-logged-out account resumes at the login screen instead.
+  const [resumeScreen, setResumeScreen] = useState<OnbScreen | undefined>(undefined);
   useEffect(() => {
-    AsyncStorage.getItem('qleck-session').then(v => setLoggedIn(v === '1')).catch(() => setLoggedIn(false));
+    (async () => {
+      const flag = await AsyncStorage.getItem('qleck-session').catch(() => null);
+      if (flag === '1') { setLoggedIn(true); return; }
+      try {
+        const identity = await getStoredIdentity();
+        if (identity?.provider) {
+          const me = await fetchMe().catch(() => null);
+          setResumeScreen(me && !me.displayName ? 'profile' : 'login');
+        }
+      } catch { /* fresh funnel from the top */ }
+      setLoggedIn(false);
+    })();
   }, []);
-  const logIn = () => { setLoggedIn(true); AsyncStorage.setItem('qleck-session', '1').catch(() => {}); };
-  const logOut = () => { setLoggedIn(false); AsyncStorage.removeItem('qleck-session').catch(() => {}); };
+  const logIn = () => { setLoggedIn(true); setResumeScreen(undefined); AsyncStorage.setItem('qleck-session', '1').catch(() => {}); };
+  const logOut = () => { setLoggedIn(false); setResumeScreen('login'); AsyncStorage.removeItem('qleck-session').catch(() => {}); };
   // Keys are the family names every style refers to (src/theme.ts fonts.*),
   // so they must not be renamed.
   const [fontsLoaded, fontError] = useFonts({
@@ -129,7 +148,7 @@ function AppShell() {
           <RootStack.Navigator screenOptions={{ headerShown: false }}>
             {!loggedIn ? (
               <RootStack.Screen name="Onboarding">
-                {() => <Onboarding onDone={logIn} />}
+                {() => <Onboarding onDone={logIn} startScreen={resumeScreen} />}
               </RootStack.Screen>
             ) : (
               <>
@@ -149,6 +168,10 @@ function AppShell() {
     </SafeAreaProvider>
   );
 }
+
+// P3 crash reporting: caught errors land in qleck-api's client_errors table.
+// Installed once at module load so even provider-mount crashes report.
+installErrorReporting();
 
 export default function App() {
   // ThemeProvider is outermost: it rewrites the live palettes before anything

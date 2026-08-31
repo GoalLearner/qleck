@@ -162,17 +162,18 @@ harder". Verified by a judge panel over generated protocols, not by assertion.
 ### Phase 3 — Real auth on the existing funnel + first builds — **L**
 **Objective:** accounts on the proven stack; surface the signing dependency and the iteration toolchain early. Depends only on 2a.
 
-- [ ] Email magic-link/OTP via Resend + password/reset + username availability + duplicate-guard; `nav()` and copy preserved, async in-flight/error states added per action; **phone path hidden, socialJoin removed** (both recoverable behind the demo flag)
-- [ ] Sending domain: SPF/DKIM/DMARC configured; OTP lands in the **inbox** (not spam) on Gmail, iCloud, and Outlook before the swap is called done; password login as documented fallback during mail incidents
-- [ ] ToS + privacy-policy acceptance in the signup funnel
-- [ ] JWT access + refresh with revocation; SecureStore on native, web token strategy defined; session store replaces `loggedIn` useState; mid-funnel resume
-- [ ] Identity claim as **row promotion** (UPDATE + identities INSERT); second-device conflict = server-wins, anon discarded after confirm, logged
-- [ ] `424242`/`qleck123`/`TAKEN_USERNAMES` deleted (review-demo path feature-flagged only); AI quotas switch device→user; **no OS notification prompt anywhere in the funnel**
-- [ ] **Crash/error reporting with the first signed build:** `client_errors` endpoint on `qleck-api` logging to D1 (owner's proven pattern) or sentry-expo
-- [ ] EAS profiles; **expo-dev-client builds** — locally-built Android dev client on the Windows machine as the daily iteration driver + occasional EAS iOS dev build — plus first internal TestFlight + Play internal track (TestFlight is for soaks and review, never iteration)
+- [x] Email OTP via Resend + password/reset + username availability + duplicate-guard; `nav()` and copy preserved, async in-flight/error states added per action; **phone path hidden, socialJoin removed** (both recoverable behind the demo flag) — **shipped 08-31 (build 15, migration 0010).** Codes HMAC'd at rest, 10-min expiry, 5-attempt lock, per-email/IP rate limits. Delivery waits on the owner's `RESEND_API_KEY`; until it lands, prod refuses honestly (`email_unavailable`) and SIWA stays the working iOS door. Dev/evals run the real flow via the harness-gated peek.
+- [ ] Sending domain: SPF/DKIM/DMARC configured; OTP lands in the **inbox** (not spam) on Gmail, iCloud, and Outlook before the swap is called done; password login as documented fallback during mail incidents — **owner-side: Resend account (free) + `wrangler secret put RESEND_API_KEY`, then the domain records**
+- [x] ToS + privacy-policy acceptance in the signup funnel — acceptance line on the email form, `tos_accepted_at` stamped server-side at verify **(08-31; plain-language copy pending real legal text)**
+- [x] JWT access + refresh with revocation; SecureStore on native (AsyncStorage migration + web fallback), session store; mid-funnel resume — **shipped 08-31.** 1h access + 90d rotating refresh; rotation chains in D1; reuse of a rotated token revokes the family; `authedFetch` does single-flight 401 refresh; kill-after-verify resumes at the profile step.
+- [x] Identity claim as **row promotion** (UPDATE + identities INSERT); second-device conflict = server-wins, anon discarded after confirm, logged — email now shares SIWA's exact branch structure; auth harness proves a pre-signup goal survives into the account
+- [x] `424242`/`qleck123`/`TAKEN_USERNAMES` deleted (review-demo login lives server-side behind `REVIEW_DEMO_PASSWORD`, unset for now); AI quotas prefer the signed-in user over the device header; no OS notification prompt anywhere in the funnel
+- [x] **Crash/error reporting:** `client_errors` endpoint on `qleck-api` logging to D1 (30-day retention in the cron) + a throttled global handler in the app — **08-31; "with the first signed build" half still owed with EAS below**
+- [ ] EAS profiles; **expo-dev-client builds** — locally-built Android dev client on the Windows machine as the daily iteration driver + occasional EAS iOS dev build — plus first internal TestFlight + Play internal track (TestFlight is for soaks and review, never iteration) — **owner-side (MacBook/EAS credentials)**
 
 **Exit:** real signup with real email on a fresh install; same goal + streak on a second device/web; refresh rotation survives a forced 401; revocation lands next launch; a deliberate client error shows up in D1; owner + a friend on the signed build.
 **Retires:** that real auth is a swamp; that signing or a missing debug channel blocks the path later.
+**Partial result (08-31):** the software half is done and gated — auth harness 30/30, browser funnel 12/12 (real code via peek, resume, duplicate sheet, reset→password→login), coach harness ALL BARS CLEAR, worker deployed. The exit criteria that need a real inbox, a second device, and a signed build wait on the two owner-side bullets.
 
 ### Phase 4 — Living protocol: execution, lifecycle, nudges, adaptation — **L**
 **Objective:** turn the stored protocol into lived days — a coach, not a PDF viewer.

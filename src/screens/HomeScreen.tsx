@@ -539,6 +539,7 @@ function useWitnessOffer(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>)
   const { shareGoalById } = useRally();
   const [offered, setOffered] = useState<string[] | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -573,7 +574,9 @@ function useWitnessOffer(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>)
   const send = useCallback(async () => {
     if (!link) return;
     if (Platform.OS === 'web') {
-      try { await navigator.clipboard.writeText(link); } catch { /* on screen to copy by hand */ }
+      // Only reveal the raw link if the clipboard refuses — otherwise it is
+      // two lines of hex nobody reads, in the middle of Today.
+      try { await navigator.clipboard.writeText(link); } catch { setRevealed(true); }
       return;
     }
     await Share.share({ message: link }).catch(() => {});
@@ -586,7 +589,8 @@ function useWitnessOffer(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>)
     accept,
     send,
     decline: settle,
-    close: useCallback(() => setLink(null), []),
+    revealed,
+    close: useCallback(() => { setLink(null); setRevealed(false); }, []),
   };
 }
 
@@ -602,9 +606,14 @@ function WitnessOfferCard({ offer }: { offer: ReturnType<typeof useWitnessOffer>
           <Text style={{ fontFamily: fonts.serif, fontSize: 21, lineHeight: 27, color: colors.ink }}>
             Send them the link.
           </Text>
-          <Text selectable numberOfLines={2} style={{ fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 16, color: colors.muted }}>
-            {link}
+          <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 19.5, color: colors.inkSoft }}>
+            {Platform.OS === 'web' ? 'Copy it and send it to them.' : 'Text it to whoever should see this.'}
           </Text>
+          {offer.revealed ? (
+            <Text selectable numberOfLines={2} style={{ fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 16, color: colors.muted }}>
+              {link}
+            </Text>
+          ) : null}
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
             <Pressable
               onPress={offer.send}

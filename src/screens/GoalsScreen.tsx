@@ -334,6 +334,11 @@ function WitnessRow({ shared, onShare, onStop }: {
   const [url, setUrl] = useState<string | null>(shared);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  // The raw link is hidden: it is two lines of opaque hex that the buttons
+  // already act on, and on iOS the share sheet does the whole job. It is only
+  // ever NEEDED when a web clipboard write is blocked, so it stays out of the
+  // way until exactly that happens — see `send`.
+  const [revealed, setRevealed] = useState(false);
   useEffect(() => { setUrl(shared); }, [shared]);
 
   const start = async () => {
@@ -355,7 +360,7 @@ function WitnessRow({ shared, onShare, onStop }: {
         await navigator.clipboard.writeText(url);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      } catch { /* clipboard blocked — the link is on screen to copy by hand */ }
+      } catch { setRevealed(true); }   // blocked: show it so it can be copied by hand
       return;
     }
     // Texting it to someone IS the feature — the share sheet is the shortest
@@ -373,9 +378,11 @@ function WitnessRow({ shared, onShare, onStop }: {
           <Text style={{ fontFamily: fonts.semibold, fontSize: 13, lineHeight: 19, color: colors.ink }}>
             One person can watch this goal.
           </Text>
-          <Text selectable numberOfLines={2} style={{ fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 16, color: colors.muted }}>
-            {url}
-          </Text>
+          {revealed ? (
+            <Text selectable numberOfLines={2} style={{ fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 16, color: colors.muted }}>
+              {url}
+            </Text>
+          ) : null}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <Pressable
               onPress={send}

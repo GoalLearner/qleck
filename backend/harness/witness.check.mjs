@@ -112,6 +112,39 @@ const pageAfter = await api(`/w/${shareToken}`, { method: 'GET' });
 bar('sharing ONE goal never exposes the account\'s other goals',
   !/Save 5000/i.test(pageAfter.text) && !pageAfter.text.includes(otherId));
 
+/* ── a paused goal does not race ahead on the witness page ──────────────
+   witness.ts carries its OWN copy of the pause arithmetic (the Worker cannot
+   import the client's protocolTime), and duplicated maths is exactly what
+   drifts unnoticed. Since started_on became immutable, forgetting to subtract
+   paused days here would tell a witness the person is on week 4 of 4 — or
+   mark the goal finished — while they are still working through week 2. */
+
+const pausedId = crypto.randomUUID();
+await api('/goals', {
+  token,
+  body: {
+    id: pausedId, goalText: 'another private thing', statement: 'Walk every day', durationWeeks: 4,
+    startedOn: localDate(-21), timezone: 'Europe/Oslo',
+    protocol: {
+      schema_version: 1, goal_statement: 'Walk every day', short_title: 'Walk every day', duration_weeks: 4,
+      phases: [{ id: 'ph1', title: 'Walk', focus: 'x', start_week: 1, end_week: 4, steps: [{ id: 'ph1-s1', title: 'Walk', kind: 'binary', frequency: { per_week: 7 }, details: 'd' }] }],
+      milestones: [], coach_notes: 'n',
+    },
+  },
+});
+const pausedShare = await api(`/goals/${pausedId}/share`, { token });
+const beforePause = await api(`/w/${pausedShare.body.token}`, { method: 'GET' });
+bar('21 days in, an unpaused goal reads week 4', /Week 4 of 4/.test(beforePause.text),
+  (beforePause.text.match(/Week \d+ of \d+/) ?? ['no week line'])[0]);
+
+// Paused for 14 of those 21 days: 7 plan days elapsed, so week 2.
+await api(`/goals/${pausedId}/pause`, { token, body: { localDate: localDate(-14) } });
+await api(`/goals/${pausedId}/resume`, { token, body: { localDate: localDate(0) } });
+const afterPause = await api(`/w/${pausedShare.body.token}`, { method: 'GET' });
+bar('a 14-day pause holds the witness page at week 2', /Week 2 of 4/.test(afterPause.text),
+  (afterPause.text.match(/Week \d+ of \d+/) ?? ['no week line'])[0]);
+bar('...and the plan is not declared finished', !/finished|complete/i.test(afterPause.text));
+
 /* ── probing and ownership ──────────────────────────────────────────────── */
 
 const byId = await api(`/w/${goalId.replace(/-/g, '')}`, { method: 'GET' });

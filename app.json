@@ -29,6 +29,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withQleckIos.js",
       "expo-font",
       "expo-audio",
       "expo-apple-authentication",
@@ -42,7 +43,6 @@
           "backgroundColor": "#f5f2ea"
         }
       ],
-      "./plugins/withQleckIos.js",
       "expo-secure-store",
       "expo-notifications"
     ]

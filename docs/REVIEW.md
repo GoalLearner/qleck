@@ -170,4 +170,12 @@ device before submitting.
       token, and build 14's client has no refresh path at all (`git show
       aeded3f:src/api/device.ts` mentions neither `refreshToken` nor
       `tryRefresh`). It arrived with P3, one build later.
-- [ ] Resend sending domain (so testers other than the owner can get codes)
+- [ ] Resend sending domain (so testers other than the owner can get codes).
+      **Rotate RESEND_API_KEY as part of this**, not before: the current key was
+      printed in full into a Cloudflare tail log on 2026-09-01 (the BOM made the
+      runtime warn about a non-ASCII header value, and the warning includes the
+      header). Today that key can only send from `onboarding@resend.dev` to the
+      owner's own address, so the blast radius is a burnt quota -- deliberately
+      deferred. The moment a domain is verified it can send AS that domain, and
+      then it matters. Paste the new key at the `wrangler secret put` prompt
+      rather than piping it, or the BOM comes back.

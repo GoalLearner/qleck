@@ -222,14 +222,16 @@ quitting and give them your quit date" is the Fourth Law inversion the coach
 generates on its own — and the app has no way to *be* that connection. That
 dead end, not a feed, is where community belongs.
 
-- [ ] Per-goal share link: one goal, read-only — name, streak, week dots. No account needed on the watcher's side. Uses the `visibility` column reserved at the freeze; flipping private→shared re-runs the safety classifier per §2.
+- [x] Per-goal share link — **shipped 08-31 (migration 0012).** `POST /goals/:id/share` mints a secret token (separate from the goal id, so knowing an id never grants a view) and `GET /w/:token` serves a complete self-contained HTML page from the worker: no app, no account, no JavaScript, `noindex`. Revoke nulls the token and the url dies instantly; re-sharing mints a NEW one. On the safety clause: rather than re-classifying text on share, the page publishes **no user-authored string at all** — only the coach-written `short_title` — which is the stronger guarantee, since there is nothing user-written on the page to classify.
 - [ ] Only if it moves retention: watchers become accounts, and a miss-twice nudge reaches them.
 
 **Open decisions blocking approval:**
+> **Status 08-31:** bullet 1 is built. Decision 2 was not a question but a design rule, and it is now enforced in code and asserted by the check suite. Decision 1 still blocks **bullet 2 only** — nothing shipped touches the partner-accountability mechanic pact-app owns, because a read-only link has no pacts, no accounts and no two-way relationship. The retention signal from this link is what should decide it.
+
 1. **pact-app collision.** The fitness-buddy app at `Documents/repos/pact-app` owns the same partner-accountability mechanic. Two products cannot both own it. Recommendation: Qleck absorbs it (the coach already generates the accountability steps) and pact-app stands down.
 2. Whether accountability is worth the shame risk on intimate goals (quitting, weight). Design rule if it proceeds: a witness sees **streaks and effort, never the miss detail**, and per-goal visibility — never per-account.
 
-**Exit:** a watcher opens a link and sees a live streak; the owner can revoke it; a private goal stays invisible to direct API probing.
+**Exit:** MET for bullet 1 — `npm run check:witness` (17 bars) plus a browser run where a second, storage-free browser context opens the link, sees the live streak, and goes dark the moment the owner revokes. Probing is covered: the goal id does not open the page, a revoked link is byte-identical to one that never existed, and a stranger can neither mint nor revoke your link.
 **Retires:** that solo coaching is the ceiling — or, cheaply, that it isn't.
 
 ### Phase 5 — Store gauntlet — **M**

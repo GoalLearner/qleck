@@ -2,7 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   abandonGoal, clearGoalOutbox, completeGoal, fetchFinishedGoals, fetchGoals, flushGoalOutbox,
-  deleteGoal, graduateGoal, mintGoalId, pauseGoal, pendingGoals, resumeGoal, saveGoal, type RemoteGoal,
+  deleteGoal, graduateGoal, mintGoalId, pauseGoal, pendingGoals, resumeGoal, saveGoal,
+  shareGoal, unshareGoal, type RemoteGoal,
 } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
 import { getStoredIdentity, localDate, resetIdentity } from '../api/device';
@@ -42,6 +43,8 @@ export interface ActiveGoal {
   /** 'active' | 'paused' for anything in the running list (P4). Absent on
    *  goals cached by builds ≤16, which are all active by definition. */
   status?: string;
+  /** P4.5: the witness link's secret while this goal is shared. Owner-only. */
+  shareToken?: string | null;
 }
 
 // The funnel only knows what it actually asked for: the log-in path collects no
@@ -106,6 +109,9 @@ interface RallyState {
   resumeGoalById: (goalId: string) => Promise<void>;
   /** P4: erase a goal and everything hanging off it. Nothing is archived. */
   deleteGoalById: (goalId: string) => Promise<void>;
+  /** P4.5: let one person watch this goal (returns the link), or stop. */
+  shareGoalById: (goalId: string) => Promise<string>;
+  unshareGoalById: (goalId: string) => Promise<void>;
   /** Close out a finished plan: it moves to the archive and goes quiet. */
   completeGoalById: (goalId: string) => Promise<void>;
   /** Carry a finished plan forward — longer, or as a lighter maintenance goal. */
@@ -130,7 +136,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const toActive = (g: RemoteGoal): ActiveGoal => ({
     id: g.id, startedOn: g.started_on, statement: g.statement,
     durationWeeks: g.duration_weeks, protocol: g.protocol,
-    odds: g.success_probability ?? undefined, status: g.status,
+    odds: g.success_probability ?? undefined, status: g.status, shareToken: g.share_token ?? null,
   });
 
   /** Re-read goals + their check-ins from the server. Called on launch and
@@ -334,6 +340,19 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     await refresh().catch(() => {});
   }, [refresh]);
 
+  /** P4.5: mint (or re-read) this goal's witness link. */
+  const shareGoalById = useCallback(async (goalId: string) => {
+    const url = await shareGoal(goalId);
+    await refresh().catch(() => {});
+    return url;
+  }, [refresh]);
+
+  const unshareGoalById = useCallback(async (goalId: string) => {
+    setGoals(prev => prev.map(g => (g.id === goalId ? { ...g, shareToken: null } : g)));
+    await unshareGoal(goalId);
+    await refresh().catch(() => {});
+  }, [refresh]);
+
   /** P4: erase it — the goal and every row hanging off it. Unlike dropGoal,
    *  nothing survives in the archive. */
   const deleteGoalById = useCallback(async (goalId: string) => {
@@ -374,12 +393,12 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     profile, currentUserId, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
     checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
-    pauseGoalById, resumeGoalById, deleteGoalById,
+    pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById,
     refreshGoals: refresh, signOut,
   }), [profile, currentUserId, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
     checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
-    pauseGoalById, resumeGoalById, deleteGoalById, refresh, signOut]);
+    pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById, refresh, signOut]);
 
   return <RallyContext.Provider value={value}>{children}</RallyContext.Provider>;
 }

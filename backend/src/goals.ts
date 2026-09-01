@@ -18,6 +18,9 @@ export interface GoalRecord {
   protocol_version: number;
   /** The chosen pace's odds at lock-in (1-97), null for pre-v19 goals. */
   success_probability: number | null;
+  /** P4.5: the witness link's secret, or null when the goal is private.
+   *  Returned only to the OWNER — it rides their authenticated goal list. */
+  share_token?: string | null;
 }
 
 export interface CreateGoalBody {

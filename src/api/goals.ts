@@ -16,6 +16,8 @@ export interface RemoteGoal {
   protocol: Protocol;
   protocol_version: number;
   success_probability?: number | null;
+  /** P4.5 witness link secret (owner-only), null when private. */
+  share_token?: string | null;
 }
 
 function mintId(): string {
@@ -180,6 +182,20 @@ export async function pauseGoal(id: string): Promise<void> {
 export async function resumeGoal(id: string): Promise<void> {
   const res = await authed(`/goals/${id}/resume`, { method: 'POST' });
   if (!res.ok) throw new Error(`resumeGoal failed (${res.status})`);
+}
+
+/** P4.5: let one person watch this goal. Idempotent — an already-shared
+ *  goal keeps its link, so a url already sent stays valid. */
+export async function shareGoal(id: string): Promise<string> {
+  const res = await authed(`/goals/${id}/share`, { method: 'POST' });
+  if (!res.ok) throw new Error(`shareGoal failed (${res.status})`);
+  return ((await res.json()) as { url: string }).url;
+}
+
+/** Revoke the witness link. The old url dies immediately. */
+export async function unshareGoal(id: string): Promise<void> {
+  const res = await authed(`/goals/${id}/unshare`, { method: 'POST' });
+  if (!res.ok) throw new Error(`unshareGoal failed (${res.status})`);
 }
 
 /** P4: erase a goal and everything hanging off it — check-ins, protocol

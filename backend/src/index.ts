@@ -29,6 +29,7 @@ import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
+import { shareGoal, unshareGoal, witnessPage, witnessView } from './witness';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
 import type { Protocol } from './protocolSchema';
 
@@ -263,6 +264,20 @@ export default {
           : resumeGoal;
         await op(env, userId, goalId);
         return json({ ok: true }, 200, cors);
+      }
+
+      /* P4.5: start / stop letting one person watch this goal. Per-goal,
+       * never per-account — sharing one goal exposes nothing about the rest. */
+      const shareMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/(share|unshare)$/);
+      if (shareMatch && request.method === 'POST') {
+        const [, goalId, action] = shareMatch;
+        if (action === 'unshare') {
+          await unshareGoal(env, userId, goalId);
+          return json({ ok: true, shared: false }, 200, cors);
+        }
+        const result = await shareGoal(env, userId, goalId);
+        if (!result.ok || !result.token) return json({ error: 'goal_not_found' }, 404, cors);
+        return json({ ok: true, shared: true, token: result.token, url: `${url.origin}/w/${result.token}` }, 200, cors);
       }
 
       /* P4: per-goal DELETE — the goal and everything hanging off it. Distinct
@@ -636,6 +651,26 @@ export default {
         return json({ error: 'identity_attach_failed' }, 500, cors);
       }
       return sessionFor(targetUser, false);
+    }
+
+    /* ── The witness (P4.5): a public, read-only page for one shared goal.
+     * Deliberately OUTSIDE every auth block — the whole point is that the
+     * watcher needs no account and no app. It returns HTML, not JSON, so a
+     * friend opening a text message just sees the thing. */
+    const witnessMatch = url.pathname.match(/^\/w\/([0-9a-f]{20,80})$/);
+    if (witnessMatch && request.method === 'GET') {
+      const view = await witnessView(env, witnessMatch[1]);
+      return new Response(witnessPage(view), {
+        // An unknown token and a revoked one look identical (404 + the same
+        // page), so probing cannot tell them apart.
+        status: view ? 200 : 404,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'X-Robots-Tag': 'noindex, nofollow',
+          'Referrer-Policy': 'no-referrer',
+        },
+      });
     }
 
     if (url.pathname === '/health' && request.method === 'GET') {

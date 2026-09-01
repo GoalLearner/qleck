@@ -9,7 +9,7 @@
 // adding another. "Tweak it with Qoach" wires to the P4 revise client; for
 // now it opens the AdjustPlan modal.
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { useAppearance } from '../state/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +17,7 @@ import FadeInUp from '../components/FadeInUp';
 import YouAvatar from '../components/YouAvatar';
 import { goalDot, goalTitle, kindLook } from '../components/protocolViews';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
-import { localDate } from '../api/device';
+import { apiBase, localDate } from '../api/device';
 import { oddsTier, phaseForWeek, planEndDate, reforecastOdds, repsForDate, weekOf, type Reforecast } from '../lib/protocolTime';
 import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
@@ -314,6 +314,109 @@ function DropGoalButton({ onDrop }: { onDrop: () => void }) {
   );
 }
 
+/** The public page a witness opens — built from the owner's own token. */
+const witnessUrl = (token: string) => `${apiBase()}/w/${token}`;
+
+/**
+ * P4.5 the witness. The protocols already tell people to recruit a human —
+ * "tell one person and give them your quit date" is a step Qoach writes on
+ * its own — and until now the app had no way to be that connection.
+ *
+ * The copy has to be exact about what the other person sees, because these
+ * goals are intimate: they get streaks and effort, never the miss detail,
+ * and only this one goal.
+ */
+function WitnessRow({ shared, onShare, onStop }: {
+  shared: string | null;
+  onShare: () => Promise<string>;
+  onStop: () => Promise<void>;
+}) {
+  const [url, setUrl] = useState<string | null>(shared);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setUrl(shared); }, [shared]);
+
+  const start = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { setUrl(await onShare()); } catch { /* offline — the row stays as it was */ }
+    finally { setBusy(false); }
+  };
+  const stop = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await onStop(); setUrl(null); } catch { /* leave it showing */ }
+    finally { setBusy(false); }
+  };
+  const send = async () => {
+    if (!url) return;
+    if (Platform.OS === 'web') {
+      try {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch { /* clipboard blocked — the link is on screen to copy by hand */ }
+      return;
+    }
+    // Texting it to someone IS the feature — the share sheet is the shortest
+    // path from "I made this" to a person actually holding the link.
+    await Share.share({ message: url }).catch(() => {});
+  };
+
+  return (
+    <View style={{ marginTop: 18, padding: 16, borderRadius: 20, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+      <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1.4, color: colors.sectionLabel }}>
+        A WITNESS
+      </Text>
+      {url ? (
+        <>
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 13, lineHeight: 19, color: colors.ink }}>
+            One person can watch this goal.
+          </Text>
+          <Text selectable numberOfLines={2} style={{ fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 16, color: colors.muted }}>
+            {url}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+            <Pressable
+              onPress={send}
+              style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 12.5, color: colors.creamText }}>
+                {copied ? 'Copied' : Platform.OS === 'web' ? 'Copy link' : 'Send it'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={stop}
+              style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center', opacity: busy ? 0.5 : 1 }}
+            >
+              <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: colors.ink }}>Stop sharing</Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <>
+          <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 19.5, color: colors.inkSoft }}>
+            Being watched is the oldest trick there is. Give one person a link and they
+            can see your streak — no app, no account, nothing to install.
+          </Text>
+          <Pressable
+            onPress={start}
+            style={{ alignSelf: 'flex-start', marginTop: 4, height: 38, paddingHorizontal: 16, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center', opacity: busy ? 0.5 : 1 }}
+          >
+            <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: colors.ink }}>
+              {busy ? 'Making a link…' : 'Let someone watch'}
+            </Text>
+          </Pressable>
+        </>
+      )}
+      <Text style={{ fontFamily: fonts.regular, fontSize: 11, lineHeight: 16, color: colors.sectionLabel, marginTop: 2 }}>
+        They see your streak and the days you showed up — never which days you missed,
+        never what you typed, and only this goal. You can stop any time.
+      </Text>
+    </View>
+  );
+}
+
 /**
  * P4 pause: life happens, and the alternative to pausing was dropping the
  * goal outright. Resuming pays back the paused days server-side, so a plan
@@ -337,9 +440,12 @@ function PauseButton({ paused, onToggle }: { paused: boolean; onToggle: () => vo
   );
 }
 
-function DetailView({ m, onBack, onDrop, onTweak, onTogglePause }: {
+function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onShare, onStopSharing }: {
   m: GoalModel; onBack: () => void; onDrop: () => void; onTweak: () => void;
   onTogglePause: () => Promise<void>;
+  shareUrl: string | null;
+  onShare: () => Promise<string>;
+  onStopSharing: () => Promise<void>;
 }) {
   const [open, setOpen] = useState<number>(m.nowIdx);
   const protocol = m.goal.protocol;
@@ -400,6 +506,8 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause }: {
         <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: colors.sectionLabel }}> — nothing here is sacred.</Text>
       </View>
 
+      <WitnessRow shared={shareUrl} onShare={onShare} onStop={onStopSharing} />
+
       <PauseButton paused={m.goal.status === 'paused'} onToggle={onTogglePause} />
       <DropGoalButton onDrop={onDrop} />
     </FadeInUp>
@@ -412,7 +520,7 @@ export default function GoalsScreen() {
   useAppearance();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { goals, finishedGoals, checkInsByGoal, dropGoal, pauseGoalById, resumeGoalById, deleteGoalById } = useRally();
+  const { goals, finishedGoals, checkInsByGoal, dropGoal, pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById } = useRally();
   const [selId, setSelId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -456,6 +564,9 @@ export default function GoalsScreen() {
               onBack={() => setSelId(null)}
               onDrop={() => { dropGoal(sel.goal.id); setSelId(null); }}
               onTweak={() => navigation.navigate('AdjustPlan', { goalId: sel.goal.id })}
+              shareUrl={sel.goal.shareToken ? witnessUrl(sel.goal.shareToken) : null}
+              onShare={() => shareGoalById(sel.goal.id)}
+              onStopSharing={() => unshareGoalById(sel.goal.id)}
               onTogglePause={async () => {
                 if (sel.goal.status === 'paused') await resumeGoalById(sel.goal.id);
                 else { await pauseGoalById(sel.goal.id); setSelId(null); }

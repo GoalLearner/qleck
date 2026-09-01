@@ -144,5 +144,23 @@ device before submitting.
 - [ ] Privacy policy + terms hosted at a public URL, naming the
       subprocessors in §5, linked from App Store Connect
 - [ ] Screenshots for both stores
-- [ ] EAS build profiles, first TestFlight + Play internal upload
+- [x] First TestFlight upload — **build 16, Xcode from the MacBook** (not EAS;
+      there is no eas.json and the owner signs locally). Play internal still owed.
+- [ ] **Ship build 17.** Build 16 predates the 2026-09-01 audit fixes and is
+      the only client anyone is running. What it is missing, worst first:
+      - `authedFetch`'s stale-token guard. Without it two concurrent 401s on a
+        cold launch present an already-rotated token, the server reads theft,
+        and the app wipes itself to a blank anonymous account. This needs no
+        unusual conditions — an ordinary launch an hour after the last one will
+        do it. This is the reason to build.
+      - The replacement session `/auth/password/set` now returns. Build 16
+        ignores it, so a password reset signs that device out roughly an hour
+        later. Near-zero exposure today because the reset codes need a Resend
+        sending domain that is not set up, so only the owner can reset at all.
+      - Milestone seeding, which otherwise throws confetti for milestones
+        earned weeks ago on first launch of a new build.
+      - Pause awareness. The server no longer moves `started_on`, so build 16
+        keeps its history through a pause (the destructive bug is gone
+        server-side) but runs its weeks on the calendar rather than getting the
+        paused days back.
 - [ ] Resend sending domain (so testers other than the owner can get codes)

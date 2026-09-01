@@ -144,32 +144,25 @@ device before submitting.
 - [ ] Privacy policy + terms hosted at a public URL, naming the
       subprocessors in §5, linked from App Store Connect
 - [ ] Screenshots for both stores
-- [x] First TestFlight upload — **build 14, Xcode from the MacBook** (not EAS;
-      there is no eas.json and the owner signs locally). Play internal still owed.
-- [ ] **Ship a new build.** TestFlight is on build 14 = commit `aeded3f`, which
-      is 16 commits back and predates P3 entirely. The `buildNumber` in app.json
-      advanced on most commits regardless of whether a build was ever cut, so
-      the repo said 16 while TestFlight said 14 — **app.json's number is an
-      intent, not a record of what shipped.** Check App Store Connect, not git.
+- [x] First TestFlight upload — Xcode from the MacBook (not EAS; there is no
+      eas.json and the owner signs locally). Play internal still owed.
+- [x] **Build 15 shipped 2026-09-01** — the first build testers can actually
+      sign up on. Build 14 was cut from a stale checkout (`409fbd3`, 30 Aug) and
+      had none of P3–P6; the Mac's `git pull` had been silently aborting on a
+      local `package.json` edit for two days.
 
-      Build 14 still WORKS against today's backend: it is an anonymous-device
-      client (P2a) and that path is unchanged. What it does not have:
-      - **Real accounts.** Auth is still the canvas mock — code `424242`,
-        password `qleck123`. Nobody can make an account, so every goal lives
-        under a device identity: lose the device, lose everything, and there is
-        no signing in on a second one.
-      - **The P5 store-compliance surfaces** — account deletion, data export,
-        the age gate. App Review expects these, so build 14 is not submittable
-        regardless of the feature gap.
-      - Nudges and never-miss-twice (P4); live milestones, pause and per-goal
-        delete (P4 polish); the witness link (P4.5); and the 2026-09-01 audit
-        fixes.
+      Three lessons worth keeping, all of which cost a build each:
+      - **`app.json`'s buildNumber is an intent, not a record.** It advances on
+        most commits whether or not a build is cut. Check App Store Connect.
+      - **Config-plugin mods chain LIFO**, so `plugins/withQleckIos.js` must sit
+        FIRST in the plugins array to get the last word. It was in the middle,
+        which is why its `UIBackgroundModes` deletion had never once worked.
+      - **Local notifications need no push entitlement.** expo-notifications
+        adds `aps-environment` anyway, which fails signing against a
+        distribution profile with no push capability. Stripped in the plugin
+        rather than enabling a capability the app never uses.
 
-      NOT a reason to rush, contrary to an earlier note here: the `authedFetch`
-      stale-token wipe cannot happen on build 14. That bug needs a refresh
-      token, and build 14's client has no refresh path at all (`git show
-      aeded3f:src/api/device.ts` mentions neither `refreshToken` nor
-      `tryRefresh`). It arrived with P3, one build later.
+      Verify all of that without a Mac: `npx expo config --type introspect`.
 - [ ] Resend sending domain (so testers other than the owner can get codes).
       **Rotate RESEND_API_KEY as part of this**, not before: the current key was
       printed in full into a Cloudflare tail log on 2026-09-01 (the BOM made the

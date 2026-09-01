@@ -364,7 +364,7 @@ function WitnessRow({ shared, onShare, onStop }: {
   };
 
   return (
-    <View style={{ marginTop: 18, padding: 16, borderRadius: 20, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+    <View style={{ marginBottom: 18, padding: 16, borderRadius: 20, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
       <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1.4, color: colors.sectionLabel }}>
         A WITNESS
       </Text>
@@ -483,6 +483,11 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onSha
         </Text>
       </View>
 
+      {/* Above the plan, not under it (owner call 2026-09-01). At the bottom it
+          sat below the phases, the tweak link, Pause and Drop, so it read as a
+          setting and the owner did not know the feature existed. */}
+      <WitnessRow shared={shareUrl} onShare={onShare} onStop={onStopSharing} />
+
       <View style={{ gap: 10 }}>
         {protocol.phases.map((phase, pi) => (
           <PhaseCard
@@ -505,8 +510,6 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onSha
         </Pressable>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: colors.sectionLabel }}> — nothing here is sacred.</Text>
       </View>
-
-      <WitnessRow shared={shareUrl} onShare={onShare} onStop={onStopSharing} />
 
       <PauseButton paused={m.goal.status === 'paused'} onToggle={onTogglePause} />
       <DropGoalButton onDrop={onDrop} />

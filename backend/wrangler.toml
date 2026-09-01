@@ -35,10 +35,19 @@ DAILY_IP_LIMIT = "450"
 # Comma-separated allowed browser origins. Exact match, no wildcards — this is
 # an anonymous AI proxy, so the allowlist is deliberately a short list of hosts
 # we chose, not a pattern anyone could satisfy by deploying their own site.
-#   localhost:8090  = the Expo web dev preview
-#   *.netlify.app   = the tester build (both the assigned name and the
-#                     qleck-beta alias, so renaming the site does not break it)
-CORS_ORIGINS = "http://localhost:8090,https://qleck-beta.netlify.app,https://symphonious-gecko-f4b59d.netlify.app,https://superlative-babka-03b86d.netlify.app"
+#   localhost:8090  = the Expo web dev preview, the only browser origin left
+#
+# The three *.netlify.app tester origins were removed on 2026-09-01: the app
+# ships through TestFlight now and the web tester build is retired, so they
+# were standing grants to hosts nobody uses.
+#
+# This list does NOT gate the iOS app. corsHeaders only emits
+# Access-Control-Allow-Origin when a request actually carries a matching
+# Origin, and native requests carry none — CORS is a browser mechanism, so it
+# never applies to them. Adding a web host back means adding it here AND
+# redeploying; a missing entry fails as "the coach hit a snag" with no
+# server-side trace, which has cost two rounds of debugging before.
+CORS_ORIGINS = "http://localhost:8090"
 # Sign in with Apple: the iOS app's bundle identifier — the identity token's
 # audience for the native flow. Must match app.json ios.bundleIdentifier.
 APPLE_BUNDLE_ID = "com.qleck.app"

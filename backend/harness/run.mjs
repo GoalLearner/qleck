@@ -128,6 +128,7 @@ async function runGoalFixture(f) {
   const answers = [...(f.answers ?? [])];
   let questions = 0;
   const askedTexts = [];
+  const sentAnswers = [];
   const dupPairs = [];
   let dupQuestion = false;
   const dupFlags = [];
@@ -246,6 +247,7 @@ async function runGoalFixture(f) {
     const chip = chips.find(c => DELEGATION_CHIP.test(c));
     if (chip) badChip = chip;
     const answer = answers.length ? answers.shift() : GENERIC_ANSWER;
+    sentAnswers.push(answer);
     res = await api(`/coach/sessions/${sessionId}/messages`, { answer });
   }
   const outcome = outcomeOf(res);
@@ -416,7 +418,7 @@ async function runGoalFixture(f) {
     pillarsOk, ownPlan: !!f.ownPlan, ownPlanOk,
     pass, leak, protocolOk, howToOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, priceOk, repriceOk, ms: Date.now() - t0,
     // Underscored: kept in last-report.json, hidden from the console table.
-    _asked: askedTexts, _dupPairs: dupPairs,
+    _asked: askedTexts, _dupPairs: dupPairs, _sent: sentAnswers,
     _sessionId: sessionId, _protocol: protocol,
   };
 }
@@ -482,7 +484,7 @@ for (const rf of REVISION_FIXTURES) revisionResults.push(await runRevisionFixtur
 
 /* ── score ──────────────────────────────────────────────────────────────── */
 
-console.table(goalResults.map(({ _sessionId, _protocol, _asked, _dupPairs, ...r }) => r));
+console.table(goalResults.map(({ _sessionId, _protocol, _asked, _dupPairs, _sent, ...r }) => r));
 console.table(revisionResults);
 
 // Every DELIVERED repeat, named. A tolerated one-stat re-ask still prints —
@@ -591,8 +593,18 @@ console.log(`\n${verdict} · wall ${(Date.now() - started) / 1000 | 0}s`);
 
 // Full generated protocols, for offline design review (framework fidelity,
 // copy audits) — not part of the bars.
+// The goal and the answers ride along: a judge scoring PERSONALIZATION has to
+// see what the person actually said, not just the plan that came out.
 writeFileSync(new URL('./last-protocols.json', import.meta.url), JSON.stringify(
-  goalResults.filter(r => r._protocol).map(r => ({ id: r.id, protocol: r._protocol })), null, 2));
+  goalResults.filter(r => r._protocol).map(r => {
+    const f = GOAL_FIXTURES.find(x => x.id === r.id);
+    // The REAL transcript, not the fixture's scripted list — which is empty for
+    // every fixture, so the harness answers with one canned generic line. A
+    // judge handed an empty interview will (correctly) say the plan could not
+    // be personalized, and that number would be about the fixtures, not the
+    // product. Give it the truth and let it decide.
+    return { id: r.id, goal: f?.goal ?? null, answers: r._sent ?? [], protocol: r._protocol };
+  }), null, 2));
 
 writeFileSync(new URL('./last-report.json', import.meta.url), JSON.stringify({
   base: BASE, provider: health.provider,

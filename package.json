@@ -46,8 +46,9 @@
     "check:time": "node src/lib/protocolTime.check.mjs",
     "check:diff": "node src/lib/protocolDiff.check.mjs",
     "check:forecast": "node src/lib/reforecast.check.mjs",
+    "check:milestones": "node src/lib/milestones.check.mjs",
     "check:demo": "node scripts/check-demo-boundary.mjs",
-    "check": "npm run check:time && npm run check:diff && npm run check:forecast && npm run check:demo && npx tsc --noEmit"
+    "check": "npm run check:time && npm run check:diff && npm run check:forecast && npm run check:milestones && npm run check:demo && npx tsc --noEmit"
   },
   "private": true
 }

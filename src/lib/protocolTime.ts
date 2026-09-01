@@ -242,6 +242,62 @@ export function missedTwice(
   return false;
 }
 
+/* ── live milestone attainment (P4) ─────────────────────────────────────
+   Milestones used to be judged only at graduation — you would finish a plan
+   and hear all at once that week 1 went well. Same judgement, asked on the
+   day it is earned. Attainment stays derived, never stored. */
+
+export interface GoalLike {
+  id: string;
+  startedOn: string;
+  protocol: Protocol;
+}
+
+export interface ReachedMilestone {
+  /** Stable identity of "this milestone on this goal" — the seen-set key. */
+  key: string;
+  goalId: string;
+  goalTitle: string;
+  milestone: ProtocolMilestone;
+}
+
+/**
+ * Every milestone currently earned across the given goals, in plan order.
+ * A milestone is earned when its own week clears the adherence bar — the
+ * same judgement `planStats` makes at graduation, asked earlier.
+ */
+export function reachedMilestones(
+  goals: GoalLike[], byGoal: Record<string, CheckIn[]>,
+): ReachedMilestone[] {
+  const out: ReachedMilestone[] = [];
+  for (const goal of goals) {
+    const stats = planStats(goal.protocol, goal.startedOn, byGoal[goal.id] ?? []);
+    for (const outcome of stats.milestones) {
+      if (!outcome.reached) continue;
+      out.push({
+        key: `${goal.id}:${outcome.milestone.id}`,
+        goalId: goal.id,
+        goalTitle: goal.protocol.short_title?.trim() || goal.protocol.goal_statement,
+        milestone: outcome.milestone,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The ones worth celebrating: reached, and not already celebrated.
+ *
+ * `seen` is passed in rather than read here so the whole function stays pure
+ * and fixture-testable — the storage half lives below.
+ */
+export function freshMilestones(
+  goals: GoalLike[], byGoal: Record<string, CheckIn[]>, seen: string[],
+): ReachedMilestone[] {
+  const already = new Set(seen);
+  return reachedMilestones(goals, byGoal).filter(m => !already.has(m.key));
+}
+
 /* ── multi-goal derivations (concurrent goals, 2026-08-24) ──────────────── */
 
 export interface ActiveGoalLike {

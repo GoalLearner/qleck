@@ -118,14 +118,24 @@ interface GoalModel {
 }
 
 function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
+  // A paused goal schedules nothing — it must not read as running (P4).
+  const paused = m.goal.status === 'paused';
   return (
     <Pressable
       onPress={onOpen}
       style={{
         backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
         borderRadius: 26, paddingVertical: 20, paddingHorizontal: 22,
+        opacity: paused ? 0.62 : 1,
       }}
     >
+      {paused && (
+        <View style={{ alignSelf: 'flex-start', marginBottom: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: colors.outline }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 9.5, letterSpacing: 1.3, color: colors.muted }}>
+            PAUSED — NOTHING SCHEDULED
+          </Text>
+        </View>
+      )}
       {/* one title, once: the serif line carries the goal; the dot is its
           color key (owner call 2026-08-25 — the caps name was redundant) */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
@@ -246,6 +256,41 @@ function PhaseCard({ goal, phase, now, open, onToggle }: {
   );
 }
 
+/**
+ * P4 per-goal delete, on archived goals only. Distinct from dropping: this
+ * erases the goal, its protocol versions and every check-in server-side —
+ * there is no undo, so it arms first and says what it costs.
+ */
+function DeleteGoalButton({ onDelete }: { onDelete: () => Promise<void> }) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <Pressable
+      onPress={async () => {
+        if (busy) return;
+        if (!armed) { setArmed(true); return; }
+        setBusy(true);
+        try { await onDelete(); } catch { setBusy(false); setArmed(false); }
+      }}
+      hitSlop={8}
+      style={{
+        marginLeft: 10, paddingVertical: 6, paddingHorizontal: armed ? 10 : 8,
+        borderRadius: 999, borderWidth: 1, opacity: busy ? 0.5 : 1,
+        borderColor: armed ? colors.danger : colors.hairline,
+      }}
+    >
+      <Text style={{ fontFamily: fonts.bold, fontSize: armed ? 10 : 13, color: armed ? colors.danger : colors.muted }}>
+        {busy ? '…' : armed ? 'ERASE FOR GOOD' : '×'}
+      </Text>
+    </Pressable>
+  );
+}
+
 function DropGoalButton({ onDrop }: { onDrop: () => void }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
@@ -269,8 +314,32 @@ function DropGoalButton({ onDrop }: { onDrop: () => void }) {
   );
 }
 
-function DetailView({ m, onBack, onDrop, onTweak }: {
+/**
+ * P4 pause: life happens, and the alternative to pausing was dropping the
+ * goal outright. Resuming pays back the paused days server-side, so a plan
+ * that sat still for a fortnight resumes at the week it left, not the week
+ * the calendar reached.
+ */
+function PauseButton({ paused, onToggle }: { paused: boolean; onToggle: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Pressable
+      onPress={async () => { if (busy) return; setBusy(true); try { await onToggle(); } finally { setBusy(false); } }}
+      style={{
+        alignSelf: 'center', marginTop: 22, paddingVertical: 9, paddingHorizontal: 20,
+        borderRadius: 999, borderWidth: 1.5, borderColor: colors.outline, opacity: busy ? 0.6 : 1,
+      }}
+    >
+      <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.ink }}>
+        {busy ? (paused ? 'Resuming…' : 'Pausing…') : paused ? 'Resume this goal' : 'Pause this goal'}
+      </Text>
+    </Pressable>
+  );
+}
+
+function DetailView({ m, onBack, onDrop, onTweak, onTogglePause }: {
   m: GoalModel; onBack: () => void; onDrop: () => void; onTweak: () => void;
+  onTogglePause: () => Promise<void>;
 }) {
   const [open, setOpen] = useState<number>(m.nowIdx);
   const protocol = m.goal.protocol;
@@ -331,6 +400,7 @@ function DetailView({ m, onBack, onDrop, onTweak }: {
         <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: colors.sectionLabel }}> — nothing here is sacred.</Text>
       </View>
 
+      <PauseButton paused={m.goal.status === 'paused'} onToggle={onTogglePause} />
       <DropGoalButton onDrop={onDrop} />
     </FadeInUp>
   );
@@ -342,7 +412,7 @@ export default function GoalsScreen() {
   useAppearance();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { goals, finishedGoals, checkInsByGoal, dropGoal } = useRally();
+  const { goals, finishedGoals, checkInsByGoal, dropGoal, pauseGoalById, resumeGoalById, deleteGoalById } = useRally();
   const [selId, setSelId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -386,6 +456,10 @@ export default function GoalsScreen() {
               onBack={() => setSelId(null)}
               onDrop={() => { dropGoal(sel.goal.id); setSelId(null); }}
               onTweak={() => navigation.navigate('AdjustPlan', { goalId: sel.goal.id })}
+              onTogglePause={async () => {
+                if (sel.goal.status === 'paused') await resumeGoalById(sel.goal.id);
+                else { await pauseGoalById(sel.goal.id); setSelId(null); }
+              }}
             />
           ) : (
             <FadeInUp>
@@ -467,6 +541,7 @@ export default function GoalsScreen() {
                           <View style={{ width: 70, flexDirection: 'row' }}>
                             <WeekTrack weeks={g.protocol.duration_weeks} week={g.protocol.duration_weeks} filled done />
                           </View>
+                          <DeleteGoalButton onDelete={() => deleteGoalById(g.id)} />
                         </View>
                       ))}
                     </View>

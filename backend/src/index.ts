@@ -27,7 +27,7 @@ import { verifyAppleToken } from './apple';
 import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
-import { abandonGoal, completeGoal, createGoal, deleteCheckIn, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, recordCheckIn, type CreateGoalBody } from './goals';
+import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
 import type { Protocol } from './protocolSchema';
@@ -254,11 +254,24 @@ export default {
         const goal = await getCurrentGoal(env, userId);
         return json({ goal }, 200, cors);
       }
-      const lifecycleMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/(abandon|complete)$/);
+      const lifecycleMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/(abandon|complete|pause|resume)$/);
       if (lifecycleMatch && request.method === 'POST') {
         const [, goalId, action] = lifecycleMatch;
-        await (action === 'complete' ? completeGoal : abandonGoal)(env, userId, goalId);
+        const op = action === 'complete' ? completeGoal
+          : action === 'abandon' ? abandonGoal
+          : action === 'pause' ? pauseGoal
+          : resumeGoal;
+        await op(env, userId, goalId);
         return json({ ok: true }, 200, cors);
+      }
+
+      /* P4: per-goal DELETE — the goal and everything hanging off it. Distinct
+       * from abandon, which keeps the rows as history. Idempotent. */
+      const deleteMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})$/);
+      if (deleteMatch && request.method === 'DELETE') {
+        const result = await deleteGoal(env, userId, deleteMatch[1]);
+        if (!result.ok) return json({ error: 'invalid_goal_id' }, 400, cors);
+        return json({ ok: true, deleted: result.deleted }, 200, cors);
       }
       const graduateMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/graduate$/);
       if (graduateMatch && request.method === 'POST') {

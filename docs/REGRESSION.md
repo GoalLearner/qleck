@@ -11,15 +11,16 @@ npm run check
 ```
 
 That runs the temporal-layer fixtures, the protocol-diff fixtures, the
-re-forecast fixtures, the **demo-boundary guard**, and a full typecheck.
-Backend changes additionally need `cd backend && npm run harness` (16 bars)
-and `npm run check:auth` (30 bars).
+re-forecast fixtures, the milestone fixtures, the **demo-boundary guard**, and
+a full typecheck. Backend changes additionally need `cd backend` +
+`npm run harness` (16 bars), `npm run check:auth` (30 bars) and
+`npm run check:goals` (12 bars).
 
 > **Scope note.** The Rally-era social surfaces — RSVP, invites, polls,
 > cheers, follow, team logging, the 3-step Create — are **dormant**: routes
 > removed from the shell (owner call 2026-08-24) and `DEMO_ENABLED = false`.
 > They are not in this checklist because the user cannot reach them. If the
-> demo world is ever revived (`src/demo/README.md`), restore section 9.
+> demo world is ever revived (`src/demo/README.md`), restore section 10.
 
 ---
 
@@ -86,7 +87,19 @@ and `npm run check:auth` (30 bars).
 - [ ] The banner's "make the weeks ahead easier" opens **Adjust** with
       *Too much* preselected.
 
-## 7. Adjust, graduate, archive
+## 7. Milestones, pause, delete (P4 polish)
+
+- [ ] Banking the rep that carries a week past ~80% pops the **milestone card**
+      on Today, once — dismissing it and relaunching does not repeat it.
+- [ ] A milestone earned before you updated the app does NOT retro-celebrate.
+- [ ] **Pause this goal** (Goals → open a goal) badges it PAUSED on Goals and
+      removes its reps from Today; nudges for it go quiet.
+- [ ] **Resume** brings it back at the week it left — a goal paused for a week
+      still reads "week 2 of 6", not "week 3 of 6".
+- [ ] A dropped goal appears under FINISHED; its **×** arms, then ERASE FOR
+      GOOD removes it for real (it does not come back on relaunch).
+
+## 8. Adjust, graduate, archive
 
 - [ ] Adjust proposes a diff before anything is written; **Keep my current
       plan** changes nothing.
@@ -96,7 +109,7 @@ and `npm run check:auth` (30 bars).
       maintain / close out) and does not rot into a permanent rest day.
 - [ ] The Ledger pages back through prior weeks with correct banked/missed.
 
-## 8. Nudges, account, settings (device only)
+## 9. Nudges, account, settings (device only)
 
 - [ ] Locking a plan triggers the OS notification prompt — **never** during
       the signup funnel.
@@ -110,7 +123,7 @@ and `npm run check:auth` (30 bars).
 - [ ] Log out → the login screen; logging back in restores goals and streak.
 - [ ] Delete account → everything is gone; the next launch is a clean slate.
 
-## 9. Demo world — *dormant, do not run*
+## 10. Demo world — *dormant, do not run*
 
 RSVP, invites, polls, cheers, follow, team logging, 3-step Create. Unmounted
 since 2026-08-24 and behind `DEMO_ENABLED`. Restore this section only if the

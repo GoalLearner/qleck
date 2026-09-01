@@ -178,8 +178,11 @@ export async function listActiveGoals(env: Env, userId: string): Promise<GoalRec
 export async function listGoals(
   env: Env, userId: string, scope: 'active' | 'finished' | 'all',
 ): Promise<GoalRecord[]> {
+  // 'active' means RUNNING, which includes paused (P4): a paused goal must
+  // still reach the client or it would vanish with no way to resume it. The
+  // client reads `status` and keeps paused goals out of today's scheduling.
   const sql = scope === 'active'
-    ? `SELECT * FROM goals WHERE user_id = ? AND status = 'active' ORDER BY created_at`
+    ? `SELECT * FROM goals WHERE user_id = ? AND status IN ('active', 'paused') ORDER BY created_at`
     : scope === 'finished'
       ? `SELECT * FROM goals WHERE user_id = ? AND status IN ('completed', 'abandoned') ORDER BY updated_at DESC`
       : `SELECT * FROM goals WHERE user_id = ? ORDER BY created_at`;
@@ -201,6 +204,83 @@ export async function abandonGoal(env: Env, userId: string, goalId: string): Pro
 }
 
 /**
+ * P4: put a goal on ice. Stamps paused_at so resume can pay the time back —
+ * without that stamp a pause silently spends the plan's runway, which is the
+ * opposite of what someone pausing is asking for.
+ */
+export async function pauseGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean }> {
+  if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false };
+  await env.DB
+    .prepare(
+      `UPDATE goals SET status = 'paused', paused_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status = 'active'`,
+    )
+    .bind(goalId, userId)
+    .run();
+  return { ok: true };
+}
+
+/**
+ * Back on. started_on moves forward by however many whole days the pause
+ * lasted, so "week 3 of 6" is still week 3 — the plan resumes where it was
+ * left rather than where the calendar got to. A pause shorter than a day
+ * shifts nothing, which is correct: no day was lost.
+ */
+export async function resumeGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean }> {
+  if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false };
+  await env.DB
+    .prepare(
+      `UPDATE goals
+          SET status = 'active',
+              started_on = date(started_on,
+                '+' || CAST(MAX(0, julianday('now') - julianday(COALESCE(paused_at, 'now'))) AS INTEGER) || ' days'),
+              paused_at = NULL,
+              updated_at = datetime('now')
+        WHERE id = ? AND user_id = ? AND status = 'paused'`,
+    )
+    .bind(goalId, userId)
+    .run();
+  return { ok: true };
+}
+
+/**
+ * Per-goal DELETE (P4, and the GDPR promise made in the schema doc): the goal
+ * and everything hanging off it, gone.
+ *
+ * Written as an explicit ordered batch rather than trusting ON DELETE CASCADE.
+ * SQLite only enforces foreign keys when the connection says so, and "the
+ * cascade is untested" is exactly the note the roadmap left here — an
+ * explicit batch is deterministic whatever the pragma is doing, and each
+ * table can be asserted empty afterwards (harness/goals.check.mjs does).
+ *
+ * goal_outcomes is the deliberate exception: it carries no user text, it is
+ * the calibration dataset the odds are tuned against, and it has no FK. The
+ * LINK is severed (goal_id -> NULL) rather than the row destroyed.
+ */
+export async function deleteGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean; deleted: boolean }> {
+  if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false, deleted: false };
+  // Ownership is proven once, here — every statement below is also scoped by
+  // goal_id, but a goal that isn't yours must not even be probed.
+  const owned = await env.DB
+    .prepare(`SELECT 1 one FROM goals WHERE id = ? AND user_id = ?`)
+    .bind(goalId, userId)
+    .first<{ one: number }>();
+  if (!owned) return { ok: true, deleted: false }; // idempotent: already gone, or never yours
+  // NB: no scheduled_reps — migration 0006 dropped that table when reps
+  // became read-time derivations. Naming it here would throw on every
+  // delete; harness/goals.check.mjs caught exactly that.
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE goal_outcomes SET goal_id = NULL WHERE goal_id = ?`).bind(goalId),
+    env.DB.prepare(`DELETE FROM check_ins WHERE goal_id = ?`).bind(goalId),
+    env.DB.prepare(`DELETE FROM protocol_steps WHERE goal_id = ?`).bind(goalId),
+    env.DB.prepare(`DELETE FROM protocols WHERE goal_id = ?`).bind(goalId),
+    env.DB.prepare(`DELETE FROM goal_members WHERE goal_id = ?`).bind(goalId),
+    env.DB.prepare(`DELETE FROM goals WHERE id = ? AND user_id = ?`).bind(goalId, userId),
+  ]);
+  return { ok: true, deleted: true };
+}
+
+/**
  * The plan ran its course. Distinct from abandoned: this is the goal ENDING,
  * not being dropped — the archive and the graduation moment tell them apart.
  * Idempotent, and deliberately not gated on the plan actually being over:
@@ -211,9 +291,10 @@ export async function completeGoal(env: Env, userId: string, goalId: string): Pr
 }
 
 /**
- * Only an ACTIVE goal can end. Without the status guard an abandoned goal
- * could be flipped to completed by a stale request, rewriting a decision the
- * user already made.
+ * Only a RUNNING goal can end — active, or paused (P4: a goal on ice is still
+ * droppable and still completable; refusing that would strand it). Without
+ * the status guard an abandoned goal could be flipped to completed by a stale
+ * request, rewriting a decision the user already made.
  */
 async function setStatus(
   env: Env, userId: string, goalId: string, status: 'completed' | 'abandoned',
@@ -221,8 +302,8 @@ async function setStatus(
   if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false };
   await env.DB
     .prepare(
-      `UPDATE goals SET status = ?, updated_at = datetime('now')
-       WHERE id = ? AND user_id = ? AND status = 'active'`,
+      `UPDATE goals SET status = ?, paused_at = NULL, updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status IN ('active', 'paused')`,
     )
     .bind(status, goalId, userId)
     .run();

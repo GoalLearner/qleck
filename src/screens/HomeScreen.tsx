@@ -31,9 +31,10 @@ import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
 import type { ProtocolPhase } from '../api/coachTypes';
 import { localDate } from '../api/device';
-import { celebrateDay, celebrateGoal, hapticCheck } from '../lib/celebrate';
+import { celebrateDay, celebrateGoal, celebratePlan, hapticCheck } from '../lib/celebrate';
+import { loadSeenMilestones, markMilestonesSeen } from '../lib/milestones';
 import {
-  allCheckIns, mergedMissedTwice, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type ActiveGoalLike, type CheckIn, type DayRep, type WeekDay, weekOf, weekdayName,
+  allCheckIns, freshMilestones, mergedMissedTwice, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type ActiveGoalLike, type CheckIn, type ReachedMilestone, reachedMilestones, type DayRep, type WeekDay, weekOf, weekdayName,
 } from '../lib/protocolTime';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -426,6 +427,87 @@ function MissedBanner() {
   );
 }
 
+/**
+ * P4 live milestones: the moment one is earned, not a footnote at graduation.
+ *
+ * On first run the currently-earned set is recorded SILENTLY — otherwise
+ * updating the app would throw a party for a milestone earned three weeks
+ * ago. After that, anything newly earned is celebrated once.
+ */
+function useMilestoneCelebration(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
+  const [pending, setPending] = useState<ReachedMilestone | null>(null);
+  const seenRef = useRef<string[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const seen = await loadSeenMilestones();
+      if (!alive) return;
+      if (seen.length === 0) {
+        // Nothing recorded yet: adopt whatever is already earned as history.
+        const earned = reachedMilestones(goals, byGoal).map(m => m.key);
+        seenRef.current = earned;
+        void markMilestonesSeen(earned);
+      } else {
+        seenRef.current = seen;
+      }
+    })();
+    return () => { alive = false; };
+    // Deliberately once: this is the seeding pass, not a subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (seenRef.current === null || pending) return;
+    const fresh = freshMilestones(goals, byGoal, seenRef.current);
+    if (fresh.length === 0) return;
+    const next = fresh[0];
+    seenRef.current = [...seenRef.current, next.key];
+    void markMilestonesSeen([next.key]);
+    setPending(next);
+    celebratePlan();
+  }, [goals, byGoal, pending]);
+
+  return { pending, dismiss: useCallback(() => setPending(null), []) };
+}
+
+function MilestoneCard({ hit, onDismiss }: { hit: ReachedMilestone; onDismiss: () => void }) {
+  return (
+    <Pop>
+      <View
+        style={{
+          backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.success,
+          borderRadius: 20, paddingHorizontal: 18, paddingVertical: 16, gap: 7,
+        }}
+      >
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1.5, color: colors.success }}>
+          MILESTONE — WEEK {hit.milestone.week}
+        </Text>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 21, lineHeight: 27, color: colors.ink }}>
+          {hit.milestone.title}
+        </Text>
+        <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 19.5, color: colors.inkSoft }}>
+          {hit.milestone.criteria}
+        </Text>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12, lineHeight: 18, color: colors.muted }}>
+          You earned this on {hit.goalTitle} — the week held.
+        </Text>
+        <Pressable
+          onPress={onDismiss}
+          style={{
+            alignSelf: 'flex-start', marginTop: 4, height: 38, paddingHorizontal: 18,
+            borderRadius: 19, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 12.5, color: colors.creamText }}>
+            Nice
+          </Text>
+        </Pressable>
+      </View>
+    </Pop>
+  );
+}
+
 /** P4 never-miss-twice: two scheduled days in a row passed unbanked. One
  *  miss is noise and gets the gentle banner above; two is the moment the
  *  habit is actually deciding, so this one is louder and hands back a rung —
@@ -710,6 +792,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
 }) {
   const { checkInStep, uncheckStep, profile } = useRally();
   const m = useTodayModel(goals, byGoal);
+  const milestone = useMilestoneCelebration(goals, byGoal);
   const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   const multi = m.perGoal.length > 1;
@@ -741,7 +824,8 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
       <WeekStrip days={m.strip} selected={m.today} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
 
       <View style={{ flex: 1, gap: 14, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 130 }}>
-        {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
+        {milestone.pending ? <MilestoneCard hit={milestone.pending} onDismiss={milestone.dismiss} /> : null}
+          {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
 
         {m.allDone && (
           <Pop>
@@ -871,6 +955,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
   const { checkInStep, uncheckStep, profile } = useRally();
   const navigation = useNavigation<any>();
   const m = useTodayModel(goals, byGoal);
+  const milestone = useMilestoneCelebration(goals, byGoal);
   const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   useCelebrateOnDone(m.allDone, celebrate);
@@ -911,6 +996,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
           </View>
         ) : (
         <View style={{ flex: 1, minWidth: 0, gap: 12 }}>
+          {milestone.pending ? <MilestoneCard hit={milestone.pending} onDismiss={milestone.dismiss} /> : null}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
 
           {m.allDone && (

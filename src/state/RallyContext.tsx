@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   abandonGoal, clearGoalOutbox, completeGoal, fetchFinishedGoals, fetchGoals, flushGoalOutbox,
-  graduateGoal, mintGoalId, pendingGoals, saveGoal, type RemoteGoal,
+  deleteGoal, graduateGoal, mintGoalId, pauseGoal, pendingGoals, resumeGoal, saveGoal, type RemoteGoal,
 } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
 import { getStoredIdentity, localDate, resetIdentity } from '../api/device';
@@ -39,6 +39,9 @@ export interface ActiveGoal {
   statement: string;
   durationWeeks: number;
   protocol: NonNullable<UserProfile['protocol']>;
+  /** 'active' | 'paused' for anything in the running list (P4). Absent on
+   *  goals cached by builds ≤16, which are all active by definition. */
+  status?: string;
 }
 
 // The funnel only knows what it actually asked for: the log-in path collects no
@@ -88,6 +91,8 @@ interface RallyState {
    *  still 'active' server-side: the ceremony waits for the user rather than a
    *  cron deciding on their behalf. */
   endedGoals: ActiveGoal[];
+  /** On ice (P4): schedules nothing, nudges nothing, keeps its place. */
+  pausedGoals: ActiveGoal[];
   /** The archive — completed or dropped, newest first. */
   finishedGoals: ActiveGoal[];
   checkInsByGoal: Record<string, CheckIn[]>;
@@ -96,6 +101,11 @@ interface RallyState {
   uncheckStep: (goalId: string, stepId: string) => void;
   // Explicit drop — the only way a goal ends now that creation never replaces.
   dropGoal: (goalId: string) => void;
+  /** P4: pause / resume. Resuming pays back the paused days server-side. */
+  pauseGoalById: (goalId: string) => Promise<void>;
+  resumeGoalById: (goalId: string) => Promise<void>;
+  /** P4: erase a goal and everything hanging off it. Nothing is archived. */
+  deleteGoalById: (goalId: string) => Promise<void>;
   /** Close out a finished plan: it moves to the archive and goes quiet. */
   completeGoalById: (goalId: string) => Promise<void>;
   /** Carry a finished plan forward — longer, or as a lighter maintenance goal. */
@@ -120,7 +130,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const toActive = (g: RemoteGoal): ActiveGoal => ({
     id: g.id, startedOn: g.started_on, statement: g.statement,
     durationWeeks: g.duration_weeks, protocol: g.protocol,
-    odds: g.success_probability ?? undefined,
+    odds: g.success_probability ?? undefined, status: g.status,
   });
 
   /** Re-read goals + their check-ins from the server. Called on launch and
@@ -264,14 +274,19 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
    * reps from it, or an ended plan reads as a permanent rest day.
    */
   const today = localDate();
+  // A paused goal schedules nothing and ends nothing: it is out of both lists
+  // until it resumes. Because NudgeManager runs off liveGoals, this is also
+  // what makes nudges go quiet on a paused goal (P4's "nudges cease on
+  // non-active state").
   const liveGoals = useMemo(
-    () => goals.filter(g => !planIsOver(g.startedOn, g.protocol.duration_weeks, today)),
+    () => goals.filter(g => g.status !== 'paused' && !planIsOver(g.startedOn, g.protocol.duration_weeks, today)),
     [goals, today],
   );
   const endedGoals = useMemo(
-    () => goals.filter(g => planIsOver(g.startedOn, g.protocol.duration_weeks, today)),
+    () => goals.filter(g => g.status !== 'paused' && planIsOver(g.startedOn, g.protocol.duration_weeks, today)),
     [goals, today],
   );
+  const pausedGoals = useMemo(() => goals.filter(g => g.status === 'paused'), [goals]);
 
   const completeGoalById = useCallback(async (goalId: string) => {
     setGoals(prev => prev.filter(g => g.id !== goalId));
@@ -304,6 +319,35 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     abandonGoal(goalId).catch(err => console.warn('goal drop deferred:', err));
   }, []);
 
+  /** P4: on ice — optimistic, then the server stamps the pause clock. */
+  const pauseGoalById = useCallback(async (goalId: string) => {
+    setGoals(prev => prev.map(g => (g.id === goalId ? { ...g, status: 'paused' } : g)));
+    await pauseGoal(goalId).catch(err => console.warn('pause deferred:', err));
+    // The server owns started_on across a pause/resume pair, so re-read
+    // rather than guessing at the shifted date locally.
+    await refresh().catch(() => {});
+  }, [refresh]);
+
+  const resumeGoalById = useCallback(async (goalId: string) => {
+    setGoals(prev => prev.map(g => (g.id === goalId ? { ...g, status: 'active' } : g)));
+    await resumeGoal(goalId).catch(err => console.warn('resume deferred:', err));
+    await refresh().catch(() => {});
+  }, [refresh]);
+
+  /** P4: erase it — the goal and every row hanging off it. Unlike dropGoal,
+   *  nothing survives in the archive. */
+  const deleteGoalById = useCallback(async (goalId: string) => {
+    setGoals(prev => prev.filter(g => g.id !== goalId));
+    setFinishedGoals(prev => prev.filter(g => g.id !== goalId));
+    setCheckInsByGoal(prev => {
+      const next = { ...prev };
+      delete next[goalId];
+      return next;
+    });
+    await deleteGoal(goalId);
+    await refresh().catch(() => {});
+  }, [refresh]);
+
   /** Logout: forget who this device is and everything cached about them.
    *  An anonymous device's token IS its account, so a lingering identity made
    *  every "new account" the previous one with a fresh name painted on it. */
@@ -328,12 +372,14 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<RallyState>(() => ({
     profile, currentUserId, applyOnboarding, setGoalPlan,
-    goals, liveGoals, endedGoals, finishedGoals,
+    goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
     checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
+    pauseGoalById, resumeGoalById, deleteGoalById,
     refreshGoals: refresh, signOut,
   }), [profile, currentUserId, applyOnboarding, setGoalPlan,
-    goals, liveGoals, endedGoals, finishedGoals,
-    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate, refresh, signOut]);
+    goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
+    pauseGoalById, resumeGoalById, deleteGoalById, refresh, signOut]);
 
   return <RallyContext.Provider value={value}>{children}</RallyContext.Provider>;
 }

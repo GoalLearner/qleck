@@ -169,6 +169,26 @@ export async function completeGoal(id: string): Promise<void> {
   if (!res.ok) throw new Error(`completeGoal failed (${res.status})`);
 }
 
+/** P4: put a goal on ice. The server stamps when, so resuming pays the days
+ *  back rather than letting the pause eat the plan's runway. */
+export async function pauseGoal(id: string): Promise<void> {
+  const res = await authed(`/goals/${id}/pause`, { method: 'POST' });
+  if (!res.ok) throw new Error(`pauseGoal failed (${res.status})`);
+}
+
+/** Back on — started_on moves forward by however long the pause lasted. */
+export async function resumeGoal(id: string): Promise<void> {
+  const res = await authed(`/goals/${id}/resume`, { method: 'POST' });
+  if (!res.ok) throw new Error(`resumeGoal failed (${res.status})`);
+}
+
+/** P4: erase a goal and everything hanging off it — check-ins, protocol
+ *  versions, steps. Unlike abandon, nothing is kept. Idempotent. */
+export async function deleteGoal(id: string): Promise<void> {
+  const res = await authed(`/goals/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteGoal failed (${res.status})`);
+}
+
 export interface RunSummaryPayload {
   banked: number;
   expected: number;

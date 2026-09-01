@@ -111,8 +111,8 @@ export const MANIFESTS: Record<Domain, ManifestField[]> = {
     // never counted" stays a legal answer — the reason already plans for it
     // (week one becomes the counting week).
     PF('current_baseline', true, 'measured current frequency/amount (cigarettes/day, pages/week, steps/day, hours scrolling) → taper or ramp math anchors here; if never counted, week one counts'),
-    F('context', true, 'for BREAKING a habit: when and where it mostly fires; for STARTING one: the part of the day it attaches to → replacement or slot design'),
-    F('past_attempts', true, 'past attempts at this change and how they ended → what the plan does differently'),
+    F('context', true, 'for BREAKING a habit: when and where it mostly fires; for STARTING one: the part of the day it attaches to → replacement or slot design', ['Mornings', 'Work breaks', 'Evenings at home', 'Social or stressful moments']),
+    F('past_attempts', true, 'past attempts at this change and how they ended → what the plan does differently', ['Never seriously tried', 'Quit for a while, slipped back', 'Cut down but never stopped', 'Tried a few times']),
     F('support_context', false, 'who knows / who is around it daily → social cost and environment design'),
   ],
   academic: [

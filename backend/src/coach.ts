@@ -587,10 +587,21 @@ export async function coachTurn(
     // never is.
     // Prefer a field the fallback can ask WELL: one with quick-picks, or a
     // precise field (which is legitimately chip-less — an exact figure must
-    // never be offered as buckets). A field with neither would produce a
-    // chip-less open question, which is the one shape the ergonomics bar
-    // rightly rejects, so we would rather let the model's wording stand.
-    const askable = missing.find(f => f.precise || (f.quickPicks?.length ?? 0) >= 2);
+    // never be offered as buckets).
+    //
+    // But "well" loses to "at all". This used to stop there and let the
+    // model's wording stand whenever no field had chips, on the theory that a
+    // chip-less open question is the one shape the ergonomics bar rejects.
+    // The theory weighed the wrong alternative: what actually shipped in that
+    // case was the DUPLICATE — quit-smoking asked "when and where do those 10
+    // cigarettes mostly happen?" and then "when and where do those 10
+    // cigarettes mostly fire during a typical day?", because habit_change's
+    // context and past_attempts both carry no quick-picks. A question the user
+    // can answer beats the same question twice, so the fallback now takes any
+    // missing field whose manifest question is not itself a repeat.
+    const fresh = (f: ManifestField) => !isRepeat(manifestQuestion(f));
+    const askable = missing.find(f => (f.precise || (f.quickPicks?.length ?? 0) >= 2) && fresh(f))
+      ?? missing.find(fresh);
     const target = askable ?? missing[0];
     let candidate = q;
     for (let attempt = 0; attempt < 2; attempt++) {

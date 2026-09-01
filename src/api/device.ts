@@ -147,13 +147,67 @@ export async function resetIdentity(): Promise<void> {
   await storeClear();
 }
 
+/* ── the server ended this session ──────────────────────────────────────── */
+
+/** Remembers that an ACCOUNT lived on this device after its identity is gone,
+ *  so the next launch opens the login screen instead of the welcome funnel. */
+const HINT_KEY = 'qleck-account-hint';
+
+const revokedListeners = new Set<() => void>();
+
+/** Subscribe to "the server ended this device's session". Returns an
+ *  unsubscribe. App routes to login; RallyContext drops the cached goals. */
+export function onSessionRevoked(listener: () => void): () => void {
+  revokedListeners.add(listener);
+  return () => { revokedListeners.delete(listener); };
+}
+
+/** Did an account live on this device whose session was ended for it? */
+export async function hadAccount(): Promise<boolean> {
+  try { return (await AsyncStorage.getItem(HINT_KEY)) === '1'; } catch { return false; }
+}
+
+/** Called on a real sign-in — the hint has served its purpose. */
+export async function clearAccountHint(): Promise<void> {
+  await AsyncStorage.removeItem(HINT_KEY).catch(() => {});
+}
+
+/**
+ * The refresh was refused: this device's session is genuinely over (a password
+ * reset elsewhere, a reuse revocation, an expired chain).
+ *
+ * The tokens have to go — they are dead and re-presenting them is what trips
+ * the theft trap. But simply forgetting everything, which is what this used to
+ * do, is the wrong answer: `getIdentity()` then registers a BRAND NEW
+ * anonymous device on the next call, so the person is dropped onto an empty
+ * Today with no goals and no explanation, exactly as if their account had been
+ * deleted. It has not been. Every goal and check-in is intact server-side
+ * under a user id they can still reach by signing in.
+ *
+ * So the session dies and the KNOWLEDGE of the account survives: the hint
+ * routes the next launch to the login screen, and the listeners let the
+ * running app drop there immediately rather than showing a blank Today until
+ * it is relaunched.
+ */
+async function endSession(current: DeviceIdentity): Promise<void> {
+  if (current.provider) await AsyncStorage.setItem(HINT_KEY, '1').catch(() => {});
+  await resetIdentity();
+  // The boot gate reads this flag; leaving it set would send the next launch
+  // straight back into the tabs with no identity behind them.
+  await AsyncStorage.removeItem('qleck-session').catch(() => {});
+  for (const listener of [...revokedListeners]) {
+    try { listener(); } catch { /* one bad listener must not stop the rest */ }
+  }
+}
+
 /* ── authed fetch: Bearer + one refresh retry on 401 ────────────────────── */
 
 let refreshInflight: Promise<DeviceIdentity | null> | null = null;
 
-/** Rotate the refresh token for a fresh session. Single-flight; a revoked or
- *  invalid refresh clears the identity (honest global logout — the next call
- *  starts a fresh anonymous device). */
+/** Rotate the refresh token for a fresh session. Single-flight; a refused
+ *  refresh ends the session through endSession, which keeps the knowledge that
+ *  an account exists so the app asks for a sign-in rather than silently
+ *  becoming a new anonymous device. */
 async function tryRefresh(current: DeviceIdentity): Promise<DeviceIdentity | null> {
   if (!current.refreshToken) return null;
   // A rotation already happened while THIS request was in flight, so the token
@@ -187,7 +241,7 @@ async function tryRefresh(current: DeviceIdentity): Promise<DeviceIdentity | nul
             return next;
           }
         } else if (res.status === 401) {
-          await resetIdentity();
+          await endSession(current);
         }
       } catch { /* transient network — the original 401 stands */ }
       return null;

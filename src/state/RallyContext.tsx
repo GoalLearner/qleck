@@ -6,7 +6,7 @@ import {
   shareGoal, unshareGoal, type RemoteGoal,
 } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
-import { getStoredIdentity, localDate, resetIdentity } from '../api/device';
+import { getStoredIdentity, localDate, onSessionRevoked, resetIdentity } from '../api/device';
 import { fetchMe, logoutServer, saveMe } from '../api/account';
 import { resetDeviceId } from '../api/coach';
 import { planIsOver, planStats, type CheckIn, type PauseSpan } from '../lib/protocolTime';
@@ -394,6 +394,23 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     await resetIdentity();
     resetDeviceId();
   }, []);
+
+  // The server ended this device's session while the app was running. The
+  // identity is already gone (device.ts saw the refusal); this drops the data
+  // it was showing, so the next sign-in cannot flash the previous account's
+  // goals — which matters most when the next sign-in is somebody else.
+  useEffect(() => onSessionRevoked(() => {
+    setGoals([]);
+    setFinishedGoals([]);
+    setCheckInsByGoal({});
+    setProfile(DEFAULT_PROFILE);
+    setCurrentUserId(null);
+    void AsyncStorage.multiRemove(
+      ['qleck-goals', 'qleck-profile', 'qleck-checkin-outbox', 'qleck-checkins'],
+    ).catch(() => {});
+    void clearGoalOutbox();
+    resetDeviceId();
+  }), []);
 
   const value = useMemo<RallyState>(() => ({
     profile, currentUserId, applyOnboarding, setGoalPlan,

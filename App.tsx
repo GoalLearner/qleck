@@ -32,7 +32,7 @@ import NewGoalScreen from './src/screens/NewGoalScreen';
 import OnboardingFlow, { type OnbScreen } from './src/onboarding/OnboardingFlow';
 import ProfileScreen from './src/screens/ProfileScreen';
 import { fetchMe } from './src/api/account';
-import { getStoredIdentity } from './src/api/device';
+import { clearAccountHint, getStoredIdentity, hadAccount, onSessionRevoked } from './src/api/device';
 import { installErrorReporting } from './src/api/errors';
 import NudgeManager from './src/components/NudgeManager';
 // Rally-era social surfaces (Plans/Streaks/Create/Friends/Event/Challenge
@@ -99,13 +99,28 @@ function AppShell() {
         if (identity?.provider) {
           const me = await fetchMe().catch(() => null);
           setResumeScreen(me && !me.displayName ? 'profile' : 'login');
+        } else if (!identity && (await hadAccount())) {
+          // The server ended this device's session (a password reset
+          // elsewhere, a reuse revocation) and the identity is gone. An
+          // account still exists though, so open at LOGIN rather than the
+          // welcome funnel — the goals are all still there behind it.
+          setResumeScreen('login');
         }
       } catch { /* fresh funnel from the top */ }
       setLoggedIn(false);
     })();
   }, []);
-  const logIn = () => { setLoggedIn(true); setResumeScreen(undefined); AsyncStorage.setItem('qleck-session', '1').catch(() => {}); };
+  const logIn = () => {
+    setLoggedIn(true);
+    setResumeScreen(undefined);
+    AsyncStorage.setItem('qleck-session', '1').catch(() => {});
+    void clearAccountHint();
+  };
   const logOut = () => { setLoggedIn(false); setResumeScreen('login'); AsyncStorage.removeItem('qleck-session').catch(() => {}); };
+  // A session the server ended mid-use drops straight to the login screen.
+  // Without this the tabs stay mounted over a dead identity until the next
+  // launch, every call 401ing behind them.
+  useEffect(() => onSessionRevoked(() => { logOut(); }), []);
   // Keys are the family names every style refers to (src/theme.ts fonts.*),
   // so they must not be renamed.
   const [fontsLoaded, fontError] = useFonts({

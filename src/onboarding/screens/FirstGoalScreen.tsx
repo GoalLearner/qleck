@@ -7,7 +7,7 @@
 // The canvas' device frame + flow-map rail are mockup chrome (not ported);
 // its fake routes are replaced by the real pipeline via useCoachFlow.
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Keyboard, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
@@ -1623,6 +1623,17 @@ export default function FirstGoalScreen({
   // reviews it instead of authoring one. Open = the plan box is showing;
   // an open-but-empty box still takes the coached lane.
   const [planOpen, setPlanOpen] = useState(false);
+  // The stage is centred in a flex:1 box. When the keyboard takes half the
+  // screen that box shrinks, and centred content that no longer fits overflows
+  // in BOTH directions — so the title climbs up under the status bar and the
+  // Qoach row collides with the subtitle. Top-aligning while the keyboard is up
+  // makes the overflow fall off the bottom instead, where nothing is reading.
+  const [kbUp, setKbUp] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKbUp(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const [planDraft, setPlanDraft] = useState('');
   const [planFocused, setPlanFocused] = useState(false);
 
@@ -1650,9 +1661,9 @@ export default function FirstGoalScreen({
           </View>
         </View>
 
-        {/* With the plan box open the stage outgrows small screens — top-align
-            so nothing climbs under the header; centered otherwise. */}
-        <View style={{ flex: 1, justifyContent: planOpen ? 'flex-start' : 'center', paddingTop: planOpen ? 14 : 0 }}>
+        {/* Top-align whenever the stage outgrows the space it has — with the
+            plan box open, or with the keyboard up. Centred only when it fits. */}
+        <View style={{ flex: 1, justifyContent: planOpen || kbUp ? 'flex-start' : 'center', paddingTop: planOpen || kbUp ? 14 : 0 }}>
           <Text style={{ fontFamily: nightFonts.display, fontSize: planOpen ? 27 : 34, lineHeight: planOpen ? 31 : 38, color: night.text, textAlign: 'center', marginBottom: 12 }}>
             What do you want to <Text style={{ color: night.accent }}>pull off?</Text>
           </Text>

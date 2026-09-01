@@ -381,7 +381,7 @@ function WitnessRow({ shared, onShare, onStop }: {
               onPress={send}
               style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 12.5, color: colors.creamText }}>
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 12.5, color: colors.bg }}>
                 {copied ? 'Copied' : Platform.OS === 'web' ? 'Copy link' : 'Send it'}
               </Text>
             </Pressable>

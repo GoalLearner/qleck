@@ -53,11 +53,26 @@ function PermCard({
 export default function PermissionsScreen({ flow }: { flow: OnboardingFlow }) {
   return (
     <Screen>
-      <Title style={{ marginBottom: 8 }}>Two quick yeses</Title>
+      <Title style={{ marginBottom: 8 }}>One quick yes</Title>
       <Sub style={{ fontSize: 14.5, lineHeight: 21.75, marginBottom: 22 }}>
-        Both optional. Both make Qleck roughly 100% better.
+        Optional, and you can change it any time.
       </Sub>
 
+      {/* Two cards used to live here, and both described things that do not
+          happen (2026-09-01):
+
+          "Cheer alerts when friends hype your wins" is Rally-era copy for the
+          social surfaces, which have been dormant since 2026-08-24 —
+          DEMO_ENABLED is false and the routes are gone. The nudge half is
+          real, so the body now says only what the nudges actually do.
+
+          "Motion & Fitness — auto-count steps" was worse: there is NO step
+          reading anywhere in the app. No Pedometer, no expo-sensors, no
+          HealthKit — step import is a Phase 3 item that has not been built.
+          Asking for a permission the app cannot use misleads the user and is
+          a plausible App Review rejection on its own. The card is removed
+          rather than reworded; flow.permSteps still exists, so it comes back
+          the day the import lands. */}
       <View style={{ gap: 12 }}>
         <PermCard
           glyph="!"
@@ -65,19 +80,9 @@ export default function PermissionsScreen({ flow }: { flow: OnboardingFlow }) {
           glyphBg="rgba(139,92,246,0.18)"
           glyphBorder="rgba(139,92,246,0.5)"
           title="Notifications"
-          body="Cheer alerts when friends hype your wins — and a nudge when a deadline sneaks up."
+          body="A morning note with the day's reps, and an evening one only if your streak is about to break."
           on={flow.permNotif}
           onToggle={flow.togglePermNotif}
-        />
-        <PermCard
-          glyph="↟"
-          glyphColor={night.accent}
-          glyphBg="rgba(43,227,128,0.15)"
-          glyphBorder={night.accentBorder}
-          title="Motion & Fitness"
-          body="Auto-count steps for walking goals. No iPhone step data? You can log manually too."
-          on={flow.permSteps}
-          onToggle={flow.togglePermSteps}
         />
       </View>
 

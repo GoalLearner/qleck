@@ -510,7 +510,7 @@ function MilestoneCard({ hit, onDismiss }: { hit: ReachedMilestone; onDismiss: (
             borderRadius: 19, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 12.5, color: colors.creamText }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 12.5, color: colors.bg }}>
             Nice
           </Text>
         </Pressable>

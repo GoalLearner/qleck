@@ -122,6 +122,15 @@ a full typecheck. Backend changes additionally need `cd backend` +
       active", indistinguishable from a link that never existed.
 - [ ] Sharing again gives a NEW link; the old one stays dead.
 
+- [ ] **The offer.** On a goal with a 3-day streak, no witness yet and not
+      paused, Today shows "N days. Someone should see this" ONCE. Tapping
+      **Let someone watch** shares and hands back the link; **Not now**
+      dismisses. Either way it must NOT return after a relaunch — asking twice
+      is the failure this is designed against.
+- [ ] The offer never appears on a goal already being watched, on a paused
+      goal, or under 3 days, and never at the same time as a milestone card
+      (the milestone wins).
+
 ## 9. Adjust, graduate, archive
 
 - [ ] Adjust proposes a diff before anything is written; **Keep my current

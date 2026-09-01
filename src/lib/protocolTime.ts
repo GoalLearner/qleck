@@ -266,6 +266,45 @@ export function streakDays(today: string, checkIns: CheckIn[]): number {
   return streak;
 }
 
+/** Days of unbroken check-ins before offering a witness is worth doing. Three
+ *  is the first point a streak feels like a streak rather than a good day. */
+export const WITNESS_STREAK_DAYS = 3;
+
+export interface WitnessOfferable {
+  id: string;
+  statement: string;
+  status?: string;
+  shareToken?: string | null;
+}
+
+/**
+ * The first goal worth offering a witness for, or null (owner call
+ * 2026-09-01). Today asks ONCE per goal, after a real streak exists — nobody
+ * wants a witness on day one, they want one when there is something worth
+ * showing. Deliberately conservative: an offer that repeats reads as nagging,
+ * and one that arrives at zero reads as noise.
+ *
+ * Pure: the caller supplies today and the already-asked set, so this never
+ * reads the clock or storage and stays fixture-testable.
+ */
+export function witnessCandidate<T extends WitnessOfferable>(
+  goals: T[],
+  byGoal: Record<string, CheckIn[]>,
+  offered: string[],
+  today: string,
+): { goal: T; streak: number } | null {
+  const asked = new Set(offered);
+  for (const goal of goals) {
+    if (asked.has(goal.id)) continue;
+    if (goal.shareToken) continue;   // already watched — the job is done
+    if (goal.status === 'paused') continue;
+    const streak = streakDays(today, byGoal[goal.id] ?? []);
+    if (streak < WITNESS_STREAK_DAYS) continue;
+    return { goal, streak };
+  }
+  return null;
+}
+
 /** Yesterday had a pinned rep and no check-in at all → the gentle banner. */
 export function missedYesterday(
   protocol: Protocol, startedOn: string, today: string, checkIns: CheckIn[],

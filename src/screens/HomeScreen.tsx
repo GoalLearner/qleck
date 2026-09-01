@@ -19,7 +19,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 // bare `TextInput.default` reference for the plain named import in THIS
 // module (and only this one), which threw at runtime. The alias sidesteps
 // whatever the rewrite trips on.
-import { Animated, Dimensions, Platform, Pressable, ScrollView, Text, TextInput as RNTextInput, View, useWindowDimensions } from 'react-native';
+import { Animated, Dimensions, Platform, Pressable, ScrollView, Share, Text, TextInput as RNTextInput, View, useWindowDimensions } from 'react-native';
 import { useAppearance } from '../state/ThemeContext';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
@@ -33,8 +33,9 @@ import type { ProtocolPhase } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { celebrateDay, celebrateGoal, celebratePlan, hapticCheck } from '../lib/celebrate';
 import { loadSeenMilestones, markMilestonesSeen } from '../lib/milestones';
+import { loadOfferedWitness, markWitnessOffered } from '../lib/witnessOffer';
 import {
-  allCheckIns, freshMilestones, mergedMissedTwice, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type ActiveGoalLike, type CheckIn, type ReachedMilestone, reachedMilestones, type DayRep, type WeekDay, weekOf, weekdayName,
+  allCheckIns, freshMilestones, witnessCandidate, mergedMissedTwice, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type ActiveGoalLike, type CheckIn, type ReachedMilestone, reachedMilestones, type DayRep, type WeekDay, weekOf, weekdayName,
 } from '../lib/protocolTime';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -519,6 +520,148 @@ function MilestoneCard({ hit, onDismiss }: { hit: ReachedMilestone; onDismiss: (
   );
 }
 
+/**
+ * The witness offer (owner call 2026-09-01): once a goal has a real streak,
+ * Today asks — once — whether someone should see it.
+ *
+ * Placement was the whole problem. The link has existed since P4.5 but lived
+ * at the bottom of the goal detail, where the owner who commissioned it did
+ * not know it was there. Moving it above the plan made it findable; asking
+ * here makes it timely, which is the half that matters. Nobody wants a witness
+ * on day one.
+ *
+ * The rule (witnessCandidate, protocolTime.ts) keeps this rare: a real streak,
+ * never for a goal already watched or paused, and once per goal for good —
+ * accepting and declining both settle it. This is the only place Qleck asks
+ * the user for a social act, so it gets one chance and then stays quiet.
+ */
+function useWitnessOffer(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
+  const { shareGoalById } = useRally();
+  const [offered, setOffered] = useState<string[] | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void loadOfferedWitness().then(list => { if (alive) setOffered(list); });
+    return () => { alive = false; };
+  }, []);
+
+  // null while the asked-set is still loading: showing the card before we know
+  // what has already been asked is how you ask twice.
+  const candidate = offered === null ? null : witnessCandidate(goals, byGoal, offered, localDate());
+
+  const settle = useCallback((goalId: string) => {
+    setOffered(prev => (prev && prev.includes(goalId) ? prev : [...(prev ?? []), goalId]));
+    void markWitnessOffered(goalId);
+  }, []);
+
+  const accept = useCallback(async (goalId: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setLink(await shareGoalById(goalId));
+      settle(goalId);
+    } catch {
+      // Offline: leave the card up rather than burning the one offer on a
+      // failure the user did not cause.
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, settle, shareGoalById]);
+
+  const send = useCallback(async () => {
+    if (!link) return;
+    if (Platform.OS === 'web') {
+      try { await navigator.clipboard.writeText(link); } catch { /* on screen to copy by hand */ }
+      return;
+    }
+    await Share.share({ message: link }).catch(() => {});
+  }, [link]);
+
+  return {
+    candidate: link ? null : candidate,
+    link,
+    busy,
+    accept,
+    send,
+    decline: settle,
+    close: useCallback(() => setLink(null), []),
+  };
+}
+
+function WitnessOfferCard({ offer }: { offer: ReturnType<typeof useWitnessOffer> }) {
+  const { candidate, link } = offer;
+  if (link) {
+    return (
+      <Pop>
+        <View style={{ backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.success, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 16, gap: 7 }}>
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1.5, color: colors.success }}>
+            A WITNESS
+          </Text>
+          <Text style={{ fontFamily: fonts.serif, fontSize: 21, lineHeight: 27, color: colors.ink }}>
+            Send them the link.
+          </Text>
+          <Text selectable numberOfLines={2} style={{ fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 16, color: colors.muted }}>
+            {link}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+            <Pressable
+              onPress={offer.send}
+              style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 12.5, color: colors.bg }}>
+                {Platform.OS === 'web' ? 'Copy link' : 'Send it'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={offer.close}
+              style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: colors.ink }}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Pop>
+    );
+  }
+  if (!candidate) return null;
+  const { goal, streak } = candidate;
+  return (
+    <Pop>
+      <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 16, gap: 7 }}>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 10, letterSpacing: 1.5, color: colors.sectionLabel }}>
+          A WITNESS
+        </Text>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 21, lineHeight: 27, color: colors.ink }}>
+          {streak} days. Someone should see this.
+        </Text>
+        <Text style={{ fontFamily: fonts.regular, fontSize: 13, lineHeight: 19.5, color: colors.inkSoft }}>
+          Give one person a link and they can follow this streak — never a day you
+          missed, never what you typed, and only this goal. You can stop any time.
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+          <Pressable
+            onPress={() => void offer.accept(goal.id)}
+            disabled={offer.busy}
+            style={{ height: 38, paddingHorizontal: 18, borderRadius: 19, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', opacity: offer.busy ? 0.6 : 1 }}
+          >
+            <Text style={{ fontFamily: fonts.extrabold, fontSize: 12.5, color: colors.bg }}>
+              {offer.busy ? 'One sec…' : 'Let someone watch'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => offer.decline(goal.id)}
+            style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: colors.muted }}>Not now</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Pop>
+  );
+}
+
 /** P4 never-miss-twice: two scheduled days in a row passed unbanked. One
  *  miss is noise and gets the gentle banner above; two is the moment the
  *  habit is actually deciding, so this one is louder and hands back a rung —
@@ -804,6 +947,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
   const { checkInStep, uncheckStep, profile } = useRally();
   const m = useTodayModel(goals, byGoal);
   const milestone = useMilestoneCelebration(goals, byGoal);
+  const witness = useWitnessOffer(goals, byGoal);
   const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   const multi = m.perGoal.length > 1;
@@ -835,7 +979,9 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
       <WeekStrip days={m.strip} selected={m.today} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
 
       <View style={{ flex: 1, gap: 14, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 130 }}>
-        {milestone.pending ? <MilestoneCard hit={milestone.pending} onDismiss={milestone.dismiss} /> : null}
+        {milestone.pending
+            ? <MilestoneCard hit={milestone.pending} onDismiss={milestone.dismiss} />
+            : <WitnessOfferCard offer={witness} />}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
 
         {m.allDone && (
@@ -967,6 +1113,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
   const navigation = useNavigation<any>();
   const m = useTodayModel(goals, byGoal);
   const milestone = useMilestoneCelebration(goals, byGoal);
+  const witness = useWitnessOffer(goals, byGoal);
   const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   useCelebrateOnDone(m.allDone, celebrate);
@@ -1007,7 +1154,9 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
           </View>
         ) : (
         <View style={{ flex: 1, minWidth: 0, gap: 12 }}>
-          {milestone.pending ? <MilestoneCard hit={milestone.pending} onDismiss={milestone.dismiss} /> : null}
+          {milestone.pending
+            ? <MilestoneCard hit={milestone.pending} onDismiss={milestone.dismiss} />
+            : <WitnessOfferCard offer={witness} />}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
 
           {m.allDone && (

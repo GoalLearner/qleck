@@ -7,7 +7,7 @@ import {
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
 import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
-import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain } from './manifests';
+import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
   type ScenarioRun, type SimulationState, type TemplateCtx,
@@ -398,6 +398,33 @@ async function auditReadiness(
   }
 }
 
+/**
+ * A question built from the domain manifest, for when the model has twice
+ * failed to ask anything new (see the repeat guard).
+ *
+ * Manifest reasons are written as "what → why" — "current bodyweight →
+ * protein target, deficit size, weekly change rate" — which is exactly the
+ * shape a question needs, so the two halves split cleanly into the ask and
+ * its caption. Plainer than the coach's own voice, and deliberately so: this
+ * only ever runs instead of asking the same thing a third time.
+ */
+function manifestQuestion(f: ManifestField): NonNullable<CoachTurnResult['question']> {
+  const [what, why] = f.reason.split('→').map(s => s.trim());
+  return {
+    // A precise field says so out loud. It ships no chips by design, and a
+    // chip-less question that does not read as an exact ask is exactly the
+    // shape the ergonomics bar rejects — rightly, because to the user it
+    // looks like the coach just forgot to offer options.
+    question: f.precise
+      ? `One more thing, and it needs a real number — ${what}?`
+      : `One more thing before I can price this honestly — ${what}?`,
+    why_it_matters: why ? `It sets ${why}.` : 'It changes what the plan can honestly promise.',
+    // Precise fields carry no quick-picks by design (v27): a bucket chip on a
+    // number the plan does arithmetic with poisons everything downstream.
+    suggested_answers: f.quickPicks ?? [],
+  };
+}
+
 /** Step 2 — one coach turn: either a clarifying question or the verdict. */
 export async function coachTurn(
   env: Env,
@@ -542,40 +569,71 @@ export async function coachTurn(
   if (result.toolName === ASK_TOOL.name) {
     const q = result.toolInput as CoachTurnResult['question'];
     if (!isRepeat(q ?? null)) return { type: 'question', question: q };
-    // Repeat guard: the model re-asked what was just answered (or dodged).
-    // One correction attempt — a DIFFERENT question or a verdict on defaults.
-    // Below the floor the escape hatch closes: "or issue the verdict" would
-    // punch straight through the minimum, so the correction demands a
-    // DIFFERENT question instead of offering a way out.
-    const retry = await callModel(env, { ...meta, kind: 'coach_turn' }, {
-      model: modelsFor(env).coach,
-      system: COACH_SYSTEM,
-      messages: [
-        ...coachMessages(session, pendingAnswer),
-        {
-          role: 'user',
-          content: forceAsk
-            ? `[repeat guard] You have already asked: ${priors.map(x => `"${x}"`).join(' / ')} — and the user's ` +
-              `replies stand, even if vague. Do NOT ask any of them again in any wording. Ask about a DIFFERENT ` +
-              `missing item: pick a dimension from the information-coverage list this conversation has not ` +
-              `covered yet.`
-            : `[repeat guard] You already asked: "${prevQ}" — and the user's reply stands, even if it was vague. ` +
-              `Do NOT ask it again in any wording. Either ask about a DIFFERENT missing item, or issue the verdict ` +
-              `now using sensible defaults for anything unanswered.`,
-        },
-      ],
-      tools: forceAsk ? [ASK_TOOL] : [ASK_TOOL, VERDICT_TOOL],
-      toolChoice: forceAsk ? { type: 'tool', name: ASK_TOOL.name } : { type: 'any' },
-      maxTokens: 2048,
-    });
-    if (retry.toolName === ASK_TOOL.name) {
-      const rq = retry.toolInput as CoachTurnResult['question'];
-      if (!isRepeat(rq ?? null)) return { type: 'question', question: rq };
-      // Still circling. Above the floor we cut losses and take the verdict;
-      // below it we would rather ship the repeated question than break the
-      // minimum — the floor is the point of the feature, and a duplicate is a
-      // quality problem, not a correctness one.
-      if (forceAsk) return { type: 'question', question: rq ?? q };
+
+    // ── Repeat guard ────────────────────────────────────────────────────
+    // This used to be ONE retry, and when that retry also repeated we
+    // shipped the duplicate anyway (reasoning: better a repeat than break
+    // the question floor). The AI ledger showed what that actually costs —
+    // roughly one session in ten, including one that asked "have you tried
+    // to pull your bedtime back before?" at Q1, Q2 AND Q4 at similarity
+    // 1.00, and another that asked bodyweight four times across two pairs.
+    // A user who is asked the same thing three times concludes the product
+    // is broken, and they are not wrong.
+    //
+    // So: two retries, the second NAMING the exact field to ask about, and
+    // if the model still cannot find anything new, a question built from
+    // the domain manifest. Plainer wording than the coach would write, but
+    // it is always about something genuinely unasked — which a third repeat
+    // never is.
+    // Prefer a field the fallback can ask WELL: one with quick-picks, or a
+    // precise field (which is legitimately chip-less — an exact figure must
+    // never be offered as buckets). A field with neither would produce a
+    // chip-less open question, which is the one shape the ergonomics bar
+    // rightly rejects, so we would rather let the model's wording stand.
+    const askable = missing.find(f => f.precise || (f.quickPicks?.length ?? 0) >= 2);
+    const target = askable ?? missing[0];
+    let candidate = q;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const named = attempt === 1 && target
+        ? ` Ask specifically about this and nothing else: ${fieldForPrompt(target)}`
+        : '';
+      const retry = await callModel(env, { ...meta, kind: 'coach_turn', ...(attempt > 0 ? { attempt } : {}) }, {
+        model: modelsFor(env).coach,
+        system: COACH_SYSTEM,
+        messages: [
+          ...coachMessages(session, pendingAnswer),
+          {
+            role: 'user',
+            content: forceAsk
+              ? `[repeat guard] You have already asked: ${priors.map(x => `"${x}"`).join(' / ')} — and the user's ` +
+                `replies stand, even if vague. Do NOT ask any of them again in any wording, and do not merely ` +
+                `rephrase one. Ask about a DIFFERENT missing item: pick a dimension from the information-coverage ` +
+                `list this conversation has not covered yet.${named}`
+              : `[repeat guard] You already asked: "${prevQ}" — and the user's reply stands, even if it was vague. ` +
+                `Do NOT ask it again in any wording. Either ask about a DIFFERENT missing item, or issue the verdict ` +
+                `now using sensible defaults for anything unanswered.${named}`,
+          },
+        ],
+        tools: forceAsk ? [ASK_TOOL] : [ASK_TOOL, VERDICT_TOOL],
+        toolChoice: forceAsk ? { type: 'tool', name: ASK_TOOL.name } : { type: 'any' },
+        maxTokens: 2048,
+      });
+      if (retry.toolName === VERDICT_TOOL.name) {
+        const rv = retry.toolInput as Verdict;
+        if (rv.decision === 'declined') return { type: 'refused', refusal: { category: 'declined', message: rv.assessment } };
+        return { type: 'verdict', verdict: rv };
+      }
+      if (retry.toolName === ASK_TOOL.name) {
+        const rq = retry.toolInput as CoachTurnResult['question'];
+        if (rq && !isRepeat(rq)) return { type: 'question', question: rq };
+        candidate = rq ?? candidate;
+      }
+    }
+
+    // Still circling after two corrections.
+    if (!forceAsk) {
+      // Above the floor with nothing new to ask, the verdict IS the honest
+      // next move — the leftovers become explicit assumptions on the plan.
       const forced = await callModel(env, { ...meta, kind: 'coach_turn' }, {
         model: modelsFor(env).coach,
         system: COACH_SYSTEM,
@@ -595,12 +653,13 @@ export async function coachTurn(
       }
       return { type: 'error', error: 'repeat guard could not resolve' };
     }
-    if (retry.toolName === VERDICT_TOOL.name) {
-      const rv = retry.toolInput as Verdict;
-      if (rv.decision === 'declined') return { type: 'refused', refusal: { category: 'declined', message: rv.assessment } };
-      return { type: 'verdict', verdict: rv };
-    }
-    return { type: 'question', question: q }; // guard failed open: original question
+    // Below the floor the verdict is not available, so the manifest asks in
+    // the model's place rather than letting a duplicate through.
+    if (askable) return { type: 'question', question: manifestQuestion(askable) };
+    // Nothing askable left in the manifest either: ship the freshest candidate
+    // rather than stalling. This is the guard failing open, and it is the only
+    // path that can still deliver a repeat.
+    return { type: 'question', question: candidate ?? q };
   }
   if (result.toolName === VERDICT_TOOL.name) {
     let verdict = result.toolInput as Verdict;

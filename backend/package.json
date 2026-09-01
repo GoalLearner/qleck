@@ -7,14 +7,15 @@
     "typecheck": "tsc --noEmit",
     "migrate:local": "wrangler d1 migrations apply qleck --local",
     "migrate:remote": "wrangler d1 migrations apply qleck --remote",
-    "harness": "node harness/run.mjs && node harness/outcomes.check.mjs",
+    "harness": "node harness/exactask.check.mjs && node harness/run.mjs && node harness/outcomes.check.mjs",
     "dev:watch": "node dev-supervisor.mjs",
     "calibrate": "node harness/calibration.mjs",
     "check:apple": "node harness/apple.check.mjs",
     "check:auth": "node harness/auth.check.mjs",
     "check:goals": "node harness/goals.check.mjs",
     "check:witness": "node harness/witness.check.mjs",
-    "check:purge": "node harness/purge.check.mjs"
+    "check:purge": "node harness/purge.check.mjs",
+    "check:exactask": "node harness/exactask.check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest"

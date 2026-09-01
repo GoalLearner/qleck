@@ -101,7 +101,16 @@ export const MANIFESTS: Record<Domain, ManifestField[]> = {
     F('schedule_windows', false, 'free evenings/weekends → when reps can be scheduled'),
   ],
   habit_change: [
-    F('current_baseline', true, 'measured current frequency/amount (cigarettes/day, steps/day, hours scrolling) → taper or ramp math anchors here; if never counted, week one counts'),
+    // PRECISE (was F, 2026-09-01): this field's own reason says "measured"
+    // and "taper or ramp math anchors here" — which is the definition of an
+    // exact-figure field. A taper from a bucketed "10-20 a day" inherits the
+    // bucket's slop in every week's target, which is v24's sin exactly. It
+    // also had no quickPicks, so the coach was asking chip-less baseline
+    // questions that read as lazy rather than as deliberate exact asks;
+    // marking it precise makes the intent explicit on both sides. "I've
+    // never counted" stays a legal answer — the reason already plans for it
+    // (week one becomes the counting week).
+    PF('current_baseline', true, 'measured current frequency/amount (cigarettes/day, pages/week, steps/day, hours scrolling) → taper or ramp math anchors here; if never counted, week one counts'),
     F('context', true, 'for BREAKING a habit: when and where it mostly fires; for STARTING one: the part of the day it attaches to → replacement or slot design'),
     F('past_attempts', true, 'past attempts at this change and how they ended → what the plan does differently'),
     F('support_context', false, 'who knows / who is around it daily → social cost and environment design'),

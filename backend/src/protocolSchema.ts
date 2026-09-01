@@ -190,6 +190,43 @@ export const PROTOCOL_TOOL_SCHEMA = {
                 },
                 duration_minutes: { type: 'number', description: "REQUIRED when kind is 'duration'; omit otherwise." },
                 details: { type: 'string' },
+                how_to: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['gist', 'why', 'sections', 'counts_as_done'],
+                  description: "REQUIRED on every step of the FIRST phase; welcome on later phases when the rep genuinely needs instructions. The rep as a how-to instead of a paragraph. Write it for someone standing there about to do the thing.",
+                  properties: {
+                    gist: {
+                      type: 'string',
+                      description: 'ONE line, under 90 characters, shown in the list. The shortest true summary of what to do — not a teaser, not the first sentence of details.',
+                    },
+                    why: {
+                      type: 'string',
+                      description: 'One or two sentences: why this rep is in THIS plan, tied to their goal. The first thing they read when they open it.',
+                    },
+                    sections: {
+                      type: 'array',
+                      description: '2-4 sections. Each has a SHORT heading (1-3 words, e.g. "The week", "Before working sets", "The rule", "The target") and EITHER body OR items, never both.',
+                      items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['heading'],
+                        properties: {
+                          heading: { type: 'string', description: '1-3 words. Sentence case; the app upper-cases it.' },
+                          body: { type: 'string', description: 'Prose for this section. Use INSTEAD of items.' },
+                          items: {
+                            type: 'array', items: { type: 'string' },
+                            description: 'A list (days of the week, an ordered routine). 2-8 short entries. Use INSTEAD of body.',
+                          },
+                        },
+                      },
+                    },
+                    counts_as_done: {
+                      type: 'string',
+                      description: 'What settles "have I done it?" in one line. The rep must never be ambiguous at 10pm.',
+                    },
+                  },
+                },
                 derived_from: {
                   type: 'array', items: { type: 'string' },
                   description: "REQUIRED whenever this step carries a numeric target (quantity.amount > 0 or duration_minutes): the collected answer keys the number derives from, or ['goal_text'] when the goal states it, or ['standard_practice'] for domain-standard personal-data-free prescriptions.",
@@ -443,6 +480,60 @@ const CONDITIONAL_RE = new RegExp(
  *    repair pass; HERE they must equal them, and per_week must equal the
  *    session's day count (<= sessions/week, no floating quota)
  */
+/**
+ * The how-to contract (design handoff turn 2, 2026-09-01).
+ *
+ * Phase one is REQUIRED because it is the only phase a new user reads — the
+ * plan lands, they open the first rep, and that is where the paragraph-blob
+ * problem actually bit. Later phases are optional on purpose: they cost
+ * generation tokens for screens most users reach weeks later, and the sheet
+ * falls back to `details` there without looking broken.
+ *
+ * The shape rules exist because a malformed how_to renders WORSE than none:
+ * a gist longer than the row can show is the wall of text again, and a section
+ * carrying both body and items renders twice.
+ */
+export function howToErrors(p: Protocol): string[] {
+  const errs: string[] = [];
+  const phases = p.phases ?? [];
+  phases.forEach((phase, pi) => {
+    for (const st of phase.steps ?? []) {
+      const how = st.how_to;
+      if (!how) {
+        // Only the first phase is compulsory.
+        if (pi === 0) errs.push(`step "${st.title}" is in the first phase and needs a how_to`);
+        continue;
+      }
+      const where = `step "${st.title}" how_to`;
+      if (!how.gist?.trim()) errs.push(`${where}: gist is empty`);
+      // The row clamps to two lines; a gist past ~90 chars is truncated there,
+      // which is the exact problem this feature exists to remove.
+      else if (how.gist.length > 100) errs.push(`${where}: gist is ${how.gist.length} chars, must be under 100`);
+      else if (st.details && how.gist.trim() === st.details.trim()) {
+        errs.push(`${where}: gist just repeats details — it must be shorter`);
+      }
+      if (!how.why?.trim()) errs.push(`${where}: why is empty`);
+      if (!how.counts_as_done?.trim()) errs.push(`${where}: counts_as_done is empty`);
+      const sections = how.sections ?? [];
+      if (sections.length < 2 || sections.length > 4) {
+        errs.push(`${where}: has ${sections.length} sections, must be 2-4`);
+      }
+      sections.forEach((sec, si) => {
+        const at = `${where} section ${si + 1}`;
+        if (!sec.heading?.trim()) errs.push(`${at}: heading is empty`);
+        const hasBody = !!sec.body?.trim();
+        const hasItems = (sec.items?.length ?? 0) > 0;
+        if (hasBody && hasItems) errs.push(`${at}: has both body and items — use one`);
+        if (!hasBody && !hasItems) errs.push(`${at}: has neither body nor items`);
+        if (hasItems && (sec.items!.length < 2 || sec.items!.length > 8)) {
+          errs.push(`${at}: has ${sec.items!.length} items, must be 2-8`);
+        }
+      });
+    }
+  });
+  return errs;
+}
+
 export function sessionErrors(p: Protocol): string[] {
   const errs: string[] = [];
   const sessions = new Map<string, ProtocolSession>();

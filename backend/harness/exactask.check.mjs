@@ -40,6 +40,7 @@ const PASS = [
   ['named lift stat', "What's your current 1RM on the bench, or your best recent set?"],
   ['money figure', 'How much do you have saved toward it right now?'],
   ['audience figure', 'What is your current follower count?'],
+  ['word-count baseline (cost a harness run 2026-09-01)', "Got it - mornings are your sweet spot. When you've had a good writing morning, roughly how many words come out before the day job takes over?"],
 ];
 const FAIL = [
   ['open question, no quantity at all', "What's derailed or limited your push-up progress before — anything specific that got in the way?"],

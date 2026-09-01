@@ -162,7 +162,7 @@ async function runGoalFixture(f) {
   // sessions, days) are left out because they are how the CATEGORICAL
   // capacity fields phrase themselves, and those must keep their chips.
   const EXACT_ASK_BASELINE =
-    /how (many|much)\b[^?]{0,80}\b(minutes?|hours?|cigarettes?|vapes?|puffs?|drinks?|pages?|steps?|calories?|grams?)\b/i;
+    /how (many|much)\b[^?]{0,80}\b(minutes?|hours?|cigarettes?|vapes?|puffs?|drinks?|pages?|words?|steps?|miles?|kilometers?|kilometres?|km|reps?|sets?|calories?|grams?|dollars?|lbs?|pounds?|kg)\b/i;
   // The model saying, in its own words, that it wants a figure. This is the
   // strongest signal there is and it survives any phrasing — "even a rough
   // number helps me anchor the ramp" is unmistakably an exact-figure ask even
@@ -328,11 +328,27 @@ async function runGoalFixture(f) {
   }
 
   let protocolOk = null;
+  let howToOk = null;
   let protocol = null;
   if (f.protocol && (outcome === 'feasible' || outcome === 'counter_offer')) {
     const p = await api(`/coach/sessions/${sessionId}/protocol`, {});
     protocolOk = p.status === 200;
     if (protocolOk) protocol = p.body.protocol;
+    // v31 how-to: phase one is what a new user actually reads, so every rep in
+    // it must carry a structured how_to rather than a paragraph the row has to
+    // truncate. The server's howToErrors enforces the shape during generation;
+    // this bar catches the case where the model quietly stops emitting them.
+    if (protocolOk && protocol) {
+      const first = protocol.phases?.[0]?.steps ?? [];
+      howToOk = first.length > 0 && first.every(st => {
+        const h = st.how_to;
+        if (!h) return false;
+        const secs = h.sections ?? [];
+        return !!h.gist && h.gist.length <= 100 && !!h.why && !!h.counts_as_done &&
+          secs.length >= 2 && secs.length <= 4 &&
+          secs.every(sec => !!sec.heading && (!!sec.body) !== ((sec.items?.length ?? 0) > 0));
+      });
+    }
     if (f.noLeak && protocolOk) {
       const pLeak = leakIn(p);
       if (pLeak) { pass = false; }
@@ -398,7 +414,7 @@ async function runGoalFixture(f) {
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
     pillarsOk, ownPlan: !!f.ownPlan, ownPlanOk,
-    pass, leak, protocolOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, priceOk, repriceOk, ms: Date.now() - t0,
+    pass, leak, protocolOk, howToOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, priceOk, repriceOk, ms: Date.now() - t0,
     // Underscored: kept in last-report.json, hidden from the console table.
     _asked: askedTexts, _dupPairs: dupPairs,
     _sessionId: sessionId, _protocol: protocol,
@@ -537,6 +553,8 @@ const bars = {
     completed.every(r => r.pillarsOk === null || r.pillarsOk === true),
   [`questions tappable (${MIN_CHIPS}+ chips) or exact-figure asks`]:
     completed.every(r => !r.thinChipQ),
+  'phase one reps carry a well-formed how-to':
+    completed.every(r => r.howToOk === null || r.howToOk === true),
   'no invented stat-bucket chips (kg/lbs/$/counts)':
     completed.every(r => !r.statBucketChip),
 };

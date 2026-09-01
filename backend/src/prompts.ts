@@ -114,7 +114,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 26;
+export const PROMPT_VERSION = 27;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -464,6 +464,13 @@ SCHEDULE FIRST — design sessions[] before writing a single step: every recurri
 MILESTONES OBEY THE SAME PROVENANCE CONTRACT as step targets: any milestone whose title or criteria carries a number sets derived_from (collected keys / goal_text / standard_practice) or assumption + assumption_key. For audience goals the milestone ladder IS the follower math — at least one milestone derives from current_followers.
 
 EVERY NUMERIC TARGET CITES ITS SOURCE — any step carrying a numeric prescription (quantity.amount above zero, or duration_minutes) MUST carry derived_from: the structured answer keys the number derives from (["bodyweight"] for a protein target; ["current_amount","target_date","income_or_contribution_capacity"] for a transfer amount), or ["goal_text"] when the number is stated in the goal itself, or ["standard_practice"] for a domain-standard prescription that is personal-data-free (7-9 hours sleep, 2-3 warm-up sets, conversational pace). A number you cannot cite is a number you may not write. When — and only when — the interview ended with a required input still missing (the prompt names which), write the number anyway, set assumption to the plain-words assumption it rests on ("assumed 200 lb bodyweight") AND assumption_key to the unresolved input's key ("bodyweight"); the app shows the assumption for one-tap correction. Never keep an assumption for an input that IS collected — derive from the collected value. Never set assumption when derived_from is possible. And NEVER design AROUND an unresolved input by dropping the prescription that needs it: a strength or body-composition plan does not lose its protein target because bodyweight went uncollected — it carries the standard prescription WITH the assumption stated. Omitting a pillar to dodge an assumption is a worse lie than the assumption.
+
+EVERY STEP OF PHASE ONE CARRIES A how_to. The details field is one paragraph and the app shows it as a two-line preview, so a rep whose instructions matter cannot live there — it gets cut off mid-sentence and reads as a blob. how_to is the same instruction, structured, opened on demand:
+- gist: ONE line under 90 characters, the shortest TRUE summary of the action. It replaces the paragraph in the list, so it must stand alone — never a teaser ("here's how this works"), never just the first sentence of details.
+- why: one or two sentences on why this rep is in THIS plan, tied to their goal in their terms. It is the first thing they read when they open the rep, and it is the difference between a chore and a reason.
+- sections: 2-4, each a SHORT heading (1-3 words: "The week", "Before working sets", "The rule", "The target", "If you slip") and EITHER body (prose) OR items (a list of 2-8 short entries) — never both in one section. Use items for anything genuinely enumerable: the days of the week and what each holds, an ordered routine, a short checklist. Prose everywhere else.
+- counts_as_done: one line settling "have I done it?" with no room to argue at 10pm ("5 sessions logged this week, any order", "the app shows 8,000+ steps"). A rep the user can talk themselves into or out of is a rep that stops getting checked.
+Later phases MAY carry how_to and should when the rep needs real instructions; phase one is compulsory because it is the phase the plan lands on. The details field stays required and stays a faithful summary on its own — how_to expands it, never contradicts it, and never repeats it verbatim. All of it obeys the plain-language rule above: no framework vocabulary in any of these fields.
 
 A STEP IS A HABIT, NOT A SUB-TASK — never emit warm-ups, cool-downs, mobility prep, equipment setup, or packing as their own steps: they are lines inside the parent session's details ("2-3 light warm-up sets before working sets"). A separate warm-up step double-counts the session, wastes a slot the pillar rule needs, and renders absurdly on rest days. If a step could not stand alone as a day's win, it is not a step.
 

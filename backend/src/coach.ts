@@ -6,7 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PRICE_TOOL, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, howToErrors, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
@@ -879,6 +879,7 @@ export async function generateProtocol(
       errors.push(...sessionErrors(repaired as Protocol));
       errors.push(...milestoneProvenanceErrors(repaired as Protocol, structure.answers, assumableKeys, session.domain));
       errors.push(...ownPlanErrors(repaired as Protocol, session.own_plan ?? null));
+      errors.push(...howToErrors(repaired as Protocol));
     }
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
     if (errors.length === 0) return { protocol: repaired as Protocol };

@@ -15,6 +15,7 @@ import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, Tex
 import { OddsChip, OddsDial } from '../OddsDial';
 import { SimVerdict, simPhaseLabel, type SimPhase } from '../SimVerdict';
 import type { SimulationState } from '../../api/coachTypes';
+import { reportAiResponse } from '../../api/coach';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
@@ -131,6 +132,67 @@ function stepMetric(step: ProtocolStep): string {
   if (step.kind === 'duration' && step.duration_minutes) return `${step.duration_minutes} min ${freq}`;
   if (step.kind === 'quantity' && step.quantity) return `${step.quantity.amount} ${step.quantity.unit} ${freq}`;
   return `✓ ${freq}`;
+}
+
+/**
+ * The footer every AI surface carries (ROADMAP P5).
+ *
+ * Two obligations in one small block. The disclaimer is a store requirement
+ * and, more to the point, true: Qoach writes plans from what you tell it and
+ * has no idea what your body is doing. The report control is Play's
+ * AI-generated-content policy — a person who just read something wrong needs
+ * somewhere to say so that is not a support email.
+ */
+function CoachFooter({ surface, sessionId }: {
+  surface: 'verdict' | 'protocol';
+  sessionId?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [sent, setSent] = useState(false);
+  const REASONS: { key: 'wrong' | 'harmful' | 'offensive' | 'nonsense'; label: string }[] = [
+    { key: 'wrong', label: "It's wrong" },
+    { key: 'harmful', label: 'Could hurt someone' },
+    { key: 'offensive', label: 'Offensive' },
+    { key: 'nonsense', label: "Doesn't make sense" },
+  ];
+  return (
+    <View style={{ marginTop: 22, gap: 10, alignItems: 'center' }}>
+      <Text style={{ fontFamily: nightFonts.body, fontSize: 11, lineHeight: 16.5, color: night.textGhost, textAlign: 'center', maxWidth: 460 }}>
+        Qoach is a coach, not a doctor. This is general guidance built from what you
+        told it — not medical advice, and no promise about your health. If you're
+        managing a condition, are pregnant, or something hurts, talk to a professional first.
+      </Text>
+      {sent ? (
+        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 11.5, color: night.accent }}>
+          Thanks — a human will read that.
+        </Text>
+      ) : open ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, justifyContent: 'center' }}>
+          {REASONS.map(r => (
+            <Pressable
+              key={r.key}
+              onPress={() => {
+                void reportAiResponse({ reason: r.key, surface, sessionId });
+                setSent(true);
+              }}
+              style={{
+                paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999,
+                borderWidth: 1, borderColor: night.border, backgroundColor: night.surfaceDeep,
+              }}
+            >
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 11.5, color: night.textMuted }}>{r.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <Pressable onPress={() => setOpen(true)} hitSlop={8}>
+          <Text style={{ fontFamily: nightFonts.body, fontSize: 11, color: night.textGhost, textDecorationLine: 'underline' }}>
+            Report this response
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  );
 }
 
 function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onToggleDrop }: {
@@ -772,6 +834,7 @@ function FeasibleVerdict({
           />
           <TextButton label="Change my goal" onPress={onReset} height={46} />
         </View>
+        <CoachFooter surface="verdict" />
       </View>
     </Screen>
   );
@@ -919,6 +982,7 @@ function CounterVerdict({
         )}
         <TextButton label="Change my goal" onPress={onReset} height={46} />
       </View>
+      <CoachFooter surface="verdict" />
     </View>
   );
 
@@ -1246,6 +1310,7 @@ function ProtocolReveal({
             </>
           )}
         </View>
+        <CoachFooter surface="protocol" />
       </View>
 
       {note ? (

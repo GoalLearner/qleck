@@ -13,7 +13,8 @@
     "check:apple": "node harness/apple.check.mjs",
     "check:auth": "node harness/auth.check.mjs",
     "check:goals": "node harness/goals.check.mjs",
-    "check:witness": "node harness/witness.check.mjs"
+    "check:witness": "node harness/witness.check.mjs",
+    "check:purge": "node harness/purge.check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest"

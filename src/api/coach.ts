@@ -169,3 +169,21 @@ export function generateProtocol(sessionId: string, pace?: string, variant?: 'or
     ...(variant ? { variant } : {}),
   });
 }
+
+
+/** P5 (Play AI-generated-content policy): flag a model response. Public —
+ *  someone who just saw something wrong must never be blocked by an auth
+ *  state — and fire-and-forget, because a failed report must not become a
+ *  second thing that went wrong. */
+export async function reportAiResponse(input: {
+  reason: 'wrong' | 'harmful' | 'offensive' | 'nonsense' | 'other';
+  surface: 'verdict' | 'protocol' | 'revision' | 'other';
+  sessionId?: string;
+  note?: string;
+}): Promise<void> {
+  await fetch(baseUrl() + '/ai-reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Qleck-Device': getDeviceId(), ...(await bearerHeader()) },
+    body: JSON.stringify(input),
+  }).catch(() => {});
+}

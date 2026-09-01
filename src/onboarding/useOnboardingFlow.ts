@@ -82,6 +82,11 @@ export function useOnboardingFlow({
   const [resetErr, setResetErr] = useState('');
   const [toast, setToast] = useState('');
   // P3 async states: one busy flag per action, honest error copy per screen.
+  // P5 age gate: 13+ confirmed before either door opens. We ask for a
+  // CONFIRMATION, not a birthdate — a date of birth is personal data we would
+  // then have to store, protect and erase, and it buys nothing the
+  // confirmation does not. See docs/REVIEW.md.
+  const [ageOk, setAgeOk] = useState(false);
   const [contactBusy, setContactBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [otpErrMsg, setOtpErrMsg] = useState('');
@@ -458,6 +463,7 @@ export function useOnboardingFlow({
     slide, setSlide,
     welcomeNext: () => (slide < 2 ? setSlide(slide + 1) : nav('auth')),
     // signup
+    ageOk, toggleAgeOk: () => setAgeOk(v => !v),
     method, isEmail, pickMethod, socialJoin,
     contact, setContact: (v: string) => { setContact(v); setContactErr(''); },
     contactErr, submitContact, contactMasked, contactBusy,

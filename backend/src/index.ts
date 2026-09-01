@@ -30,6 +30,7 @@ import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
 import { shareGoal, unshareGoal, witnessPage, witnessView } from './witness';
+import { exportAccount, purgeAccount } from './account';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
 import type { Protocol } from './protocolSchema';
 
@@ -174,7 +175,9 @@ export default {
       return json(created, 200, cors);
     }
 
-    if (url.pathname.startsWith('/goals') || url.pathname.startsWith('/check-ins') || url.pathname === '/me') {
+    // startsWith('/me') rather than an exact match: P5 added /me/export, and
+    // an exact '/me' guard silently 404'd it by never entering this block.
+    if (url.pathname.startsWith('/goals') || url.pathname.startsWith('/check-ins') || url.pathname.startsWith('/me')) {
       if (!env.AUTH_SECRET) return json({ error: 'auth_unconfigured' }, 503, cors);
       const bearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
       const userId = await verifyToken(env, bearer || null);
@@ -207,19 +210,30 @@ export default {
         return json({ ok: true }, 200, cors);
       }
 
-      /* Account deletion (App Review 5.1.1(v), and plain decency): one call
-       * erases the user row - identities, goals, protocols, scheduled reps
-       * and check-ins all cascade - plus this device's coach transcripts,
-       * which key on the device id rather than the user. Tokens are
-       * stateless HMAC, so a second call on the same token is a clean 200
-       * over an already-empty row, never an error. */
+      /* Account deletion (App Review 5.1.1(v), GDPR, and plain decency).
+       * purgeAccount owns the full sweep — the cascade off `users` plus the
+       * four tables that have no foreign key to it and were surviving the
+       * delete until the P5 audit caught them (harness/purge.check.mjs).
+       * Tokens are stateless HMAC, so a second call is a clean 200 over an
+       * already-empty account, never an error. */
       if (url.pathname === '/me' && request.method === 'DELETE') {
-        const deviceId = request.headers.get('X-Qleck-Device') ?? '';
-        if (/^[0-9a-fA-F-]{16,64}$/.test(deviceId)) {
-          await env.DB.prepare(`DELETE FROM coach_sessions WHERE device_id = ?`).bind(deviceId).run();
-        }
-        await env.DB.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run();
+        await purgeAccount(env, userId, request.headers.get('X-Qleck-Device'));
         return json({ ok: true }, 200, cors);
+      }
+
+      /* P5: take your data with you. Everything we hold about you, in one
+       * readable JSON document, downloadable from the You tab. */
+      if (url.pathname === '/me/export' && request.method === 'GET') {
+        const data = await exportAccount(env, userId);
+        return new Response(JSON.stringify(data, null, 2), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Disposition': 'attachment; filename="qleck-export.json"',
+            'Cache-Control': 'no-store',
+            ...cors,
+          },
+        });
       }
 
       // Wrapped so a D1 constraint (a raced protocol version, say) comes back
@@ -565,6 +579,39 @@ export default {
       return json({ error: 'not_found' }, 404, cors);
     }
 
+    /* ── "Report this AI response" (P5, Play AI-GC policy) ──────────────
+     * Public like /client-errors: someone who just saw something wrong must
+     * never be blocked from saying so by an auth state. The Bearer is read
+     * when present, so repeat reports from one account stay visible. */
+    if (url.pathname === '/ai-reports' && request.method === 'POST') {
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      const reason = String(body.reason ?? '').trim();
+      const LEGAL = ['wrong', 'harmful', 'offensive', 'nonsense', 'other'];
+      if (!LEGAL.includes(reason)) return json({ error: 'invalid_reason', legal: LEGAL }, 400, cors);
+      const surfaceRaw = String(body.surface ?? 'other');
+      const surface = ['verdict', 'protocol', 'revision', 'other'].includes(surfaceRaw) ? surfaceRaw : 'other';
+      const sessionId = String(body.sessionId ?? '');
+      const reportBearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+      const reporter = await verifyToken(env, reportBearer || null);
+      const reportDevice = request.headers.get('X-Qleck-Device') ?? '';
+      await env.DB
+        .prepare(
+          `INSERT INTO ai_reports (id, session_id, user_id, device_id, surface, reason, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          /^[0-9a-fA-F-]{36}$/.test(sessionId) ? sessionId : null,
+          reporter,
+          /^[0-9a-fA-F-]{16,64}$/.test(reportDevice) ? reportDevice : null,
+          surface,
+          reason,
+          String(body.note ?? '').slice(0, 1000) || null,
+        )
+        .run();
+      return json({ ok: true }, 200, cors);
+    }
+
     /* ── Crash/error reporting (P3): thin, capped, 30-day retention. ──── */
     if (url.pathname === '/client-errors' && request.method === 'POST') {
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -770,8 +817,8 @@ export default {
 
         const sessionId = crypto.randomUUID();
         await env.DB
-          .prepare(`INSERT INTO coach_sessions (id, device_id, goal_text, own_plan) VALUES (?, ?, ?, ?)`)
-          .bind(sessionId, deviceId, goalText, ownPlan)
+          .prepare(`INSERT INTO coach_sessions (id, device_id, user_id, goal_text, own_plan) VALUES (?, ?, ?, ?, ?)`)
+          .bind(sessionId, deviceId, await verifyToken(env, (request.headers.get('Authorization') ?? '').replace(/^Bearers+/i, '') || null), goalText, ownPlan)
           .run();
 
         // The safety gate reads goal + plan together — "lose some weight"

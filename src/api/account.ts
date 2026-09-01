@@ -144,3 +144,12 @@ export async function saveMe(displayName: string, handle: string): Promise<void>
   });
   if (!res.ok) throw new Error(`save_me_failed_${res.status}`);
 }
+
+
+/** P5: everything we hold about you, as JSON. Returns the document itself so
+ *  the caller can hand it to a share sheet or a download. */
+export async function exportMyData(): Promise<string> {
+  const res = await authedFetch('/me/export');
+  if (!res.ok) throw new Error(`export_failed_${res.status}`);
+  return res.text();
+}

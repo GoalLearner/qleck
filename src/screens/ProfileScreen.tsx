@@ -4,13 +4,13 @@
 // ROADMAP P6 on a real backend.
 import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { deleteAccount } from '../api/account';
+import { deleteAccount, exportMyData } from '../api/account';
 import { getStoredIdentity } from '../api/device';
 import {
   ensureNudgePermission, fmtTime, getNudgePermission, loadNudgePrefs, saveNudgePrefs,
   type NudgePermission, type NudgePrefs,
 } from '../lib/nudges';
-import { Linking, Platform, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
@@ -250,6 +250,7 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
           </Pressable>
         </Card>
 
+        <ExportDataRow />
         <LogOutRow onLogout={onLogout} goalCount={goals.length} />
         <DeleteAccountRow onDone={onLogout} />
       </ScrollView>
@@ -265,6 +266,54 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
  * goes. Alert.alert is deliberately avoided — it is a no-op on web, which is
  * where the beta testers are.
  */
+/**
+ * P5: take your data with you. The counterpart to Delete — a store and GDPR
+ * expectation, and the honest answer to "what do you actually have on me".
+ */
+function ExportDataRow() {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState('');
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const json = await exportMyData();
+      if (Platform.OS === 'web') {
+        // A real download, not a copy-paste: this is their file.
+        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'qleck-export.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        setDone('Downloaded.');
+      } else {
+        await Share.share({ message: json });
+        setDone('Sent.');
+      }
+    } catch {
+      setDone("Couldn't build it — try again in a moment.");
+    } finally {
+      setBusy(false);
+      setTimeout(() => setDone(''), 4000);
+    }
+  };
+  return (
+    <Pressable
+      onPress={run}
+      style={{
+        marginTop: 22, marginHorizontal: 14, minHeight: 52, borderRadius: radii.pill,
+        borderWidth: 1.5, borderColor: colors.outline, paddingHorizontal: 18,
+        alignItems: 'center', justifyContent: 'center', opacity: busy ? 0.6 : 1,
+      }}
+    >
+      <Text style={{ fontSize: 14, fontFamily: fonts.bold, color: colors.ink }}>
+        {busy ? 'Gathering your data…' : done || 'Download my data'}
+      </Text>
+    </Pressable>
+  );
+}
+
 function LogOutRow({ onLogout, goalCount }: { onLogout: () => void; goalCount: number }) {
   const { signOut } = useRally();
   const [confirming, setConfirming] = useState(false);

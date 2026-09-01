@@ -218,6 +218,13 @@ async function sendCodeEmail(env: Env, email: string, code: string, purpose: Cod
     console.log(`[email-auth] no RESEND_API_KEY — code for ${email} (${purpose}): ${code}`);
     return true;
   }
+  // Secrets arrive by whatever route someone pasted them, and on Windows that
+  // route likes to prepend a UTF-8 BOM: `wrangler secret put` fed from the
+  // clipboard stored ï»¿ in front of a perfectly good key, so every
+  // send came back "API key is invalid" while the key itself was correct. The
+  // only visible symptom was a runtime warning about a non-ASCII header value.
+  // Strip the BOM and surrounding whitespace rather than trusting the paste.
+  const apiKey = env.RESEND_API_KEY.replace(/^﻿/, '').trim();
   const subject = purpose === 'reset' ? `${code} — reset your Qleck password` : `${code} is your Qleck code`;
   const text =
     `Your Qleck ${purpose === 'reset' ? 'password reset' : 'sign-in'} code is ${code}.\n\n` +
@@ -225,7 +232,7 @@ async function sendCodeEmail(env: Env, email: string, code: string, purpose: Cod
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.RESEND_API_KEY}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ from: env.RESEND_FROM ?? 'Qleck <onboarding@resend.dev>', to: [email], subject, text }),
     });
     if (!res.ok) console.error('[email-auth] resend send failed:', res.status, await res.text().catch(() => ''));

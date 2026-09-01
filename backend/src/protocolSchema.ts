@@ -24,6 +24,26 @@ export interface ProtocolStep {
   quantity?: { amount: number; unit: string; direction?: 'at_least' | 'at_most' };
   duration_minutes?: number;                    // required when kind === 'duration'
   details: string;        // how to actually do it
+  /**
+   * The rep as a HOW-TO rather than a paragraph (design handoff turn 2,
+   * 2026-09-01). `details` crammed everything under the title, so the row
+   * showed a wall of text that got cut off and read as a blob.
+   *
+   * Optional on purpose, in both directions: every goal built before this
+   * exists has no how_to and must keep rendering, and a step whose
+   * instructions genuinely fit in a sentence does not need one. The row falls
+   * back to `details`, so nothing is ever blank.
+   */
+  how_to?: {
+    /** The one line the row shows. Short enough not to be truncated. */
+    gist: string;
+    /** Why this rep is in the plan at all — the first thing the sheet says. */
+    why: string;
+    /** Headed sections: prose (`body`) or a list (`items`), never both. */
+    sections: { heading: string; body?: string; items?: string[] }[];
+    /** What settles "have I done it?" — the rep must never be ambiguous. */
+    counts_as_done: string;
+  };
   week_progression?: string; // how this step ramps across the phase, if it does
   /** P2a provenance: answer keys a numeric target derives from
    *  ('goal_text' / 'standard_practice' are legal sentinels). */

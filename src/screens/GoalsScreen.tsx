@@ -9,7 +9,7 @@
 // adding another. "Tweak it with Qoach" wires to the P4 revise client; for
 // now it opens the AdjustPlan modal.
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, Share, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { useAppearance } from '../state/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -183,31 +183,161 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
 
 /* ── level two: the detail with the phase accordion ─────────────────────── */
 
-function RepRow({ step }: { step: ProtocolStep }) {
+const KIND_LABEL: Record<ProtocolStep['kind'], string> = {
+  binary: 'HABIT',
+  quantity: 'TARGET',
+  duration: 'SESSION',
+};
+
+/** Is there more to say than the row already shows? A step whose whole
+ *  instruction fits on two lines does not get a "How to do it" that opens on
+ *  the same sentence it was already showing. */
+function hasHowTo(step: ProtocolStep): boolean {
+  return !!step.how_to || (step.details?.length ?? 0) > 88;
+}
+
+/**
+ * The rep as a row (design handoff turn 2, 2026-09-01). It used to render
+ * `details` in full under the title, so a real instruction — five gym days, the
+ * warm-up rule, the reason behind it — became a paragraph crammed into a list
+ * item, cut off mid-sentence, reading as a blob.
+ *
+ * The row now stays short: title, a two-line gist, and a way in. The
+ * instructions get a home of their own in RepSheet.
+ */
+function RepRow({ step, onOpen }: { step: ProtocolStep; onOpen?: () => void }) {
   const look = kindLook(step.kind);
+  const more = hasHowTo(step);
+  const gist = step.how_to?.gist || step.details;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 11, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: colors.chipBg }}>
+    <Pressable
+      onPress={more ? onOpen : undefined}
+      style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 11, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: colors.chipBg }}
+    >
       <View style={{ width: 28, height: 28, borderRadius: 10, backgroundColor: look.bg, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: look.fg }}>{look.glyph}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
         <Text style={{ fontFamily: fonts.extrabold, fontSize: 14, lineHeight: 18.2, color: colors.ink }}>{step.title}</Text>
-        {!!step.details && (
-          <Text style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 3 }}>
-            {step.details}
+        {!!gist && (
+          <Text numberOfLines={2} style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 3 }}>
+            {gist}
           </Text>
         )}
+        {more ? (
+          <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.success, marginTop: 5 }}>How to do it ›</Text>
+        ) : null}
       </View>
       <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.chipBg, marginTop: 4 }}>
         <Text style={{ fontFamily: fonts.bold, fontSize: 10.5, color: colors.muted }}>{freqChip(step)}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-function PhaseCard({ goal, phase, now, open, onToggle }: {
-  goal: ActiveGoal; phase: ProtocolPhase; now: boolean; open: boolean; onToggle: () => void;
+/**
+ * The how-to sheet: one rep at a time, with room to actually say it.
+ *
+ * Renders the structured `how_to` when the plan carries one, and falls back to
+ * the plain `details` paragraph when it does not — which is every goal built
+ * before this shipped. That fallback is the point: this had to improve the
+ * plans people already have, not only the ones written after it.
+ */
+function RepSheet({ step, phaseLabel, onClose, onTweak }: {
+  step: ProtocolStep; phaseLabel: string; onClose: () => void; onTweak: () => void;
 }) {
+  const look = kindLook(step.kind);
+  const how = step.how_to;
+  return (
+    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable
+          onPress={onClose}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' }}
+        />
+        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 10, paddingBottom: 36, maxHeight: '86%' }}>
+          <View style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: colors.outline, alignSelf: 'center', marginBottom: 18 }} />
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: look.bg }}>
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: look.fg }}>{look.glyph}</Text>
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1, color: look.fg }}>{KIND_LABEL[step.kind]}</Text>
+              </View>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.chipBg }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.muted }}>{freqChip(step)}</Text>
+              </View>
+              <View style={{ flex: 1 }} />
+              <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: fonts.bold, fontSize: 11.5, color: colors.muted }}>{phaseLabel}</Text>
+            </View>
+
+            <Text style={{ fontFamily: fonts.serif, fontSize: 24, lineHeight: 28, color: colors.ink, marginTop: 12 }}>{step.title}</Text>
+
+            {how ? (
+              <>
+                <Text style={{ fontFamily: fonts.medium, fontSize: 15, lineHeight: 22.5, color: colors.muted, marginTop: 10 }}>{how.why}</Text>
+                {how.sections.map((sec, i) => (
+                  <View key={sec.heading + i} style={{ marginTop: 18 }}>
+                    <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1, color: colors.success }}>{sec.heading.toUpperCase()}</Text>
+                    {sec.body ? (
+                      <Text style={{ fontFamily: fonts.medium, fontSize: 14, lineHeight: 21, color: colors.inkSoft, marginTop: 5 }}>{sec.body}</Text>
+                    ) : null}
+                    {sec.items && sec.items.length > 0 ? (
+                      <View style={{ marginTop: 6, gap: 6 }}>
+                        {sec.items.map((it, j) => (
+                          <View key={j} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9 }}>
+                            <Text style={{ fontFamily: fonts.bold, fontSize: 14, lineHeight: 20, color: colors.dotUpcoming }}>{'\u2022'}</Text>
+                            <Text style={{ flex: 1, fontFamily: fonts.medium, fontSize: 14, lineHeight: 20.3, color: colors.inkSoft }}>{it}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
+                <View style={{ marginTop: 20, flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: colors.successBg, borderWidth: 1, borderColor: colors.successBorder, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 12 }}>
+                  <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: colors.success, paddingTop: 2 }}>{'\u2713'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1, color: colors.success }}>COUNTS AS DONE</Text>
+                    <Text style={{ fontFamily: fonts.medium, fontSize: 14, lineHeight: 19.6, color: colors.ink, marginTop: 4 }}>{how.counts_as_done}</Text>
+                  </View>
+                </View>
+              </>
+            ) : (
+              <Text style={{ fontFamily: fonts.medium, fontSize: 15, lineHeight: 23, color: colors.inkSoft, marginTop: 12 }}>{step.details}</Text>
+            )}
+
+            {step.week_progression ? (
+              <View style={{ marginTop: 18 }}>
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1, color: colors.success }}>HOW IT RAMPS</Text>
+                <Text style={{ fontFamily: fonts.medium, fontSize: 14, lineHeight: 21, color: colors.inkSoft, marginTop: 5 }}>{step.week_progression}</Text>
+              </View>
+            ) : null}
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20 }}>
+              <Pressable
+                onPress={onClose}
+                style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, color: colors.bg }}>Got it</Text>
+              </Pressable>
+              <Pressable
+                onPress={onTweak}
+                style={{ paddingVertical: 15, paddingHorizontal: 18, borderRadius: 999, borderWidth: 1, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.muted }}>Tweak</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PhaseCard({ goal, phase, now, open, onToggle, onOpenStep }: {
+  goal: ActiveGoal; phase: ProtocolPhase; now: boolean; open: boolean; onToggle: () => void;
+  onOpenStep: (step: ProtocolStep, phaseLabel: string) => void;
+}) {
+  const phaseLabel = `${phase.title} · WK ${phase.start_week}–${phase.end_week}`;
   const milestones = goal.protocol.milestones
     .filter(mi => mi.week >= phase.start_week && mi.week <= phase.end_week)
     .sort((a, b) => a.week - b.week);
@@ -235,7 +365,9 @@ function PhaseCard({ goal, phase, now, open, onToggle }: {
         )}
         <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.sectionLabel, width: 12, textAlign: 'center' }}>{open ? '▾' : '▸'}</Text>
       </Pressable>
-      {open && phase.steps.map(step => <RepRow key={step.id} step={step} />)}
+      {open && phase.steps.map(step => (
+        <RepRow key={step.id} step={step} onOpen={() => onOpenStep(step, phaseLabel)} />
+      ))}
       {open && milestones.map(mi => (
         <View
           key={mi.id}
@@ -455,6 +587,9 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onSha
   onStopSharing: () => Promise<void>;
 }) {
   const [open, setOpen] = useState<number>(m.nowIdx);
+  // The rep whose how-to sheet is showing. Held here rather than inside
+  // PhaseCard so the sheet overlays the screen, not one collapsed card.
+  const [sheet, setSheet] = useState<{ step: ProtocolStep; phaseLabel: string } | null>(null);
   const protocol = m.goal.protocol;
   return (
     <FadeInUp>
@@ -504,6 +639,7 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onSha
             now={pi === m.nowIdx}
             open={pi === open}
             onToggle={() => setOpen(prev => (prev === pi ? -1 : pi))}
+            onOpenStep={(step, phaseLabel) => setSheet({ step, phaseLabel })}
           />
         ))}
       </View>
@@ -520,6 +656,14 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onSha
 
       <PauseButton paused={m.goal.status === 'paused'} onToggle={onTogglePause} />
       <DropGoalButton onDrop={onDrop} />
+      {sheet ? (
+        <RepSheet
+          step={sheet.step}
+          phaseLabel={sheet.phaseLabel}
+          onClose={() => setSheet(null)}
+          onTweak={() => { setSheet(null); onTweak(); }}
+        />
+      ) : null}
     </FadeInUp>
   );
 }

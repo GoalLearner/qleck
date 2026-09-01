@@ -534,7 +534,7 @@ export default function GoalsScreen() {
 
   const today = localDate();
   const models: GoalModel[] = goals.map((goal, i) => {
-    const week = weekOf(goal.startedOn, today, goal.protocol.duration_weeks);
+    const week = weekOf(goal.startedOn, today, goal.protocol.duration_weeks, goal.pauses);
     const phase = phaseForWeek(goal.protocol, week);
     return {
       goal, week, phase,
@@ -646,7 +646,7 @@ export default function GoalsScreen() {
                               {goalTitle(g.statement, g.protocol)}
                             </Text>
                             <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.sectionLabel, marginTop: 2 }}>
-                              {g.protocol.duration_weeks} weeks · {g.startedOn} to {planEndDate(g.startedOn, g.protocol.duration_weeks)}
+                              {g.protocol.duration_weeks} weeks · {g.startedOn} to {planEndDate(g.startedOn, g.protocol.duration_weeks, g.pauses)}
                             </Text>
                           </View>
                           <View style={{ width: 70, flexDirection: 'row' }}>

@@ -18,6 +18,9 @@ export interface RemoteGoal {
   success_probability?: number | null;
   /** P4.5 witness link secret (owner-only), null when private. */
   share_token?: string | null;
+  /** Pause spans, `to` exclusive and null while still paused. started_on is
+   *  immutable, so these carry the time the plan owes back. */
+  pauses?: { from: string; to: string | null }[];
 }
 
 function mintId(): string {
@@ -171,16 +174,23 @@ export async function completeGoal(id: string): Promise<void> {
   if (!res.ok) throw new Error(`completeGoal failed (${res.status})`);
 }
 
-/** P4: put a goal on ice. The server stamps when, so resuming pays the days
- *  back rather than letting the pause eat the plan's runway. */
+/** P4: put a goal on ice. The server opens a pause span dated in the USER's
+ *  local time — check-in dates are local, and the two have to line up. */
 export async function pauseGoal(id: string): Promise<void> {
-  const res = await authed(`/goals/${id}/pause`, { method: 'POST' });
+  const res = await authed(`/goals/${id}/pause`, {
+    method: 'POST',
+    body: JSON.stringify({ localDate: localDate() }),
+  });
   if (!res.ok) throw new Error(`pauseGoal failed (${res.status})`);
 }
 
-/** Back on — started_on moves forward by however long the pause lasted. */
+/** Back on. The span closes and those days stop counting against the plan —
+ *  started_on never moves, so the check-ins already banked stay banked. */
 export async function resumeGoal(id: string): Promise<void> {
-  const res = await authed(`/goals/${id}/resume`, { method: 'POST' });
+  const res = await authed(`/goals/${id}/resume`, {
+    method: 'POST',
+    body: JSON.stringify({ localDate: localDate() }),
+  });
   if (!res.ok) throw new Error(`resumeGoal failed (${res.status})`);
 }
 

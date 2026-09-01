@@ -437,8 +437,21 @@ function MissedBanner() {
 function useMilestoneCelebration(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
   const [pending, setPending] = useState<ReachedMilestone | null>(null);
   const seenRef = useRef<string[] | null>(null);
+  const seeded = useRef(false);
 
   useEffect(() => {
+    // The seed pass has to read a COMPLETE picture, and at mount it never can:
+    // RallyContext hydrates `goals` from the AsyncStorage cache and sets them
+    // BEFORE awaiting the check-in fetch, so this screen renders with
+    // checkInsByGoal still {}. Seeding there computed adherence 0 for every
+    // week, earned nothing, and recorded an empty set — which then let the
+    // second effect celebrate weeks-old milestones the instant the real
+    // check-ins landed. So wait until every current goal has its check-ins
+    // (line 164 of RallyContext writes a key per goal, empty array included,
+    // so key-presence is the honest "loaded" signal), then seed exactly once.
+    if (seeded.current || goals.length === 0) return;
+    if (!goals.every(g => byGoal[g.id] !== undefined)) return;
+    seeded.current = true;
     let alive = true;
     (async () => {
       const seen = await loadSeenMilestones();
@@ -453,9 +466,7 @@ function useMilestoneCelebration(goals: ActiveGoal[], byGoal: Record<string, Che
       }
     })();
     return () => { alive = false; };
-    // Deliberately once: this is the seeding pass, not a subscription.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [goals, byGoal]);
 
   useEffect(() => {
     if (seenRef.current === null || pending) return;
@@ -552,7 +563,7 @@ interface GoalToday {
 function useTodayModel(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
   const today = localDate();
   const perGoal: GoalToday[] = goals.map((g, i) => {
-    const week = weekOf(g.startedOn, today, g.protocol.duration_weeks);
+    const week = weekOf(g.startedOn, today, g.protocol.duration_weeks, g.pauses);
     const phase = phaseForWeek(g.protocol, week);
     const reps = repsForDate(g.protocol, g.startedOn, today, byGoal[g.id] ?? []);
     return { goal: g, week, phase, reps, done: reps.filter(r => r.checked).length, dot: goalDot(i) };

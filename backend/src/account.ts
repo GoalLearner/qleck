@@ -38,17 +38,55 @@ export async function purgeAccount(env: Env, userId: string, deviceId: string | 
   // are cleared by device id as well as by any user link that exists.
   const validDevice = deviceId && /^[0-9a-fA-F-]{16,64}$/.test(deviceId) ? deviceId : null;
 
+  // ── why this is linkage-based and not just `WHERE user_id = ?` ──────────
+  // Keying erasure on the user_id COLUMN quietly erased nothing for months.
+  // Two writers never populate it: ai.ts's INSERT omits the column outright,
+  // and coach_sessions' insert stamped it through a regex that had lost its
+  // backslash (`/^Bearers+/i`), so verifyToken got the whole "Bearer <tok>"
+  // string and returned null every time. Both are fixed now, but every row
+  // written before today still carries user_id NULL — and the device fallback
+  // cannot save them either, because native re-mints its device id on every
+  // launch (see the comment on getDeviceId in src/api/coach.ts). So deletion
+  // has to reach rows through a link that was always really written.
+  //
+  // goal_outcomes(session_id, goal_id) is that link: goals are genuinely
+  // owned, so a goal recovers the session that produced it, and the session
+  // recovers its ledger rows. Collect all of it BEFORE the users row cascades
+  // the goals away, or the bridge burns while we are standing on it.
+  const goalRows = await env.DB
+    .prepare(`SELECT id FROM goals WHERE user_id = ?`)
+    .bind(userId)
+    .all<{ id: string }>();
+  const goalIds = (goalRows.results ?? []).map(r => r.id).filter(Boolean);
+
+  const sessionIds = new Set<string>();
+  const collect = async (sql: string, binds: unknown[]) => {
+    const rows = await env.DB.prepare(sql).bind(...binds).all<{ id: string | null }>();
+    for (const r of rows.results ?? []) if (r.id) sessionIds.add(r.id);
+  };
+  await collect(`SELECT id FROM coach_sessions WHERE user_id = ?`, [userId]);
+  if (validDevice) await collect(`SELECT id FROM coach_sessions WHERE device_id = ?`, [validDevice]);
+  // Chunked: SQLite caps bound variables per statement, and a heavy user can
+  // hold more goals than that cap.
+  for (let i = 0; i < goalIds.length; i += 100) {
+    const chunk = goalIds.slice(i, i + 100);
+    await collect(
+      `SELECT session_id AS id FROM goal_outcomes WHERE goal_id IN (${chunk.map(() => '?').join(',')})`,
+      chunk,
+    );
+  }
+
   const stmts = [
-    // The user's own words to the coach — payloads first, then the ledger
-    // rows they hang from get anonymised rather than deleted.
-    env.DB.prepare(
-      `DELETE FROM ai_request_payloads WHERE request_id IN (SELECT id FROM ai_requests WHERE user_id = ?)`,
-    ).bind(userId),
-    env.DB.prepare(`UPDATE ai_requests SET user_id = NULL, ip = NULL WHERE user_id = ?`).bind(userId),
     env.DB.prepare(`DELETE FROM client_errors WHERE user_id = ?`).bind(userId),
     // A report is moderation evidence about the MODEL, not about the person:
     // the row stays so a flagged answer is still reviewable, de-identified.
     env.DB.prepare(`UPDATE ai_reports SET user_id = NULL, device_id = NULL WHERE user_id = ?`).bind(userId),
+    // Belt and braces: the column-keyed deletes still run for rows written
+    // after the two writers were fixed.
+    env.DB.prepare(
+      `DELETE FROM ai_request_payloads WHERE request_id IN (SELECT id FROM ai_requests WHERE user_id = ?)`,
+    ).bind(userId),
+    env.DB.prepare(`UPDATE ai_requests SET user_id = NULL, ip = NULL WHERE user_id = ?`).bind(userId),
     env.DB.prepare(`DELETE FROM coach_sessions WHERE user_id = ?`).bind(userId),
   ];
   if (validDevice) {
@@ -60,6 +98,38 @@ export async function purgeAccount(env: Env, userId: string, deviceId: string | 
       env.DB.prepare(`DELETE FROM coach_sessions WHERE device_id = ?`).bind(validDevice),
     );
   }
+
+  // The real erasure: everything reachable from the sessions this person held.
+  const sessionList = [...sessionIds];
+  for (let i = 0; i < sessionList.length; i += 100) {
+    const chunk = sessionList.slice(i, i + 100);
+    const q = chunk.map(() => '?').join(',');
+    stmts.push(
+      env.DB.prepare(
+        `DELETE FROM ai_request_payloads WHERE request_id IN (SELECT id FROM ai_requests WHERE session_id IN (${q}))`,
+      ).bind(...chunk),
+      env.DB.prepare(
+        `UPDATE ai_requests SET user_id = NULL, device_id = NULL, ip = NULL WHERE session_id IN (${q})`,
+      ).bind(...chunk),
+      env.DB.prepare(`UPDATE ai_reports SET user_id = NULL, device_id = NULL WHERE session_id IN (${q})`).bind(...chunk),
+      // goal_outcomes.answers_snapshot is the whole structured interview —
+      // exact bodyweight, income, debts, injuries, and free-text past
+      // attempts. It has no user_id and no foreign key, so nothing cascades
+      // it and nothing sweeps it; without this it outlived the account
+      // forever, still joinable back to the person through session_id.
+      env.DB.prepare(`DELETE FROM goal_outcomes WHERE session_id IN (${q})`).bind(...chunk),
+      env.DB.prepare(`DELETE FROM factor_guard_failopens WHERE session_id IN (${q})`).bind(...chunk),
+      env.DB.prepare(`DELETE FROM coach_sessions WHERE id IN (${q})`).bind(...chunk),
+    );
+  }
+  // Outcomes reached by goal as well — a goal whose session row was already
+  // swept still leaves its snapshot behind.
+  for (let i = 0; i < goalIds.length; i += 100) {
+    const chunk = goalIds.slice(i, i + 100);
+    const q = chunk.map(() => '?').join(',');
+    stmts.push(env.DB.prepare(`DELETE FROM goal_outcomes WHERE goal_id IN (${q})`).bind(...chunk));
+  }
+
   for (const row of emails.results ?? []) {
     stmts.push(env.DB.prepare(`DELETE FROM auth_codes WHERE email = ?`).bind(row.provider_id));
   }

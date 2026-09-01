@@ -11,6 +11,7 @@
 import {
   planIsOver, planEndDate, weekOf, weekOfUncapped, planStats,
   repsForDate, missedYesterday, missedTwice,
+  pausedDaysBefore, planDaysBetween, planDayToDate,
 } from './protocolTime.ts';
 
 let failed = 0;
@@ -154,6 +155,44 @@ eq('mid-week: Wed+Mon missed trips it on Thursday', missedTwice(MWF, START, day(
 eq('one scheduled day so far is only one miss', missedTwice(MWF, START, day(1), []), false);
 eq('flexible-only plans have no per-day schedule to miss', missedTwice(PROTOCOL, START, day(5), []), false);
 eq('a finished plan cannot slip twice', missedTwice(MWF, START, day(70), []), false);
+
+// -- pauses: the plan owes the days back, and history stays put -------------
+// The bug these exist for: resume used to move started_on forward, which
+// re-anchored every read path and pushed real check-ins to before the plan
+// began. A 21-day streak at 100% could read as zero after one Pause/Resume.
+// started_on is immutable now; these spans carry the debt instead.
+const PAUSE = [{ from: day(7), to: day(21) }];   // paused all of weeks 2 and 3
+
+eq('no spans means nothing changes', planDaysBetween(START, day(10)), 10);
+eq('a pause does not count toward plan days', planDaysBetween(START, day(28), PAUSE), 14);
+eq('days before the pause are untouched', planDaysBetween(START, day(5), PAUSE), 5);
+eq('mid-pause, the plan clock is frozen', planDaysBetween(START, day(14), PAUSE), 7);
+eq('an open pause keeps accruing', planDaysBetween(START, day(20), [{ from: day(7), to: null }]), 7);
+eq('paused days before a date are counted', pausedDaysBefore(START, day(28), PAUSE), 14);
+
+eq('week 3 is still week 3 after a 14-day pause', weekOfUncapped(START, day(28), PAUSE), 3);
+eq('without the pause that same date is week 5', weekOfUncapped(START, day(28)), 5);
+eq('the finish line moves out by the pause', planEndDate(START, 4, PAUSE), day(41));
+eq('a 4-week plan paused 14 days is not over on day 28', planIsOver(START, 4, day(28), PAUSE), false);
+eq('...but is over on day 42', planIsOver(START, 4, day(42), PAUSE), true);
+
+eq('plan-day 0 is the start', planDayToDate(START, 0, PAUSE), day(0));
+// Across a pause the mapping is not one-to-one: day 7 and day 21 are BOTH
+// plan-day 7 (the pause consumed everything between). planDayToDate returns
+// the first such date, which is where the pause opened.
+eq('plan-day 7 is the day the pause opened', planDayToDate(START, 7, PAUSE), day(7));
+eq('the day after resuming is still plan-day 7', planDaysBetween(START, day(21), PAUSE), 7);
+eq('plan-day 14 is 14 plan-days in', planDayToDate(START, 14, PAUSE), day(28));
+// So week 2's window stretches across the pause to cover the days actually
+// worked after resuming — which is what keeps those check-ins counted.
+eq('week 2 still covers the first day back', weekOf(START, day(21), 4, PAUSE), 2);
+
+// THE REGRESSION ITSELF: work banked before a pause must still count.
+const beforePause = [ci('ph1-s1', day(0)), ci('ph1-s1', day(1)), ci('ph1-s1', day(2))];
+const pausedStats = planStats(PROTOCOL, START, beforePause, PAUSE);
+const unpausedStats = planStats(PROTOCOL, START, beforePause);
+eq('a pause never un-banks work already done', pausedStats.banked, unpausedStats.banked);
+eq('...and that is not zero', pausedStats.banked > 0, true);
 
 console.log(failed === 0 ? '\nALL FIXTURES PASS\n' : `\n${failed} FAILED\n`);
 process.exit(failed === 0 ? 0 : 1);

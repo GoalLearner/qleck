@@ -81,6 +81,12 @@ Configured entirely in code. Do **not** mix in Expo Router.
   and no longer wired into `App.tsx`.
 - `docs/REGRESSION.md` — the manual checklist to run on web + device before
   handing a build to anyone. `npm run check` runs the automated half.
+- `docs/AUDIT-2026-08-31.md` — the adversarial review of the P3–P6 train and
+  the invariants it produced. Two are load-bearing and easy to break again:
+  **`goals.started_on` is immutable** (pauses are spans in `goal_pauses`;
+  shifting the anchor orphans every check-in), and **account erasure keys on
+  links that are actually written**, never on a `user_id` column a writer may
+  have skipped.
 - `src/onboarding/` — the whole logged-out funnel, ported from
   `Qleck Onboarding.dc.html`. `theme.ts` (Electric Night tokens), `ui.tsx`
   (shell / buttons / inputs / the canvas' keyframes as Animated wrappers),

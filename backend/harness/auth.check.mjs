@@ -95,12 +95,15 @@ bar('password login returns a session', login.status === 200 && login.body.exist
 const badPw = await api('/auth/login', { body: { email: EMAIL, password: 'wrong-wrong-1' } });
 bar('wrong password fails closed', badPw.status === 401);
 
-/* 6 — refresh rotation + reuse revocation */
-const r1 = await api('/auth/refresh', { body: { refreshToken: session.refreshToken } });
-bar('refresh rotates to a fresh session', r1.status === 200 && !!r1.body.refreshToken && r1.body.refreshToken !== session.refreshToken);
+/* 6 — refresh rotation + reuse revocation.
+ * Rotate the session the LOGIN above minted, not the signup one: setting a
+ * password now ends every session on the account (see bar 7b), so the signup
+ * session's refresh token is legitimately dead by this point. */
+const r1 = await api('/auth/refresh', { body: { refreshToken: login.body.refreshToken } });
+bar('refresh rotates to a fresh session', r1.status === 200 && !!r1.body.refreshToken && r1.body.refreshToken !== login.body.refreshToken);
 const meWithNew = await api('/me', { method: 'GET', token: r1.body.token });
 bar('rotated access token works', meWithNew.status === 200);
-const reuse = await api('/auth/refresh', { body: { refreshToken: session.refreshToken } });
+const reuse = await api('/auth/refresh', { body: { refreshToken: login.body.refreshToken } });
 bar('reusing the rotated token trips revocation', reuse.status === 401 && reuse.body.error === 'auth_revoked');
 const afterRevoke = await api('/auth/refresh', { body: { refreshToken: r1.body.refreshToken } });
 bar('reuse revokes the whole family', afterRevoke.status === 401);
@@ -117,6 +120,22 @@ const resetSet = await api('/auth/password/set', { token: resetVerify.body.token
 const reloginNew = await api('/auth/login', { body: { email: EMAIL, password: 'new-horse-10!' } });
 const reloginOld = await api('/auth/login', { body: { email: EMAIL, password: 'correct-horse-9' } });
 bar('reset replaces the password', resetSet.status === 200 && reloginNew.status === 200 && reloginOld.status === 401);
+
+/* 7b — a reset must END EVERY SESSION, not just change the hash.
+ * The reset funnel is the app's only advertised remedy for an account someone
+ * else has got into, and it used to leave the intruder's refresh chain alive:
+ * since every rotation re-mints a 90-day row, a stolen token that refreshed
+ * once a quarter outlived the reset forever. `staleRefresh` below stands in
+ * for the intruder's copy — it was minted before the reset and must be dead
+ * after it. The reset also hands the caller a replacement session, so the
+ * device doing the resetting is not logged out of itself. */
+const staleRefresh = relogin.body.refreshToken;
+const staleAfterReset = await api('/auth/refresh', { body: { refreshToken: staleRefresh } });
+bar('a reset kills sessions minted before it', staleAfterReset.status === 401);
+bar('...and hands the resetting device a replacement session',
+  !!resetSet.body.token && !!resetSet.body.refreshToken);
+const resetSessionWorks = await api('/me', { method: 'GET', token: resetSet.body.token });
+bar('...that actually works', resetSessionWorks.status === 200);
 
 /* 8 — login/reset on a missing account send nothing */
 const ghost = await api('/auth/email/start', { harness: true, body: { email: EMAIL2, purpose: 'reset' } });

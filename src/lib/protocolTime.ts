@@ -40,6 +40,69 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((toDate(b).getTime() - toDate(a).getTime()) / 86_400_000);
 }
 
+/**
+ * A stretch the goal spent paused. `to` is exclusive — the day the plan came
+ * back on — and null while the pause is still running.
+ */
+export interface PauseSpan {
+  from: string;
+  to: string | null;
+}
+
+/**
+ * Paused days lying inside [startedOn, local). This is what makes "week 3 of 6
+ * is still week 3" true after a pause.
+ *
+ * The alternative — moving started_on forward by the pause length, which is
+ * what resume used to do — silently destroyed history: every check-in is
+ * stamped with the real date it happened, and every read path here gates on
+ * started_on, so shifting the anchor pushed weeks of genuine check-ins to
+ * BEFORE the plan began, where they count for nothing. The client then
+ * re-fetched from the new anchor, got nothing back, and wrote that emptiness
+ * over its offline cache. A single Pause/Resume tap could take a 21-day streak
+ * at 100% adherence to zero.
+ *
+ * So the anchor never moves. Calendar days are real, plan days skip the
+ * pauses, and the two are reconciled here.
+ */
+export function pausedDaysBefore(startedOn: string, local: string, spans: PauseSpan[] = []): number {
+  let total = 0;
+  for (const span of spans) {
+    if (!span?.from) continue;
+    const from = span.from > startedOn ? span.from : startedOn;
+    // An open pause is still accruing, so it runs up to the date being asked
+    // about — otherwise the plan would keep advancing while paused.
+    const rawTo = span.to ?? local;
+    const to = rawTo < local ? rawTo : local;
+    if (to > from) total += daysBetween(from, to);
+  }
+  return total;
+}
+
+/** Calendar days since the start, minus whatever was spent paused. */
+export function planDaysBetween(startedOn: string, local: string, spans: PauseSpan[] = []): number {
+  return Math.max(0, daysBetween(startedOn, local) - pausedDaysBefore(startedOn, local, spans));
+}
+
+/**
+ * The inverse: which calendar date is plan-day N? Needed to lay out week
+ * windows, since week 3 of a paused plan no longer starts 14 calendar days in.
+ *
+ * Solved by iteration rather than algebra because the answer depends on how
+ * many pauses fall before it, which depends on the answer. Each pass moves the
+ * date past one more pause, so it settles in as many passes as there are
+ * pauses; the cap is a guard, not a limit anyone reaches.
+ */
+export function planDayToDate(startedOn: string, planDay: number, spans: PauseSpan[] = []): string {
+  let date = addDays(startedOn, planDay);
+  for (let i = 0; i < 12; i++) {
+    const next = addDays(startedOn, planDay + pausedDaysBefore(startedOn, date, spans));
+    if (next === date) break;
+    date = next;
+  }
+  return date;
+}
+
 /** 0 = Monday … 6 = Sunday. */
 export function weekdayIndex(local: string): number {
   return (toDate(local).getDay() + 6) % 7;
@@ -50,8 +113,8 @@ export function weekdayName(local: string): string {
 }
 
 /** 1-based plan week for a date; clamps to [1, duration]. */
-export function weekOf(startedOn: string, local: string, durationWeeks: number): number {
-  return Math.min(Math.max(weekOfUncapped(startedOn, local), 1), durationWeeks);
+export function weekOf(startedOn: string, local: string, durationWeeks: number, pauses: PauseSpan[] = []): number {
+  return Math.min(Math.max(weekOfUncapped(startedOn, local, pauses), 1), durationWeeks);
 }
 
 /**
@@ -60,16 +123,20 @@ export function weekOf(startedOn: string, local: string, durationWeeks: number):
  * indistinguishable from "finished three weeks ago". Use this for display and
  * for anything that has to know the plan is over.
  */
-export function weekOfUncapped(startedOn: string, local: string): number {
-  return Math.floor(daysBetween(startedOn, local) / 7) + 1;
+export function weekOfUncapped(startedOn: string, local: string, pauses: PauseSpan[] = []): number {
+  return Math.floor(planDaysBetween(startedOn, local, pauses) / 7) + 1;
 }
 
 /**
  * The plan's last active day. A 4-week plan starting Monday the 24th runs
  * through day 27 and is over on day 28.
  */
-export function planEndDate(startedOn: string, durationWeeks: number): string {
-  return addDays(startedOn, durationWeeks * 7 - 1);
+export function planEndDate(startedOn: string, durationWeeks: number, pauses: PauseSpan[] = []): string {
+  // Every paused day pushes the finish line out by one, which is the whole
+  // point of pausing: the plan owes you those days back.
+  const paused = pauses.reduce(
+    (n, s) => n + (s?.from && s.to && s.to > s.from ? daysBetween(s.from, s.to) : 0), 0);
+  return addDays(startedOn, durationWeeks * 7 - 1 + paused);
 }
 
 /**
@@ -78,8 +145,10 @@ export function planEndDate(startedOn: string, durationWeeks: number): string {
  * mergedWeekStrip, and missing entirely from missedYesterday (which is why a
  * finished plan kept reporting slipped days forever).
  */
-export function planIsOver(startedOn: string, durationWeeks: number, today: string): boolean {
-  return daysBetween(startedOn, today) >= durationWeeks * 7;
+export function planIsOver(
+  startedOn: string, durationWeeks: number, today: string, pauses: PauseSpan[] = [],
+): boolean {
+  return planDaysBetween(startedOn, today, pauses) >= durationWeeks * 7;
 }
 
 export function phaseForWeek(protocol: Protocol, week: number): ProtocolPhase {
@@ -451,11 +520,16 @@ const MILESTONE_BAR = 0.8;
  * so attainment is judged on that week's adherence — an approximation the
  * screen states plainly by showing the criteria alongside it.
  */
-export function planStats(protocol: Protocol, startedOn: string, checkIns: CheckIn[]): PlanStats {
+export function planStats(
+  protocol: Protocol, startedOn: string, checkIns: CheckIn[], pauses: PauseSpan[] = [],
+): PlanStats {
   const weeks: WeekTally[] = [];
   for (let week = 1; week <= protocol.duration_weeks; week++) {
-    const from = addDays(startedOn, (week - 1) * 7);
-    const to = addDays(from, 6);
+    // Week windows are laid out in PLAN days, so a pause stretches the
+    // calendar window rather than sliding the week onto days the user was
+    // never asked to show up for.
+    const from = planDayToDate(startedOn, (week - 1) * 7, pauses);
+    const to = addDays(planDayToDate(startedOn, week * 7, pauses), -1);
     const phase = phaseForWeek(protocol, week);
     const stepIds = new Set(phase.steps.map(s => s.id));
     const expected = phase.steps.reduce((n, s) => n + s.frequency.per_week, 0);
@@ -473,7 +547,7 @@ export function planStats(protocol: Protocol, startedOn: string, checkIns: Check
   // Bounded to the run: check-ins recorded after the plan ended (a late outbox
   // replay, say) are not part of how this plan went.
   const firstDay = startedOn;
-  const lastDay = planEndDate(startedOn, protocol.duration_weeks);
+  const lastDay = planEndDate(startedOn, protocol.duration_weeks, pauses);
   const dates = [...new Set(
     checkIns.filter(c => c.local_date >= firstDay && c.local_date <= lastDay).map(c => c.local_date),
   )].sort();

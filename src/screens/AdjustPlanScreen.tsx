@@ -113,7 +113,7 @@ export default function AdjustPlanScreen() {
     );
   }
 
-  const week = weekOf(goal.startedOn, localDate(), goal.protocol.duration_weeks);
+  const week = weekOf(goal.startedOn, localDate(), goal.protocol.duration_weeks, goal.pauses);
 
   const explain = (e: unknown): string => {
     const code = e instanceof GoalApiError ? e.code : '';

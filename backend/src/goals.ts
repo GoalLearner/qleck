@@ -21,6 +21,10 @@ export interface GoalRecord {
   /** P4.5: the witness link's secret, or null when the goal is private.
    *  Returned only to the OWNER — it rides their authenticated goal list. */
   share_token?: string | null;
+  /** Stretches this goal spent paused. `to` is exclusive and null while the
+   *  pause is still running. The client's plan-week maths needs these: since
+   *  started_on is immutable, they are the only record of time owed back. */
+  pauses?: { from: string; to: string | null }[];
 }
 
 export interface CreateGoalBody {
@@ -196,7 +200,20 @@ export async function listGoals(
   const goals: GoalRecord[] = [];
   for (const goal of rows.results ?? []) {
     const proto = await loadProtocol(env, goal.id);
-    if (proto) goals.push({ ...goal, protocol: JSON.parse(proto.json) as Protocol, protocol_version: proto.version });
+    if (!proto) continue;
+    // Pause spans travel with the goal: every plan-week calculation on the
+    // client needs them, and started_on alone can no longer answer "what week
+    // is it" now that the anchor is immutable.
+    const pauses = await env.DB
+      .prepare(`SELECT paused_on, resumed_on FROM goal_pauses WHERE goal_id = ? ORDER BY paused_on`)
+      .bind(goal.id)
+      .all<{ paused_on: string; resumed_on: string | null }>();
+    goals.push({
+      ...goal,
+      protocol: JSON.parse(proto.json) as Protocol,
+      protocol_version: proto.version,
+      pauses: (pauses.results ?? []).map(p => ({ from: p.paused_on, to: p.resumed_on })),
+    });
   }
   return goals;
 }
@@ -211,37 +228,69 @@ export async function abandonGoal(env: Env, userId: string, goalId: string): Pro
  * without that stamp a pause silently spends the plan's runway, which is the
  * opposite of what someone pausing is asking for.
  */
-export async function pauseGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean }> {
+export async function pauseGoal(
+  env: Env, userId: string, goalId: string, localDate?: string,
+): Promise<{ ok: boolean }> {
   if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false };
-  await env.DB
+  const res = await env.DB
     .prepare(
       `UPDATE goals SET status = 'paused', paused_at = datetime('now'), updated_at = datetime('now')
        WHERE id = ? AND user_id = ? AND status = 'active'`,
     )
     .bind(goalId, userId)
     .run();
+  // Only open a span if this call is what actually paused the goal — a second
+  // tap must not stack two open spans and pay the time back twice.
+  if (!res.meta?.changes) return { ok: true };
+  const on = /^\d{4}-\d{2}-\d{2}$/.test(localDate ?? '') ? localDate : null;
+  await env.DB
+    .prepare(
+      `INSERT INTO goal_pauses (id, goal_id, paused_on) VALUES (?, ?, COALESCE(?, date('now')))`,
+    )
+    .bind(crypto.randomUUID(), goalId, on)
+    .run();
   return { ok: true };
 }
 
 /**
- * Back on. started_on moves forward by however many whole days the pause
- * lasted, so "week 3 of 6" is still week 3 — the plan resumes where it was
- * left rather than where the calendar got to. A pause shorter than a day
- * shifts nothing, which is correct: no day was lost.
+ * Back on. "Week 3 of 6" is still week 3 — the plan resumes where it was left
+ * rather than where the calendar got to.
+ *
+ * It pays that time back by CLOSING THE PAUSE SPAN, never by moving
+ * started_on. The anchor is immutable for the life of a goal: every check-in
+ * is stamped with the real date it happened and every read path gates on
+ * started_on, so shifting it forward pushed weeks of real check-ins to before
+ * the plan began, where they counted for nothing — a 21-day streak at 100%
+ * adherence could read as zero after one Pause/Resume tap. See
+ * migrations/0014_goal_pauses.sql.
  */
-export async function resumeGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean }> {
+export async function resumeGoal(
+  env: Env, userId: string, goalId: string, localDate?: string,
+): Promise<{ ok: boolean }> {
   if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { ok: false };
-  await env.DB
+  const res = await env.DB
     .prepare(
       `UPDATE goals
-          SET status = 'active',
-              started_on = date(started_on,
-                '+' || CAST(MAX(0, julianday('now') - julianday(COALESCE(paused_at, 'now'))) AS INTEGER) || ' days'),
-              paused_at = NULL,
-              updated_at = datetime('now')
+          SET status = 'active', paused_at = NULL, updated_at = datetime('now')
         WHERE id = ? AND user_id = ? AND status = 'paused'`,
     )
     .bind(goalId, userId)
+    .run();
+  if (!res.meta?.changes) return { ok: true };
+  const on = /^\d{4}-\d{2}-\d{2}$/.test(localDate ?? '') ? localDate : null;
+  // Close the newest open span. resumed_on is exclusive, and it is floored to
+  // paused_on so a same-day pause/resume records a zero-length span rather
+  // than a negative one.
+  await env.DB
+    .prepare(
+      `UPDATE goal_pauses
+          SET resumed_on = MAX(paused_on, COALESCE(?, date('now')))
+        WHERE id = (
+          SELECT id FROM goal_pauses
+           WHERE goal_id = ? AND resumed_on IS NULL
+           ORDER BY created_at DESC LIMIT 1)`,
+    )
+    .bind(on, goalId)
     .run();
   return { ok: true };
 }

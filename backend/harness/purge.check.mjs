@@ -83,11 +83,28 @@ const sessionToken = verified.body.token ?? token;
 
 // Rows the API cannot create without spending an AI call — inserted directly
 // so the purge is still asked about them.
+//
+// SEEDED THE WAY PRODUCTION ACTUALLY WRITES, which is the whole point. The
+// first version of this check set user_id on both rows by hand, so it proved
+// only that `DELETE ... WHERE user_id = ?` deletes rows that have a user_id.
+// Production never wrote one: ai.ts's INSERT omits the column, and
+// coach_sessions' stamp went through a regex missing its backslash. The check
+// passed for weeks while real deletion erased nothing.
+//
+// So: user_id NULL on both, and a STALE device id — native re-mints its device
+// id every launch, so a session from Monday is not reachable by Friday's id.
+// The only honest route left is goal_outcomes(session_id, goal_id) -> goals,
+// and that is exactly what this asserts.
 const sessionId = crypto.randomUUID();
 const requestId = crypto.randomUUID();
-sql(`INSERT INTO coach_sessions (id, device_id, user_id, goal_text) VALUES ('${sessionId}', '${DEVICE}', '${userId}', 'a private goal I typed')`);
-sql(`INSERT INTO ai_requests (id, session_id, device_id, user_id, kind, model) VALUES ('${requestId}', '${sessionId}', '${DEVICE}', '${userId}', 'coach_turn', 'probe')`);
+const staleDevice = crypto.randomUUID();
+sql(`INSERT INTO coach_sessions (id, device_id, user_id, goal_text) VALUES ('${sessionId}', '${staleDevice}', NULL, 'a private goal I typed')`);
+sql(`INSERT INTO ai_requests (id, session_id, device_id, kind, model) VALUES ('${requestId}', '${sessionId}', '${staleDevice}', 'coach_turn', 'probe')`);
 sql(`INSERT INTO ai_request_payloads (request_id, prompt, response) VALUES ('${requestId}', 'the prompt with their words', 'the reply')`);
+// The structured interview snapshot: exact bodyweight, income, injuries, and
+// free-text past attempts. No user_id, no foreign key, nothing cascades it.
+sql(`INSERT INTO goal_outcomes (session_id, goal_id, answers_snapshot) VALUES ('${sessionId}', '${goalId}', '{"bodyweight":"231 lb","past_attempts":"a private thing about my divorce"}')`);
+sql(`INSERT INTO factor_guard_failopens (session_id) VALUES ('${sessionId}')`);
 
 const seeded = {
   users: count('users', `id='${userId}'`),
@@ -102,6 +119,8 @@ const seeded = {
   coach_sessions: count('coach_sessions', `id='${sessionId}'`),
   ai_requests: count('ai_requests', `id='${requestId}'`),
   ai_request_payloads: count('ai_request_payloads', `request_id='${requestId}'`),
+  goal_outcomes: count('goal_outcomes', `session_id='${sessionId}'`),
+  factor_guard_failopens: count('factor_guard_failopens', `session_id='${sessionId}'`),
 };
 const empty = Object.entries(seeded).filter(([, n]) => n === 0).map(([t]) => t);
 bar('every table under test actually holds a row before the delete',
@@ -125,6 +144,8 @@ const after = {
   coach_sessions: count('coach_sessions', `id='${sessionId}'`),
   ai_requests: count('ai_requests', `id='${requestId}'`),
   ai_request_payloads: count('ai_request_payloads', `request_id='${requestId}'`),
+  goal_outcomes: count('goal_outcomes', `session_id='${sessionId}'`),
+  factor_guard_failopens: count('factor_guard_failopens', `session_id='${sessionId}'`),
 };
 for (const [table, n] of Object.entries(after)) {
   // ai_requests is the deliberate exception: the metadata row (model,

@@ -75,13 +75,34 @@ export async function rotateRefresh(env: Env, presented: string): Promise<Sessio
   const rowId = presented.slice(0, dot);
   const secret = presented.slice(dot + 1);
   const row = await env.DB
-    .prepare(`SELECT id, user_id, token_hash, expires_at, revoked_at FROM refresh_tokens WHERE id = ?`)
+    .prepare(`SELECT id, user_id, token_hash, expires_at, revoked_at, replaced_by FROM refresh_tokens WHERE id = ?`)
     .bind(rowId)
-    .first<{ id: string; user_id: string; token_hash: string; expires_at: string; revoked_at: string | null }>();
+    .first<{
+      id: string; user_id: string; token_hash: string; expires_at: string;
+      revoked_at: string | null; replaced_by: string | null;
+    }>();
   if (!row) return { error: 'invalid' };
   const expect = await hmac(env, secret);
   if (expect.length !== row.token_hash.length || expect !== row.token_hash) return { error: 'invalid' };
   if (row.revoked_at) {
+    // Reuse detection stays STRICT, deliberately.
+    //
+    // A grace window was written here and then removed, because the only
+    // signal available to justify it does not hold: `last_used_at` is written
+    // only when a row is ROTATED, so a successor whose access token is in
+    // active use still looks "never used". Any re-issue rule keyed on that
+    // would quietly swallow real reuse — auth.check's own reuse bar catches
+    // it — and a weakened trap is worse than an occasional re-login.
+    //
+    // The genuine problem it was reaching for is real but belongs on the
+    // client: a response lost after this commits leaves the app holding a
+    // spent token, and src/api/device.ts answers the resulting 401 by wiping
+    // local identity, so the user lands on a blank anonymous account
+    // believing their goals are gone. The fix there is to stop treating
+    // auth_revoked as "become a new anonymous device" — the account and its
+    // data are intact server-side and want a sign-in prompt, not amnesia.
+    // The concurrent-401 case that CAUSED most of these is already fixed by
+    // the stale-token guard in tryRefresh.
     await revokeAllSessions(env, row.user_id);
     return { error: 'revoked' };
   }

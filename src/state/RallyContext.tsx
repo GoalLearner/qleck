@@ -9,7 +9,7 @@ import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api
 import { getStoredIdentity, localDate, resetIdentity } from '../api/device';
 import { fetchMe, logoutServer, saveMe } from '../api/account';
 import { resetDeviceId } from '../api/coach';
-import { planIsOver, planStats, type CheckIn } from '../lib/protocolTime';
+import { planIsOver, planStats, type CheckIn, type PauseSpan } from '../lib/protocolTime';
 import { UserProfile } from '../data/types';
 import { AVATAR_GRADS } from '../onboarding/theme';
 import type { OnboardingResult } from '../onboarding/useOnboardingFlow';
@@ -45,6 +45,11 @@ export interface ActiveGoal {
   status?: string;
   /** P4.5: the witness link's secret while this goal is shared. Owner-only. */
   shareToken?: string | null;
+  /** Stretches this goal spent paused, `to` exclusive and null while paused.
+   *  startedOn is immutable, so these are what make "week 3 of 6 is still
+   *  week 3" true after a pause. Absent on goals cached by builds ≤16 — an
+   *  empty list is exactly the old behaviour, so they degrade cleanly. */
+  pauses?: PauseSpan[];
 }
 
 // The funnel only knows what it actually asked for: the log-in path collects no
@@ -137,6 +142,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     id: g.id, startedOn: g.started_on, statement: g.statement,
     durationWeeks: g.duration_weeks, protocol: g.protocol,
     odds: g.success_probability ?? undefined, status: g.status, shareToken: g.share_token ?? null,
+    pauses: g.pauses ?? [],
   });
 
   /** Re-read goals + their check-ins from the server. Called on launch and
@@ -285,11 +291,11 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   // what makes nudges go quiet on a paused goal (P4's "nudges cease on
   // non-active state").
   const liveGoals = useMemo(
-    () => goals.filter(g => g.status !== 'paused' && !planIsOver(g.startedOn, g.protocol.duration_weeks, today)),
+    () => goals.filter(g => g.status !== 'paused' && !planIsOver(g.startedOn, g.protocol.duration_weeks, today, g.pauses)),
     [goals, today],
   );
   const endedGoals = useMemo(
-    () => goals.filter(g => g.status !== 'paused' && planIsOver(g.startedOn, g.protocol.duration_weeks, today)),
+    () => goals.filter(g => g.status !== 'paused' && planIsOver(g.startedOn, g.protocol.duration_weeks, today, g.pauses)),
     [goals, today],
   );
   const pausedGoals = useMemo(() => goals.filter(g => g.status === 'paused'), [goals]);
@@ -305,7 +311,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   ) => {
     const goal = goals.find(g => g.id === goalId);
     if (!goal) return;
-    const stats = planStats(goal.protocol, goal.startedOn, checkInsByGoal[goalId] ?? []);
+    const stats = planStats(goal.protocol, goal.startedOn, checkInsByGoal[goalId] ?? [], goal.pauses);
     await graduateGoal(goalId, mode, localDate(), {
       banked: stats.banked, expected: stats.expected, bestStreak: stats.bestStreak,
       weeks: stats.weeks,

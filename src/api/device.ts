@@ -156,6 +156,21 @@ let refreshInflight: Promise<DeviceIdentity | null> | null = null;
  *  starts a fresh anonymous device). */
 async function tryRefresh(current: DeviceIdentity): Promise<DeviceIdentity | null> {
   if (!current.refreshToken) return null;
+  // A rotation already happened while THIS request was in flight, so the token
+  // we are holding is spent. Single-flight only covers refreshes that overlap;
+  // it does nothing for a second 401 that arrives after the first refresh
+  // finished, and every cold launch past the 1h access-token life fires a
+  // burst of concurrent calls that all captured the same pre-refresh identity.
+  //
+  // Presenting a spent token is precisely what the server treats as THEFT:
+  // rotateRefresh revokes every session on every device and 401s, and our own
+  // 401 handler below then wipes the identity — so a few hundred milliseconds
+  // of latency spread between two ordinary requests would sign the user out
+  // everywhere and hand them a blank anonymous account. Take the rotated
+  // identity instead; the caller retries with its fresh access token.
+  if (cached?.refreshToken && cached.refreshToken !== current.refreshToken && cached.token) {
+    return cached;
+  }
   if (!refreshInflight) {
     refreshInflight = (async () => {
       try {

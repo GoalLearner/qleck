@@ -96,6 +96,14 @@ a full typecheck. Backend changes additionally need `cd backend` +
       removes its reps from Today; nudges for it go quiet.
 - [ ] **Resume** brings it back at the week it left — a goal paused for a week
       still reads "week 2 of 6", not "week 3 of 6".
+- [ ] **Resume keeps the history.** This is the one that broke: on a goal with
+      a real streak, note the streak, active days and adherence on Goals; pause
+      it, resume it, then pull to refresh and relaunch. All three must be
+      UNCHANGED. A streak that drops to 0 or adherence that falls to 0% means
+      the anchor moved again (`goals.started_on` must never change) — see
+      docs/AUDIT-2026-08-31.md §6.
+- [ ] The Ledger still shows the pre-pause weeks filled in, and the plan's end
+      date has moved out by however long the pause lasted.
 - [ ] A dropped goal appears under FINISHED; its **×** arms, then ERASE FOR
       GOOD removes it for real (it does not come back on relaunch).
 

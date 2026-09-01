@@ -20,8 +20,8 @@
 import { checkQuota, provider, providerReady, type Env } from './ai';
 import { mintToken, registerDevice, touchUser, verifyToken } from './auth';
 import {
-  hashPassword, mintSession, normEmail, peekCode, revokeRefresh, rotateRefresh,
-  startEmailCode, verifyEmailCode, verifyPassword, type CodePurpose,
+  hashPassword, mintSession, normEmail, peekCode, revokeAllSessions, revokeRefresh,
+  rotateRefresh, startEmailCode, verifyEmailCode, verifyPassword, type CodePurpose,
 } from './emailAuth';
 import { verifyAppleToken } from './apple';
 import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
@@ -273,11 +273,17 @@ export default {
       const lifecycleMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/(abandon|complete|pause|resume)$/);
       if (lifecycleMatch && request.method === 'POST') {
         const [, goalId, action] = lifecycleMatch;
-        const op = action === 'complete' ? completeGoal
-          : action === 'abandon' ? abandonGoal
-          : action === 'pause' ? pauseGoal
-          : resumeGoal;
-        await op(env, userId, goalId);
+        if (action === 'pause' || action === 'resume') {
+          // The pause span is measured in the USER's local dates, because
+          // check_ins.local_date is, and the two have to line up. A worker in
+          // UTC guessing date('now') for someone in UTC-7 mis-dates the span
+          // by a day every evening.
+          const body = await request.json<{ localDate?: unknown }>().catch(() => ({} as { localDate?: unknown }));
+          const localDate = typeof body.localDate === 'string' ? body.localDate : undefined;
+          await (action === 'pause' ? pauseGoal : resumeGoal)(env, userId, goalId, localDate);
+          return json({ ok: true }, 200, cors);
+        }
+        await (action === 'complete' ? completeGoal : abandonGoal)(env, userId, goalId);
         return json({ ok: true }, 200, cors);
       }
 
@@ -545,7 +551,19 @@ export default {
           .prepare(`UPDATE users SET password_hash = ? WHERE id = ?`)
           .bind(await hashPassword(password), bearerUser)
           .run();
-        return json({ ok: true }, 200, cors);
+        // A password reset is the app's only advertised remedy for an account
+        // someone else has got into, and until now it did nothing to them: it
+        // changed the hash and left every existing refresh chain alive. Since
+        // rotation re-mints a 90-day row on every use, a stolen token that
+        // refreshes once a quarter outlives the reset forever. So the reset
+        // ends EVERY session, which is what a user changing their password
+        // has always been entitled to assume it does.
+        await revokeAllSessions(env, bearerUser);
+        // ...including the caller's own, so hand back a replacement rather
+        // than logging the person out of the device they just reset from.
+        // The client adopts this; without it the next call would present a
+        // token we just revoked and trip the reuse trap.
+        return json({ ok: true, ...(await mintSession(env, bearerUser)) }, 200, cors);
       }
 
       /* Refresh rotation. A rotated-or-revoked token presented again is
@@ -833,7 +851,7 @@ export default {
         const sessionId = crypto.randomUUID();
         await env.DB
           .prepare(`INSERT INTO coach_sessions (id, device_id, user_id, goal_text, own_plan) VALUES (?, ?, ?, ?, ?)`)
-          .bind(sessionId, deviceId, await verifyToken(env, (request.headers.get('Authorization') ?? '').replace(/^Bearers+/i, '') || null), goalText, ownPlan)
+          .bind(sessionId, deviceId, await verifyToken(env, (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '') || null), goalText, ownPlan)
           .run();
 
         // The safety gate reads goal + plan together — "lose some weight"

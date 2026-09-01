@@ -115,7 +115,7 @@ export default function GraduationScreen() {
     );
   }
 
-  const stats = planStats(goal.protocol, goal.startedOn, checkInsByGoal[goal.id] ?? []);
+  const stats = planStats(goal.protocol, goal.startedOn, checkInsByGoal[goal.id] ?? [], goal.pauses);
   const pct = Math.round(stats.adherence * 100);
   const reached = stats.milestones.filter(m => m.reached).length;
   const weeks = goal.protocol.duration_weeks;
@@ -157,7 +157,7 @@ export default function GraduationScreen() {
           {goalTitle(goal.statement, goal.protocol)}
         </Text>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 8 }}>
-          {weeks} weeks · {goal.startedOn} to {planEndDate(goal.startedOn, weeks)}
+          {weeks} weeks · {goal.startedOn} to {planEndDate(goal.startedOn, weeks, goal.pauses)}
         </Text>
 
         {/* the run in review */}

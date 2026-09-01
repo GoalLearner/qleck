@@ -18,6 +18,7 @@ import type { ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import {
   addDays, phaseForWeek, planIsOver, stepPinnedOn, weekOf, weekStart, type CheckIn,
+  type PauseSpan,
 } from '../lib/protocolTime';
 import { useRally } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -36,14 +37,14 @@ interface LedgerRow {
 
 function rowsForWeek(
   step: ProtocolStep, startedOn: string, durationWeeks: number,
-  monday: string, today: string, checkIns: CheckIn[],
+  monday: string, today: string, checkIns: CheckIn[], pauses?: PauseSpan[],
 ): LedgerRow {
   const cells: CellState[] = [];
   const pinned = (step.frequency.days?.length ?? 0) > 0;
   let scheduledPast = 0, bankedPast = 0, bankedWeek = 0, inPlanDays = 0;
   for (let i = 0; i < 7; i++) {
     const date = addDays(monday, i);
-    const inPlan = date >= startedOn && !planIsOver(startedOn, durationWeeks, date);
+    const inPlan = date >= startedOn && !planIsOver(startedOn, durationWeeks, date, pauses);
     if (!inPlan) { cells.push('blank'); continue; }
     inPlanDays++;
     const banked = checkIns.some(c => c.step_id === step.id && c.local_date === date);
@@ -105,7 +106,7 @@ export default function LedgerScreen() {
   const canFwd = monday < thisMonday;
 
   const perGoal = useMemo(() => goals.map((g, i) => {
-    const week = weekOf(g.startedOn, addDays(monday, 6) < g.startedOn ? g.startedOn : addDays(monday, 6), g.protocol.duration_weeks);
+    const week = weekOf(g.startedOn, addDays(monday, 6) < g.startedOn ? g.startedOn : addDays(monday, 6), g.protocol.duration_weeks, g.pauses);
     const phase = phaseForWeek(g.protocol, week);
     // Session-attached steps carry their schedule on the SESSION (2b) — the
     // same repair repsForDate performs, done here without mutating shared
@@ -116,7 +117,7 @@ export default function LedgerScreen() {
         ? sessionDays.get(raw.session_id) ?? raw.frequency.days
         : raw.frequency.days;
       const s: ProtocolStep = days === raw.frequency.days ? raw : { ...raw, frequency: { ...raw.frequency, days: days ? [...days] : days } };
-      return rowsForWeek(s, g.startedOn, g.protocol.duration_weeks, monday, today, checkInsByGoal[g.id] ?? []);
+      return rowsForWeek(s, g.startedOn, g.protocol.duration_weeks, monday, today, checkInsByGoal[g.id] ?? [], g.pauses);
     });
     return { goal: g, dot: goalDot(i), rows: rows.filter(r => r.cells.some(c => c !== 'blank')) };
   }).filter(p => p.rows.length > 0), [goals, checkInsByGoal, monday, today]);

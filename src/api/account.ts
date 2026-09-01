@@ -88,6 +88,12 @@ export async function setPassword(password: string, withToken?: string): Promise
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `set_password_failed_${res.status}`);
   }
+  // Setting a password now ends every session on the account — including this
+  // one — so the server hands back a replacement. Adopt it, or the very next
+  // request presents the token the reset just revoked and the reuse trap
+  // signs the user out of the device they are holding.
+  const body = (await res.json().catch(() => ({}))) as Partial<SessionResult>;
+  if (body.userId && body.token) adoptSession(body as SessionResult, 'email');
 }
 
 export type UnameApiStatus = 'free' | 'taken' | 'short' | 'invalid';

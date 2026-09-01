@@ -155,7 +155,25 @@ export async function witnessView(env: Env, token: string): Promise<WitnessView 
   const effort: boolean[] = [];
   for (let i = 13; i >= 0; i--) effort.push(banked.has(shiftDate(today, -i)));
 
-  const dayOne = Math.floor((Date.parse(today + 'T00:00:00Z') - Date.parse(goal.started_on + 'T00:00:00Z')) / DAY_MS);
+  // Plan days, not calendar days. started_on is immutable (see
+  // migrations/0014_goal_pauses.sql), so paused stretches have to be
+  // subtracted here or a goal paused for a fortnight would tell its witness it
+  // is on week 5 of 4 and mark itself finished while the person is still
+  // working through week 3.
+  const spans = await env.DB
+    .prepare(`SELECT paused_on, resumed_on FROM goal_pauses WHERE goal_id = ?`)
+    .bind(goal.id)
+    .all<{ paused_on: string; resumed_on: string | null }>();
+  let pausedDays = 0;
+  for (const s of spans.results ?? []) {
+    const from = s.paused_on > goal.started_on ? s.paused_on : goal.started_on;
+    const rawTo = s.resumed_on ?? today;          // an open pause is still accruing
+    const to = rawTo < today ? rawTo : today;
+    if (to > from) pausedDays += Math.floor((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / DAY_MS);
+  }
+
+  const elapsed = Math.floor((Date.parse(today + 'T00:00:00Z') - Date.parse(goal.started_on + 'T00:00:00Z')) / DAY_MS);
+  const dayOne = Math.max(0, elapsed - pausedDays);
   const rawWeek = Math.floor(dayOne / 7) + 1;
   return {
     title,

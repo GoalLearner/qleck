@@ -53,6 +53,9 @@ async function api(path, { method = 'POST', body, token } = {}) {
 }
 
 /** Read-only local D1 query, same pattern as outcomes.check.mjs. */
+/** The device's local date, the same shape check_ins.local_date carries. */
+const today = () => new Date().toLocaleDateString('en-CA');
+
 function sql(query) {
   const raw = execSync(`npx wrangler d1 execute qleck --local --json --command "${query}"`, {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
@@ -98,22 +101,37 @@ bar('pause keeps the goal listed, marked paused',
   paused.status === 200 && !!pausedRow && pausedRow.status === 'paused',
   JSON.stringify(pausedRow ?? {}).slice(0, 120));
 
-// Backdate the pause by 10 days so resume has real time to pay back.
-sql(`UPDATE goals SET paused_at = datetime('now', '-10 days') WHERE id = '${pauseId}'`);
+// Backdate the OPEN SPAN by 10 days so resume has real time to pay back.
+//
+// This used to assert that resume moved started_on forward by 10. It does not
+// any more, and must not: the anchor is immutable for the life of a goal.
+// Shifting it re-anchored every read path and pushed real check-ins to before
+// the plan began — a 21-day streak at 100% could read as zero after one
+// Pause/Resume tap, and that fabricated 0% run then poisoned the odds
+// calibration dataset. The debt is carried by goal_pauses instead.
+// Computed LOCALLY, not with SQL's date('now'): that is UTC, and on a machine
+// behind UTC an evening run backdates from tomorrow and the span comes out a
+// day short. check_ins.local_date is local, so pause spans must be too.
+const tenDaysAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 10); return d.toLocaleDateString('en-CA'); })();
+sql(`UPDATE goal_pauses SET paused_on = '${tenDaysAgo}' WHERE goal_id = '${pauseId}' AND resumed_on IS NULL`);
 const before = sql(`SELECT started_on FROM goals WHERE id = '${pauseId}'`)[0].started_on;
-await api(`/goals/${pauseId}/resume`, { token });
+await api(`/goals/${pauseId}/resume`, { token, body: { localDate: today() } });
 const after = sql(`SELECT started_on, status, paused_at FROM goals WHERE id = '${pauseId}'`)[0];
-const shifted = Math.round(
-  (new Date(after.started_on + 'T00:00:00Z') - new Date(before + 'T00:00:00Z')) / 86400000,
-);
-bar('resume pays back the paused days (10) and clears the stamp',
-  after.status === 'active' && after.paused_at === null && shifted === 10,
-  `shifted ${shifted}d, status ${after.status}`);
+const span = sql(`SELECT paused_on, resumed_on FROM goal_pauses WHERE goal_id = '${pauseId}' ORDER BY created_at DESC LIMIT 1`)[0];
+const owed = span?.resumed_on
+  ? Math.round((new Date(span.resumed_on + 'T00:00:00Z') - new Date(span.paused_on + 'T00:00:00Z')) / 86400000)
+  : null;
+bar('resume closes the span and clears the stamp',
+  after.status === 'active' && after.paused_at === null && owed === 10,
+  `owed ${owed}d, status ${after.status}`);
+bar('resume NEVER moves the anchor (history stays banked)',
+  after.started_on === before, `${before} -> ${after.started_on}`);
 
-const resumeAgain = await api(`/goals/${pauseId}/resume`, { token });
+const resumeAgain = await api(`/goals/${pauseId}/resume`, { token, body: { localDate: today() } });
 const afterTwice = sql(`SELECT started_on FROM goals WHERE id = '${pauseId}'`)[0].started_on;
-bar('resuming an already-active goal shifts nothing',
-  resumeAgain.status === 200 && afterTwice === after.started_on);
+const spansNow = sql(`SELECT COUNT(*) AS n FROM goal_pauses WHERE goal_id = '${pauseId}'`)[0].n;
+bar('resuming an already-active goal changes nothing',
+  resumeAgain.status === 200 && afterTwice === after.started_on && Number(spansNow) === 1);
 
 /* ── delete ─────────────────────────────────────────────────────────────── */
 

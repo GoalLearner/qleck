@@ -510,11 +510,11 @@ function DriverList({
   );
 }
 
-function OddsCardHeader({ left, right }: { left: string; right: string }) {
+function OddsCardHeader({ left, right }: { left: string; right?: string }) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
       <Text style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: '700', letterSpacing: 1.6, color: night.textFaint }}>{left}</Text>
-      <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost }}>{right}</Text>
+      {right ? <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost }}>{right}</Text> : null}
     </View>
   );
 }
@@ -616,7 +616,12 @@ function FeasibleVerdict({
         borderRadius: 24, paddingHorizontal: 22, paddingVertical: 18,
       }}
     >
-      <OddsCardHeader left="QOACH'S CALL" right={simActive ? simPhaseLabel(simPhase) : 'TAP DIAL TO REPLAY'} />
+      {/* "TAP DIAL TO REPLAY" is only true while a sim is live — the dial's
+          onPress below is gated on the same simActive. With SIMULATIONS="off"
+          (owner call 2026-08-29) that made every verdict advertise a tap that
+          does nothing, which is the one part of the sim-lanes bug report that
+          is still true of current builds. No sim, no label. */}
+      <OddsCardHeader left="QOACH'S CALL" right={simActive ? simPhaseLabel(simPhase) : undefined} />
       {paces ? (
         <View style={{ flexDirection: 'row', gap: 5, backgroundColor: night.hairline, borderRadius: 999, padding: 5, marginTop: 10 }}>
           {paces.map(o => {

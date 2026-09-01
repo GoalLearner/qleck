@@ -255,9 +255,33 @@ dead end, not a feed, is where community belongs.
 - [ ] Milestone/streak events → privacy-filtered feed **rendered from derived state** (late syncs can't falsify frozen events); cheer → Expo push to goal owner (first server-push surface); Friends surface flag flips back on
 - [ ] UGC minimum (Apple 1.2): report content, block user, contact mechanism — shipped with the feed
 - [ ] Invite link/code flow
-- [ ] Sync-recency active-user metric (never app-opens) instrumented **before** testers arrive; readout: activation, D7 check-in retention (**active goals only**), counter-offer acceptance, adaptation usage, AI cost/user, **crash-free rate / unexplained client_errors**
+- [x] Sync-recency active-user metric + readout — **shipped 08-31**, ahead of testers exactly as this bullet demands. `GET /admin/readout` (secret-gated; 404 not 403 when unconfigured) returns active users by SYNC RECENCY off `users.last_seen_at`, activation, D7 check-in retention scoped to ACTIVE goals, counter-offer acceptance, adaptation usage, AI cost per active user, client-error counts and distinct messages, AI reports, and shared-witness count. Needed no new instrumentation — every input was already being written. Documented in docs/BETA-READOUT.md, including how to read each number honestly.
 
-**Exit:** 5–10 external users, each ≥1 real goal + ≥1 week of check-ins; private goal invisible via direct API probing (tested, not assumed); cheer round-trips to a push; written go/no-go readout exists.
+**Exit:** unchanged, and it is the one exit no amount of code can reach — it needs real strangers, which needs submission (P5 §8, owner-side).
+
+> **Status 08-31 — deliberately partial.** The measurement bullet is built,
+> because it had to exist before the first tester's first day. **The social
+> bullets (follow edges, feed, cheer→push, UGC controls, invite codes) were
+> NOT built, on purpose**, for three reasons worth writing down rather than
+> quietly skipping:
+> 1. **There are zero users.** A feed, a follow graph and an invite-a-friend
+>    flow all take their shape from how real people actually use the thing.
+>    Building them now guesses at that shape and then defends the guess.
+> 2. **The pact-app collision is still unresolved** (P4.5 decision 1). The
+>    owner was told two products cannot both own the partner-accountability
+>    mechanic; a follow graph plus cheers is squarely that mechanic. Building
+>    it pre-empts a decision that is the owner's.
+> 3. **The witness link already ships the smallest honest version** of this,
+>    and `witness.goals_shared` in the readout is the cheap signal that
+>    should decide how much more is worth building. This roadmap says it
+>    itself: community's seed in Qleck is the witness link, not a feed.
+>
+> The privacy half of bullet 1 is partly already met: `visibility` is
+> per-goal, defaults private, and `check:witness` (17 bars) proves a
+> non-owner cannot reach a goal by probing — including that knowing a goal id
+> opens nothing and a revoked link is byte-identical to one that never
+> existed. Server-side enforcement across a *feed* is what remains, and it
+> arrives with the feed.
 **Retires:** the thesis risk itself — plus API-level privacy enforcement.
 
 ## 4. Dependency graph

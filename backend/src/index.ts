@@ -31,6 +31,7 @@ import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCu
 import { graduate, type GraduateBody } from './graduation';
 import { shareGoal, unshareGoal, witnessPage, witnessView } from './witness';
 import { exportAccount, purgeAccount } from './account';
+import { betaReadout } from './metrics';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
 import type { Protocol } from './protocolSchema';
 
@@ -718,6 +719,20 @@ export default {
           'Referrer-Policy': 'no-referrer',
         },
       });
+    }
+
+    /* ── The beta readout (P6) ──────────────────────────────────────────
+     * Secret-gated rather than user-authenticated: it is an owner tool, not
+     * a product surface, and no user should ever be able to read the whole
+     * cohort's numbers. Unset secret = the door does not exist (404, not
+     * 403 — an unconfigured admin route should not advertise itself). */
+    if (url.pathname === '/admin/readout' && request.method === 'GET') {
+      const offered = request.headers.get('X-Qleck-Admin') ?? url.searchParams.get('key') ?? '';
+      if (!env.ADMIN_METRICS_SECRET || offered !== env.ADMIN_METRICS_SECRET) {
+        return json({ error: 'not_found' }, 404, cors);
+      }
+      const days = Number(url.searchParams.get('days') ?? 30);
+      return json(await betaReadout(env, Number.isFinite(days) ? days : 30), 200, cors);
     }
 
     if (url.pathname === '/health' && request.method === 'GET') {

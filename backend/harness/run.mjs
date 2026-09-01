@@ -123,7 +123,7 @@ async function runGoalFixture(f) {
   // "how much time scrolling", "longest continuous walk"), the new shape
   // joins the list — the v29 endurance patch and the P3-era additions below
   // are the same move.
-  const EXACT_ASK = /\b(weigh(t|ing)?|body\s?weight|1\s?rm|one[-\s]rep|best (set|lift|effort)|current (bench|squat|deadlift|lift|capacity)|how far|how many minutes|minutes could|longest\s+(\w+\s+)?(stretch|jog|run|walk|ride|swim|distance|session)|could (jog|run|walk|ride|swim)|how much time|how long (do|does|can|could)|current pace|saved|savings|balance|contribut|income|set aside|followers?|subscribers?|avg\.? views|average views|views per|opens per)\b/i;
+  const EXACT_ASK = /\b(weigh(t|ing)?|body\s?weight|1\s?rm|one[-\s]rep|best (set|lift|effort)|current (bench|squat|deadlift|lift|capacity)|how far|how many minutes|minutes could|longest\s+(\w+\s+)?(stretch|jog|run|walk|ride|swim|distance|session)|could (jog|run|walk|ride|swim)|how much time|how long (do|does|can|could)|current pace|word count|words (a day|per day|in a|you)|most you.{0,5}ve ever (written|hit|done|managed)|pages? (a day|per day|in a)|saved|savings|balance|contribut|income|set aside|followers?|subscribers?|avg\.? views|average views|views per|opens per)\b/i;
   // A STAT BUCKET is a range-shaped chip carrying an arithmetic unit
   // (weight, money, audience counts). v27 removed every legitimate one from
   // the manifests, so ANY sighting on ANY question is the model re-inventing

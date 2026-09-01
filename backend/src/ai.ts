@@ -43,6 +43,9 @@ export interface Env {
   // the peek. NEVER set in production — without a mail key prod refuses
   // honestly (email_unavailable) instead of promising a code nobody sends.
   EMAIL_AUTH_OPEN?: string;
+  // P6: gates GET /admin/readout, the beta go/no-go numbers. Owner tool,
+  // never a product surface. Unset = the route 404s.
+  ADMIN_METRICS_SECRET?: string;
   // App Review's demo door: when set, review@qleck.app + this password logs
   // into a dedicated demo account with no inbox involved. Worker secret.
   REVIEW_DEMO_PASSWORD?: string;

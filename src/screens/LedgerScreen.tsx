@@ -14,66 +14,13 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
 import { goalDot, goalTitle } from '../components/protocolViews';
-import type { ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import {
-  addDays, phaseForWeek, planIsOver, stepPinnedOn, weekOf, weekStart, type CheckIn,
-  type PauseSpan,
-} from '../lib/protocolTime';
+  DAY_LETTERS, rowsForWeek, stepsWithSessionDays, type CellState,
+} from '../lib/ledgerWeek';
+import { addDays, phaseForWeek, weekOf, weekStart } from '../lib/protocolTime';
 import { useRally } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
-
-const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
-type CellState = 'banked' | 'missed' | 'pending' | 'off' | 'blank';
-
-interface LedgerRow {
-  step: ProtocolStep;
-  cells: CellState[];
-  /** Quota steps: "2 of 3" for the week; null for pinned-day steps. */
-  quota: string | null;
-  perfect: boolean;
-}
-
-function rowsForWeek(
-  step: ProtocolStep, startedOn: string, durationWeeks: number,
-  monday: string, today: string, checkIns: CheckIn[], pauses?: PauseSpan[],
-): LedgerRow {
-  const cells: CellState[] = [];
-  const pinned = (step.frequency.days?.length ?? 0) > 0;
-  let scheduledPast = 0, bankedPast = 0, bankedWeek = 0, inPlanDays = 0;
-  for (let i = 0; i < 7; i++) {
-    const date = addDays(monday, i);
-    const inPlan = date >= startedOn && !planIsOver(startedOn, durationWeeks, date, pauses);
-    if (!inPlan) { cells.push('blank'); continue; }
-    inPlanDays++;
-    const banked = checkIns.some(c => c.step_id === step.id && c.local_date === date);
-    if (banked) bankedWeek++;
-    if (pinned) {
-      const scheduled = stepPinnedOn(step, date);
-      if (!scheduled) { cells.push(banked ? 'banked' : 'off'); continue; }
-      if (banked) { cells.push('banked'); if (date <= today) { scheduledPast++; bankedPast++; } continue; }
-      if (date < today) { cells.push('missed'); scheduledPast++; continue; }
-      cells.push('pending');
-      if (date === today) scheduledPast++;
-    } else {
-      cells.push(banked ? 'banked' : date <= today ? 'off' : 'pending');
-    }
-  }
-  // A quota is only fair against the days the plan actually covered — a
-  // "7 per week" habit on a plan that started Sunday has ONE possible day
-  // that week, not seven (same at the plan's final partial week).
-  const required = Math.min(step.frequency.per_week, inPlanDays);
-  const quota = !pinned && step.frequency.per_week >= 1
-    ? `${Math.min(bankedWeek, required)} of ${required}`
-    : null;
-  // PERFECT: pinned rows — every scheduled day so far banked (and at least
-  // one banked); quota rows — the week's (pro-rated) quota already met.
-  const perfect = pinned
-    ? bankedPast > 0 && bankedPast === scheduledPast && !cells.includes('missed')
-    : required >= 1 && bankedWeek >= required;
-  return { step, cells, quota, perfect };
-}
 
 function Cell({ state }: { state: CellState }) {
   const box = { width: 24, height: 24, borderRadius: 7 } as const;
@@ -108,17 +55,8 @@ export default function LedgerScreen() {
   const perGoal = useMemo(() => goals.map((g, i) => {
     const week = weekOf(g.startedOn, addDays(monday, 6) < g.startedOn ? g.startedOn : addDays(monday, 6), g.protocol.duration_weeks, g.pauses);
     const phase = phaseForWeek(g.protocol, week);
-    // Session-attached steps carry their schedule on the SESSION (2b) — the
-    // same repair repsForDate performs, done here without mutating shared
-    // protocol objects.
-    const sessionDays = new Map((g.protocol.sessions ?? []).map(sess => [sess.id, sess.days]));
-    const rows = phase.steps.map(raw => {
-      const days = raw.session_id && (raw.frequency.days?.length ?? 0) === 0
-        ? sessionDays.get(raw.session_id) ?? raw.frequency.days
-        : raw.frequency.days;
-      const s: ProtocolStep = days === raw.frequency.days ? raw : { ...raw, frequency: { ...raw.frequency, days: days ? [...days] : days } };
-      return rowsForWeek(s, g.startedOn, g.protocol.duration_weeks, monday, today, checkInsByGoal[g.id] ?? [], g.pauses);
-    });
+    const rows = stepsWithSessionDays(g.protocol, phase.steps)
+      .map(st => rowsForWeek(st, g.startedOn, g.protocol.duration_weeks, monday, today, checkInsByGoal[g.id] ?? [], g.pauses));
     return { goal: g, dot: goalDot(i), rows: rows.filter(r => r.cells.some(c => c !== 'blank')) };
   }).filter(p => p.rows.length > 0), [goals, checkInsByGoal, monday, today]);
 

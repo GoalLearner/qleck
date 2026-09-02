@@ -22,11 +22,15 @@ export interface Palette {
   ringTrack: string; trackIdle: string; dotUpcoming: string;
   dashed: string; tabIdle: string; tabBarBg: string; faintText: string;
   danger: string; dangerBorder: string; missed: string;
+  /** A miss the user can no longer act on: visibly not banked, but silent. */
+  spent: string;
   chipIdleBg: string; chipBg: string; disabledSend: string; chevron: string;
   shadow: string;
   // success / "banked" family
   success: string; successBg: string; successFg: string; successDot: string;
   successBorder: string; doneBg: string; doneBorder: string;
+  /** The ring on the cell you just banked. */
+  successHalo: string;
   // rep-kind chips
   durationBg: string; durationFg: string;
   quantityBg: string; quantityFg: string;
@@ -72,6 +76,7 @@ export const LIGHT: Palette = {
   danger: '#a05a5a',
   dangerBorder: 'rgba(160,90,90,0.35)',
   missed: '#c96f5f',
+  spent: 'rgba(38,43,51,0.08)',
   chipIdleBg: '#edebe0',
   chipBg: 'rgba(38,43,51,0.05)',
   disabledSend: '#c9c6ba',
@@ -84,6 +89,7 @@ export const LIGHT: Palette = {
   successBorder: 'rgba(71,105,79,0.35)',
   doneBg: '#eef4ec',
   doneBorder: '#dcecdf',
+  successHalo: 'rgba(71,105,79,0.22)',
   durationBg: '#e6eaf2',
   durationFg: '#46536a',
   quantityBg: '#e4e6f4',
@@ -135,6 +141,7 @@ export const DARK: Palette = {
   danger: '#FF6B6B',
   dangerBorder: 'rgba(255,107,107,0.4)',
   missed: '#FF8B7A',
+  spent: 'rgba(255,255,255,0.07)',
   chipIdleBg: '#1B222D',
   chipBg: 'rgba(255,255,255,0.07)',
   disabledSend: 'rgba(255,255,255,0.25)',
@@ -147,6 +154,7 @@ export const DARK: Palette = {
   successBorder: 'rgba(43,227,128,0.45)',
   doneBg: 'rgba(43,227,128,0.09)',
   doneBorder: 'rgba(43,227,128,0.24)',
+  successHalo: 'rgba(43,227,128,0.22)',
   durationBg: 'rgba(14,159,232,0.16)',
   durationFg: '#7CC9F0',
   quantityBg: 'rgba(139,92,246,0.18)',

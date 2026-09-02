@@ -19,7 +19,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 // bare `TextInput.default` reference for the plain named import in THIS
 // module (and only this one), which threw at runtime. The alias sidesteps
 // whatever the rewrite trips on.
-import { Animated, Dimensions, Platform, Pressable, ScrollView, Share, Text, TextInput as RNTextInput, View, useWindowDimensions } from 'react-native';
+import { Animated, Dimensions, Easing, Platform, Pressable, ScrollView, Share, Text, TextInput as RNTextInput, View, useWindowDimensions } from 'react-native';
 import { useAppearance } from '../state/ThemeContext';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
@@ -28,6 +28,7 @@ import Confetti, { type ConfettiHandle } from '../components/Confetti';
 import FadeInUp from '../components/FadeInUp';
 import { goalDot, goalTitle } from '../components/protocolViews';
 import { RepSheet, hasHowTo } from '../components/RepSheet';
+import WeekLedger from '../components/WeekLedger';
 import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
@@ -337,36 +338,108 @@ function sheetFor(goal: ActiveGoal, step: ProtocolStep, today: string) {
 
 /* ── day states ─────────────────────────────────────────────────────────── */
 
-// A calm banner, not a takeover: the checked cards stay below as the day's
-// receipts (owner call, 2026-08-24 — evidence is the reward). Tapping it
-// replays the confetti salute (the canvas' encore).
-function DayDone({ streak, preview, onEncore }: { streak: number; preview: string | null; onEncore: () => void }) {
+// The completion card is the CONTAINER, not a banner over one: tapping it
+// unrolls this week's ledger inside itself (design `Qleck Day Complete.dc.html`,
+// 2026-09-02). The checked rep cards stay below as the day's receipts (owner
+// call 2026-08-24 — evidence is the reward); nothing overlays them.
+//
+// Closed it is the announcement; open it is the evidence. The headline drops
+// 34 -> 22 and slides left, the streak pill docks beside it, and the next-up
+// line moves down to the footer next to the only exit.
+//
+// NOTE: this replaced the confetti encore — the card's tap now belongs to the
+// ledger. The salute still fires on the transition to done (useCelebrateOnDone).
+function DayDone({ streak, preview, open, onToggle, goals, byGoal, today, onOpenLedger }: {
+  streak: number;
+  preview: string | null;
+  open: boolean;
+  onToggle: () => void;
+  goals: ActiveGoal[];
+  byGoal: Record<string, CheckIn[]>;
+  today: string;
+  onOpenLedger: () => void;
+}) {
+  const t = useRef(new Animated.Value(open ? 1 : 0)).current;
+  // The grid stays mounted through the fold so it can animate shut.
+  const [mounted, setMounted] = useState(open);
+
+  useEffect(() => {
+    if (open) setMounted(true);
+    Animated.timing(t, {
+      toValue: open ? 1 : 0, duration: 500,
+      easing: Easing.bezier(0.2, 0.8, 0.2, 1), useNativeDriver: false,
+    }).start();
+    if (open) return;
+    const id = setTimeout(() => setMounted(false), 520);
+    return () => clearTimeout(id);
+  }, [open, t]);
+
+  const lerp = (a: number, b: number) => t.interpolate({ inputRange: [0, 1], outputRange: [a, b] });
+
   return (
-    <Pressable
-      onPress={onEncore}
-      style={{
-        alignItems: 'center', gap: 12, backgroundColor: colors.doneBg,
-        borderWidth: 1, borderColor: colors.doneBorder, borderRadius: 26,
-        paddingVertical: 22, paddingHorizontal: 18,
-      }}
-    >
-      <Text style={{ fontFamily: fonts.serif, fontSize: 27, color: colors.ink }}>That's today.</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.successBg }}>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: colors.success }}>{streak}-day streak</Text>
+    <Pressable onPress={onToggle}>
+      <Animated.View
+        style={{
+          backgroundColor: colors.doneBg, borderWidth: 1, borderColor: colors.doneBorder,
+          borderRadius: 26,
+          paddingTop: lerp(26, 18), paddingLeft: lerp(22, 18), paddingRight: lerp(22, 18),
+          paddingBottom: lerp(22, 16),
+        }}
+      >
+        <View style={{
+          flexDirection: open ? 'row' : 'column', alignItems: 'center',
+          justifyContent: 'space-between', gap: open ? 10 : 14,
+        }}>
+          <Animated.Text numberOfLines={1} style={{ flexShrink: 0, fontFamily: fonts.serif, fontSize: lerp(34, 22), color: colors.ink }}>
+            That's today.
+          </Animated.Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.successBg }}>
+              <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.success }}>{streak}-day streak</Text>
+            </View>
+            <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.outline }}>
+              <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.muted }}>+1</Text>
+            </View>
+          </View>
         </View>
-        <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.borderStrong }}>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: colors.muted }}>+1</Text>
-        </View>
-      </View>
-      {preview && (
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 20, color: colors.muted, textAlign: 'center' }}>
-          {preview}
-        </Text>
-      )}
-      <Text style={{ fontFamily: fonts.semibold, fontSize: 11, color: colors.sectionLabel }}>confetti's free — tap for an encore</Text>
+
+        {!open && (
+          <>
+            {preview ? (
+              <Text style={{ fontFamily: fonts.medium, fontSize: 14, lineHeight: 20, color: colors.inkSoft, textAlign: 'center', marginTop: 16 }}>
+                {preview}
+              </Text>
+            ) : null}
+            <Text style={{ fontFamily: fonts.bold, fontSize: 11, letterSpacing: 1, color: colors.sectionLabel, textAlign: 'center', marginTop: 10 }}>
+              THIS WEEK ▾
+            </Text>
+          </>
+        )}
+
+        {/* The grid fades and rises into place rather than unrolling to a
+            measured height: RN Web never fires onLayout for this node, so a
+            height animation silently froze the card at whatever the content
+            measured before the goals had hydrated. The staggered rows carry
+            the motion instead, and the card takes its size in one step. */}
+        {mounted ? (
+          <Animated.View style={{ opacity: t, transform: [{ translateY: lerp(-8, 0) }] }}>
+            <WeekLedger goals={goals} byGoal={byGoal} today={today} nextLine={preview} onOpenLedger={onOpenLedger} />
+          </Animated.View>
+        ) : null}
+      </Animated.View>
     </Pressable>
   );
+}
+
+/** The top week strip dims while the ledger is open, so only one week axis is
+ *  loud at a time. Both stay: the strip answers "did I show up", the ledger
+ *  answers "which reps" — summary, then detail. */
+function DimWhen({ on, children }: { on: boolean; children: React.ReactNode }) {
+  const v = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.timing(v, { toValue: on ? 0.4 : 1, duration: 500, useNativeDriver: true }).start();
+  }, [on, v]);
+  return <Animated.View style={{ opacity: v }}>{children}</Animated.View>;
 }
 
 /** Fire the salute when the last rep lands — not on a reload that already
@@ -989,6 +1062,8 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
   // null = live today. All today-machinery (celebrations, folding, banners)
   // stays keyed to the real today — the peek is a read-only overlay.
   const [peek, setPeek] = useState<string | null>(null);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  useEffect(() => { if (!m.allDone) setLedgerOpen(false); }, [m.allDone]);
 
   if (peek) {
     return (
@@ -1005,7 +1080,9 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
   return (
     <>
       <Header title={greeting(m.restDay && !m.allDone, profile.firstName)} sub={headerSub(m)} />
-      <WeekStrip days={m.strip} selected={m.today} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
+      <DimWhen on={ledgerOpen}>
+        <WeekStrip days={m.strip} selected={m.today} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
+      </DimWhen>
 
       <View style={{ flex: 1, gap: 14, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 130 }}>
         {milestone.pending
@@ -1024,7 +1101,16 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
 
         {m.allDone && (
           <Pop>
-            <DayDone streak={m.streak} preview={m.preview} onEncore={celebrate} />
+            <DayDone
+              streak={m.streak}
+              preview={m.preview}
+              open={ledgerOpen}
+              onToggle={() => setLedgerOpen(o => !o)}
+              goals={goals}
+              byGoal={byGoal}
+              today={m.today}
+              onOpenLedger={() => navigation.navigate('Ledger')}
+            />
           </Pop>
         )}
 
@@ -1168,6 +1254,8 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
   const qtyFor = useQtyControls(checkInStep);
   // Owner fix 3 (build 11): the sidebar's week dots peek any day, read-only.
   const [peek, setPeek] = useState<string | null>(null);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  useEffect(() => { if (!m.allDone) setLedgerOpen(false); }, [m.allDone]);
 
   return (
     <View style={{ width: '100%', maxWidth: 1060, alignSelf: 'center' }}>
@@ -1210,7 +1298,16 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
 
           {m.allDone && (
             <Pop>
-              <DayDone streak={m.streak} preview={m.preview} onEncore={celebrate} />
+              <DayDone
+                streak={m.streak}
+                preview={m.preview}
+                open={ledgerOpen}
+                onToggle={() => setLedgerOpen(o => !o)}
+                goals={goals}
+                byGoal={byGoal}
+                today={m.today}
+                onOpenLedger={() => navigation.navigate('Ledger')}
+              />
             </Pop>
           )}
 

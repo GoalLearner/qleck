@@ -114,7 +114,7 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 27;
+export const PROMPT_VERSION = 29;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -472,11 +472,13 @@ EVERY STEP OF PHASE ONE CARRIES A how_to. The details field is one paragraph and
 - counts_as_done: one line settling "have I done it?" with no room to argue at 10pm ("5 sessions logged this week, any order", "the app shows 8,000+ steps"). A rep the user can talk themselves into or out of is a rep that stops getting checked.
 Later phases MAY carry how_to and should when the rep needs real instructions; phase one is compulsory because it is the phase the plan lands on. The details field stays required and stays a faithful summary on its own — how_to expands it, never contradicts it, and never repeats it verbatim. All of it obeys the plain-language rule above: no framework vocabulary in any of these fields.
 
+NEVER INVENT THE PERSON'S LIFE. Write only about what they told you — no injury, missed week, relapse, illness, bedtime or preference they never mentioned, anywhere in the plan. If you need something they did not say, either write it in conditional voice ("if you miss a week…") or state it via assumption + assumption_key. Asserting it as fact is the one thing you may not do.
+
 A STEP IS A HABIT, NOT A SUB-TASK — never emit warm-ups, cool-downs, mobility prep, equipment setup, or packing as their own steps: they are lines inside the parent session's details ("2-3 light warm-up sets before working sets"). A separate warm-up step double-counts the session, wastes a slot the pillar rule needs, and renders absurdly on rest days. If a step could not stand alone as a day's win, it is not a step.
 
 Design principles:
 - HIGH PROBABILITY over ambition: week one should feel almost too easy; ramp gradually ("make it micro").
-- 2-4 phases across the duration, each with a clear focus. Steps are concrete, repeatable reps a person can check off: binary (did it / didn't), quantity (amount + unit), or duration (minutes).
+- 2-4 phases across the duration, each with a clear focus. A PHASE BOUNDARY IS A PROMISE THAT SOMETHING CHANGES, and a different title with the same steps under it is a broken promise — a 16-week plan whose four phases carry identical steps, targets and frequencies is one week repeated sixteen times. Between consecutive phases at least one thing the person would FEEL must move: a target goes up, a frequency changes, a step that has done its job retires, a new one arrives as they become ready for it, or the steps carry a different week_progression. If nothing genuinely changes between two phases, that is one phase — say so and use fewer. Steps are concrete, repeatable reps a person can check off: binary (did it / didn't), quantity (amount + unit), or duration (minutes).
 - 3-6 steps per phase maximum. A protocol someone can't hold in their head is a protocol they quit.
 - Frequencies are honest: if the goal needs 3 sessions a week, say 3 — don't pad with filler dailies.
 - Quantity steps that CAP something (cigarettes, drinks, spending, screen-time) set direction "at_most"; build-up targets use the default "at_least".

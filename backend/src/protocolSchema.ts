@@ -534,6 +534,129 @@ export function howToErrors(p: Protocol): string[] {
   return errs;
 }
 
+/**
+ * A phase boundary is a PROMISE THAT SOMETHING CHANGES.
+ *
+ * The quality judge caught a 16-week muscle-gain plan whose four phases were
+ * identical — same six steps, same 150 g protein, same 3 sessions a week, same
+ * weigh-in — differing only in the phase title and its focus sentence. Read
+ * honestly that is one week repeated sixteen times wearing four names, and the
+ * "2-4 phases, each with a clear focus" instruction was fully satisfied by
+ * writing four different sentences.
+ *
+ * So the rule is structural rather than exhortative: consecutive phases must
+ * differ in something a person would FEEL — a target moves, a frequency
+ * changes, a step arrives or retires, or the within-phase ramp differs. Phase
+ * titles and focus prose are deliberately NOT part of the fingerprint, because
+ * rewording is exactly the non-change this exists to reject.
+ *
+ * A single-phase plan is untouched: a four-week reading habit that is the same
+ * every week is honest, and says so by declaring one phase.
+ */
+export function sequencingErrors(p: Protocol): string[] {
+  const errs: string[] = [];
+  const phases = p.phases ?? [];
+  // What a person would actually notice about a step. Title included because
+  // swapping a step for a different one is a real change; prose is not.
+  const fingerprint = (phase: ProtocolPhase) => (phase.steps ?? [])
+    .map(st => [
+      st.title.trim().toLowerCase(),
+      st.kind,
+      st.frequency?.per_week ?? '',
+      (st.frequency?.days ?? []).join('/'),
+      st.quantity ? `${st.quantity.amount}${st.quantity.unit}${st.quantity.direction ?? ''}` : '',
+      st.duration_minutes ?? '',
+      (st.week_progression ?? '').trim().toLowerCase(),
+    ].join('|'))
+    .sort()
+    .join('\n');
+
+  for (let i = 1; i < phases.length; i++) {
+    if (fingerprint(phases[i]) === fingerprint(phases[i - 1])) {
+      errs.push(
+        `phase ${i + 1} ("${phases[i].title}") is identical to phase ${i} ("${phases[i - 1].title}") — ` +
+        'same steps, same targets, same frequencies. A new phase must change something the person would feel: ' +
+        'move a target, change a frequency, add or retire a step, or give the steps a different week_progression. ' +
+        'If nothing genuinely changes, merge them into one phase instead of renaming the same week.',
+      );
+    }
+  }
+  return errs;
+}
+
+/**
+ * THE PLAN MAY NOT INVENT THE USER'S LIFE.
+ *
+ * The quality judge caught a running plan whose second phase was titled
+ * "Getting back on track" and built around a missed week and an ankle injury
+ * the person had never mentioned — and a reading plan that asserted an 11pm
+ * bedtime and a phone-scrolling problem nobody had said anything about.
+ *
+ * This is a different failure from an unsourced NUMBER, which provenanceErrors
+ * already catches. A number the plan cannot justify looks arbitrary; a plan
+ * that tells you about your own injury tells you it is not really about you,
+ * and it is the fastest way to lose someone who is trusting it with something
+ * they care about.
+ *
+ * Scoped narrowly on purpose. It looks only for ASSERTED life events — "your
+ * ankle", "after your missed week", "getting back on track" — and only
+ * complains when nothing in the goal or the interview corroborates them.
+ * Conditional planning is untouched and is exactly what the coach SHOULD do:
+ * "if you miss a week" and "if your knee flares up" are contingencies, not
+ * claims. The line is asserting it happened.
+ */
+export function fabricationErrors(
+  p: Protocol, answers: Record<string, string>, goalText: string,
+): string[] {
+  const errs: string[] = [];
+  // What the person actually told us, as one haystack.
+  const said = `${goalText} ${Object.values(answers ?? {}).join(' ')}`.toLowerCase();
+
+  // Each entry: the claim to look for, and the word that would corroborate it.
+  const CLAIMS: { re: RegExp; needs: RegExp; what: string }[] = [
+    { re: /\byour (injur\w+|ankle|knee|shoulder|elbow|hip|sprain|strain|tweak)\b/i, needs: /injur|ankle|knee|shoulder|elbow|hip|sprain|strain|tweak|hurt|pain/, what: 'an injury' },
+    { re: /\b(after|since) (your|the) (missed|lost|skipped) (week|days?)\b/i, needs: /missed|skipped|fell off|stopped|gap|break/, what: 'a missed week' },
+    { re: /\byour (missed|skipped) (week|days?)\b/i, needs: /missed|skipped|fell off|stopped|gap|break/, what: 'a missed week' },
+    { re: /\bgetting back on track\b|\bback on track after\b/i, needs: /missed|skipped|fell off|stopped|relaps|setback|gap|break|off track/, what: 'a lapse' },
+    { re: /\byour (relapse|setback|slip[- ]?up)\b/i, needs: /relaps|setback|slip|fell off/, what: 'a relapse' },
+    { re: /\byour (illness|sickness|flu|cold)\b/i, needs: /ill|sick|flu|cold/, what: 'an illness' },
+  ];
+
+  // Every place the plan speaks to the user in prose.
+  const surfaces: { where: string; text: string }[] = [];
+  for (const ph of p.phases ?? []) {
+    surfaces.push({ where: `phase "${ph.title}"`, text: `${ph.title} ${ph.focus ?? ''}` });
+    for (const st of ph.steps ?? []) {
+      surfaces.push({
+        where: `step "${st.title}"`,
+        text: [st.title, st.details, st.week_progression, st.how_to?.why,
+          ...(st.how_to?.sections ?? []).flatMap(sec => [sec.body ?? '', ...(sec.items ?? [])]),
+        ].filter(Boolean).join(' '),
+      });
+    }
+  }
+  for (const mi of p.milestones ?? []) {
+    surfaces.push({ where: `milestone "${mi.title}"`, text: `${mi.title} ${mi.criteria ?? ''}` });
+  }
+
+  const seen = new Set<string>();
+  for (const s of surfaces) {
+    for (const claim of CLAIMS) {
+      const hit = s.text.match(claim.re);
+      if (!hit || claim.needs.test(said)) continue;
+      const key = `${s.where}:${claim.what}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      errs.push(
+        `${s.where} asserts ${claim.what} ("${hit[0]}") that the person never mentioned. ` +
+        'Do not invent events in their life. Either drop it, or write it as a contingency ' +
+        '("if you miss a week…") rather than as something that happened.',
+      );
+    }
+  }
+  return errs;
+}
+
 export function sessionErrors(p: Protocol): string[] {
   const errs: string[] = [];
   const sessions = new Map<string, ProtocolSession>();

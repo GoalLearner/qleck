@@ -87,6 +87,8 @@ interface RallyState {
    *  still being read (first launch, or offline before registration). */
   currentUserId: string | null;
   applyOnboarding: (result: OnboardingResult) => void;
+  /** Re-read this account from the server. Call after a mid-session sign-in. */
+  syncAccount: () => Promise<void>;
   // In-app "+" goal creation: appends another concurrent goal (owner call
   // 2026-08-24 — goals coexist; Today renders them as groups).
   setGoalPlan: (plan: AcceptedPlan) => void;
@@ -170,6 +172,45 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     setCheckInsByGoal(prev => ({ ...prev, ...Object.fromEntries(known.map((g, i) => [g.id, rows[i]])) }));
   }, []);
 
+  /**
+   * Pull this account's truth off the server: identity, goals, name, handle.
+   *
+   * Boot runs it once. A sign-in that happens LATER in the same app session
+   * needs it just as much, and used not to get it: this provider sits above
+   * the onboarding funnel, so logging out and back in never remounts it and
+   * nothing re-read the server afterwards. The tabs then opened on
+   * DEFAULT_PROFILE — "Dana Whitfield" — with an empty goal list, while the
+   * real name and every goal sat intact server-side. Indistinguishable from
+   * losing your account, which is the worst thing a sign-in can look like.
+   */
+  const syncAccount = useCallback(async () => {
+    // The real identity. Peeked, never registered: a brand-new device
+    // registers lazily on its first API call, not because state mounted.
+    const identity = await getStoredIdentity().catch(() => null);
+    if (identity?.userId) setCurrentUserId(identity.userId);
+    await flushGoalOutbox();
+    await flushOutbox();
+    await refresh();
+    // Real accounts (P3): the server's profile wins over the local cache,
+    // so a login on a fresh device gets its name and handle back.
+    const me = await fetchMe().catch(() => null);
+    if (me?.displayName || me?.handle) {
+      // `initials` is its own field, so it has to be re-derived here too —
+      // updating the name and leaving the avatar reading "D" is the same bug
+      // wearing a smaller hat.
+      const parts = me.displayName?.trim() ? me.displayName.trim().split(/\s+/) : [];
+      setProfile(prev => ({
+        ...prev,
+        fullName: me.displayName ?? prev.fullName,
+        firstName: parts[0] ?? prev.firstName,
+        initials: parts.length
+          ? parts.map(w => w[0]).slice(0, 2).join('').toUpperCase()
+          : prev.initials,
+        handle: me.handle ?? prev.handle,
+      }));
+    }
+  }, [refresh]);
+
   // P2a hydration: cached profile + goals first (instant, offline-friendly),
   // then the server's active-goal list wins. Persist changes thereafter.
   useEffect(() => {
@@ -185,25 +226,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
         if (goalsRaw) setGoals(JSON.parse(goalsRaw) as ActiveGoal[]);
       } catch { hydratedRef.current = true; }
       try {
-        // The real identity, read once at boot — this is what replaced the
-        // demo's 'd' sentinel. Peeked, never registered: a brand-new device
-        // registers lazily on its first API call, not because state mounted.
-        const identity = await getStoredIdentity().catch(() => null);
-        if (identity?.userId) setCurrentUserId(identity.userId);
-        await flushGoalOutbox();
-        await flushOutbox();
-        await refresh();
-        // Real accounts (P3): the server's profile wins over the local cache,
-        // so a login on a fresh device gets its name and handle back.
-        const me = await fetchMe().catch(() => null);
-        if (me?.displayName || me?.handle) {
-          setProfile(prev => ({
-            ...prev,
-            fullName: me.displayName ?? prev.fullName,
-            firstName: me.displayName ? me.displayName.split(' ')[0] : prev.firstName,
-            handle: me.handle ?? prev.handle,
-          }));
-        }
+        await syncAccount();
       } catch { /* offline: cache already applied */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -417,11 +440,11 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
     checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
     pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById,
-    refreshGoals: refresh, signOut,
+    refreshGoals: refresh, signOut, syncAccount,
   }), [profile, currentUserId, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
     checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
-    pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById, refresh, signOut]);
+    pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById, refresh, signOut, syncAccount]);
 
   return <RallyContext.Provider value={value}>{children}</RallyContext.Provider>;
 }

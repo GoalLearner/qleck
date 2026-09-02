@@ -55,12 +55,20 @@ const navThemeFor = () => ({
 // Lives inside RallyProvider so the funnel's result can land in app state
 // before we flip to the tabs.
 function Onboarding({ onDone, startScreen }: { onDone: () => void; startScreen?: OnbScreen }) {
-  const { applyOnboarding } = useRally();
+  const { applyOnboarding, syncAccount } = useRally();
   return (
     <OnboardingFlow
       startScreen={startScreen}
       onAuthenticated={result => {
         applyOnboarding(result);
+        // A LOG-IN carries no name and no plan — everything that makes this
+        // account itself is on the server, and nothing has read it since the
+        // app launched signed-out. Without this the tabs open on the default
+        // profile with no goals, both sitting intact server-side.
+        //
+        // Skipped when the funnel just built a plan: applyOnboarding is
+        // queueing that goal right now, and refresh() reads the queue.
+        if (!result.protocol) void syncAccount();
         onDone();
       }}
     />

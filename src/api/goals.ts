@@ -194,6 +194,30 @@ export async function resumeGoal(id: string): Promise<void> {
   if (!res.ok) throw new Error(`resumeGoal failed (${res.status})`);
 }
 
+/**
+ * The interview answers this goal's numbers were computed from — the receipt
+ * behind "170 g protein, because you told us you weigh 170 lbs".
+ *
+ * Fetched on demand rather than riding the goal list, deliberately: the goal
+ * list is written to plain AsyncStorage, and these answers are the most
+ * sensitive thing the app holds (bodyweight, income, injuries, past attempts).
+ * They stay in component state for as long as a sheet is open, and nowhere
+ * else on the device.
+ *
+ * `null` is a normal answer, not a failure: most older goals have no
+ * provenance row at all. Callers render nothing.
+ */
+export async function fetchGoalProvenance(id: string): Promise<Record<string, string> | null> {
+  try {
+    const res = await authedFetch(`/goals/${id}/provenance`, { method: 'GET' });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { answers?: Record<string, string> | null };
+    return body.answers ?? null;
+  } catch {
+    return null;   // offline: the sheet simply shows no receipt
+  }
+}
+
 /** P4.5: let one person watch this goal. Idempotent — an already-shared
  *  goal keeps its link, so a url already sent stays valid. */
 export async function shareGoal(id: string): Promise<string> {

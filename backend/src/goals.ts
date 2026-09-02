@@ -218,6 +218,54 @@ export async function listGoals(
   return goals;
 }
 
+/**
+ * The interview answers this goal's numbers were computed from — the receipt
+ * behind "170 g protein, because you told us you weigh 170 lbs".
+ *
+ * Deliberately its OWN endpoint rather than a column on the goal, for two
+ * reasons that both matter. listGoals is `SELECT *`, so anything added to the
+ * goals table ships to the client with no review point; and the client writes
+ * the whole goal list to plain AsyncStorage, so bodyweight, income and
+ * injuries would end up unencrypted on the device. This way the payload is
+ * explicit, fetched on demand, and never persisted.
+ *
+ * Returning null is NORMAL, not an error. The goal_id link on goal_outcomes is
+ * unreliable by construction — it is a separate optional UPDATE at goal
+ * creation, INSERT OR REPLACE drops it, graduation mints goals with no session
+ * at all, and deleteGoal severs it on purpose. Most older goals have no row.
+ * The UI shows nothing rather than pretending.
+ */
+export async function getGoalProvenance(
+  env: Env, userId: string, goalId: string,
+): Promise<{ answers: Record<string, string> | null }> {
+  if (!/^[0-9a-fA-F-]{36}$/.test(goalId)) return { answers: null };
+  // Ownership first: the goal must be theirs, or this is a way to read someone
+  // else's interview by guessing ids.
+  const owned = await env.DB
+    .prepare(`SELECT id FROM goals WHERE id = ? AND user_id = ?`)
+    .bind(goalId, userId)
+    .first<{ id: string }>();
+  if (!owned) return { answers: null };
+
+  const row = await env.DB
+    .prepare(`SELECT answers_snapshot FROM goal_outcomes WHERE goal_id = ? AND answers_snapshot IS NOT NULL LIMIT 1`)
+    .bind(goalId)
+    .first<{ answers_snapshot: string }>();
+  if (!row?.answers_snapshot) return { answers: null };
+  try {
+    const parsed = JSON.parse(row.answers_snapshot) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { answers: null };
+    // Strings only: this is rendered straight into the sheet.
+    const answers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'string' && v.trim()) answers[k] = v.trim();
+    }
+    return { answers: Object.keys(answers).length ? answers : null };
+  } catch {
+    return { answers: null };
+  }
+}
+
 /** Explicitly drop a goal. Idempotent; the rows stay (history, not deletion). */
 export async function abandonGoal(env: Env, userId: string, goalId: string): Promise<{ ok: boolean }> {
   return setStatus(env, userId, goalId, 'abandoned');

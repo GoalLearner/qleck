@@ -3,6 +3,8 @@
 // into shame. So most of these bars are about what the page must NOT contain.
 //
 // Usage:  node harness/witness.check.mjs      (against http://127.0.0.1:8787)
+import { execSync } from 'node:child_process';
+
 const BASE = process.env.QLECK_API ?? 'http://127.0.0.1:8787';
 const results = [];
 const bar = (name, ok, detail = '') => {
@@ -28,6 +30,13 @@ async function api(path, { method = 'POST', body, token } = {}) {
     } catch (err) { if (attempt >= 3) throw err; }
     await sleep(1500 * 2 ** attempt);
   }
+}
+
+// Direct D1 for the one row the API cannot create: a provenance snapshot is
+// written during coach generation, which this AI-free check never runs.
+function sql(query) {
+  execSync(`npx wrangler d1 execute qleck --local --command "${query.replace(/"/g, '\\"')}"`,
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
 const localDate = (offset = 0) => {
@@ -175,5 +184,32 @@ bar('re-sharing mints a NEW token, never resurrecting the old link',
   reshared.body.token && reshared.body.token !== shareToken);
 
 const failed = results.filter(r => !r.ok).length;
+/* ── provenance: the receipt the rep sheet shows, and who may read it ────
+   The sheet now says "164 g, because you told us you weigh 164 lbs", read
+   from goal_outcomes.answers_snapshot. That snapshot is the most sensitive
+   thing the app stores — exact bodyweight, income, injuries, free text about
+   why past attempts failed. The witness page is safe by construction today
+   (witness.ts selects an explicit column list and never serialises an
+   object); these bars are what keep it that way. */
+const PROV_SECRET = 'I weigh 231 lbs and I drink to cope';
+sql(`INSERT OR REPLACE INTO goal_outcomes (session_id, goal_id, answers_snapshot) VALUES ('${crypto.randomUUID()}', '${goalId}', '{"bodyweight":"${PROV_SECRET}"}')`);
+
+const reShared = await api(`/goals/${goalId}/share`, { token });
+const provPage = await api(`/w/${reShared.body.token}`, { method: 'GET' });
+bar('the witness page never shows the interview answers',
+  !provPage.text.includes(PROV_SECRET), 'answers_snapshot leaked to the public page');
+bar('...nor the manifest key they are stored under',
+  !/bodyweight|answers_snapshot/i.test(provPage.text));
+
+const provOwner = await api(`/goals/${goalId}/provenance`, { method: 'GET', token });
+bar('the owner can read their own provenance',
+  provOwner.status === 200 && provOwner.body.answers?.bodyweight === PROV_SECRET,
+  `got ${provOwner.status} ${JSON.stringify(provOwner.body).slice(0, 120)}`);
+
+const provThief = await api(`/goals/${goalId}/provenance`, { method: 'GET', token: stranger.body.token });
+bar('a stranger cannot read your interview answers',
+  provThief.status === 200 && provThief.body.answers === null,
+  `got ${provThief.status} ${JSON.stringify(provThief.body).slice(0, 120)}`);
+
 console.log(`\n${failed === 0 ? 'WITNESS CHECK CLEAR' : `WITNESS CHECK FAILED (${failed})`} · ${results.length} bars`);
 process.exit(failed === 0 ? 0 : 1);

@@ -27,7 +27,7 @@ import { verifyAppleToken } from './apple';
 import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
-import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
+import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, getGoalProvenance, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
 import { shareGoal, unshareGoal, witnessPage, witnessView } from './witness';
 import { exportAccount, purgeAccount } from './account';
@@ -270,6 +270,14 @@ export default {
         const goal = await getCurrentGoal(env, userId);
         return json({ goal }, 200, cors);
       }
+      /* GET /goals/:id/provenance — the interview answers this goal's numbers
+       * came from, so the rep sheet can show its working. Owner-scoped, and an
+       * explicit payload rather than a goal column: see getGoalProvenance. */
+      const provMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/provenance$/);
+      if (provMatch && request.method === 'GET') {
+        return json(await getGoalProvenance(env, userId, provMatch[1]), 200, cors);
+      }
+
       const lifecycleMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/(abandon|complete|pause|resume)$/);
       if (lifecycleMatch && request.method === 'POST') {
         const [, goalId, action] = lifecycleMatch;

@@ -32,7 +32,7 @@ import NewGoalScreen from './src/screens/NewGoalScreen';
 import OnboardingFlow, { type OnbScreen } from './src/onboarding/OnboardingFlow';
 import ProfileScreen from './src/screens/ProfileScreen';
 import { fetchMe } from './src/api/account';
-import { clearAccountHint, getStoredIdentity, hadAccount, onSessionRevoked } from './src/api/device';
+import { clearAccountHint, getStoredIdentity, hadAccount, onSessionRevoked, type AuthProvider } from './src/api/device';
 import { installErrorReporting } from './src/api/errors';
 import NudgeManager from './src/components/NudgeManager';
 // Rally-era social surfaces (Plans/Streaks/Create/Friends/Event/Challenge
@@ -67,7 +67,7 @@ function Onboarding({ onDone, startScreen }: { onDone: () => void; startScreen?:
   );
 }
 
-function Tabs({ onLogout }: { onLogout: () => void }) {
+function Tabs({ onLogout }: { onLogout: (provider?: AuthProvider | null) => void }) {
   return (
     <Tab.Navigator
       tabBar={props => <RallyTabBar {...props} />}
@@ -90,6 +90,12 @@ function AppShell() {
   // the app died between verify and profile — pick up at the profile step. A
   // completed-then-logged-out account resumes at the login screen instead.
   const [resumeScreen, setResumeScreen] = useState<OnbScreen | undefined>(undefined);
+  // Sign in with Apple lives ONLY on the door ('auth'). An Apple account has
+  // no password, so sending it to the email form is a dead end — and on iOS
+  // the identity sits in the Keychain, which survives deleting the app, so a
+  // reinstall lands in the same place. Route by how the account was made.
+  const doorFor = (provider: AuthProvider | null | undefined): OnbScreen =>
+    (provider === 'email' ? 'login' : 'auth');
   useEffect(() => {
     (async () => {
       const flag = await AsyncStorage.getItem('qleck-session').catch(() => null);
@@ -98,7 +104,7 @@ function AppShell() {
         const identity = await getStoredIdentity();
         if (identity?.provider) {
           const me = await fetchMe().catch(() => null);
-          setResumeScreen(me && !me.displayName ? 'profile' : 'login');
+          setResumeScreen(me && !me.displayName ? 'profile' : doorFor(identity.provider));
         } else if (!identity && (await hadAccount())) {
           // The server ended this device's session (a password reset
           // elsewhere, a reuse revocation) and the identity is gone. An
@@ -116,7 +122,11 @@ function AppShell() {
     AsyncStorage.setItem('qleck-session', '1').catch(() => {});
     void clearAccountHint();
   };
-  const logOut = () => { setLoggedIn(false); setResumeScreen('login'); AsyncStorage.removeItem('qleck-session').catch(() => {}); };
+  const logOut = (provider?: AuthProvider | null) => {
+    setLoggedIn(false);
+    setResumeScreen(doorFor(provider));
+    AsyncStorage.removeItem('qleck-session').catch(() => {});
+  };
   // A session the server ended mid-use drops straight to the login screen.
   // Without this the tabs stay mounted over a dead identity until the next
   // launch, every call 401ing behind them.

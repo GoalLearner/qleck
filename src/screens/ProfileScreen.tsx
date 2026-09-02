@@ -179,7 +179,7 @@ function NudgesCard({ goals }: { goals: { id: string; statement: string; protoco
   );
 }
 
-export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
+export default function ProfileScreen({ onLogout }: { onLogout: (provider?: 'apple' | 'email' | null) => void }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { profile, goals } = useRally();
@@ -314,7 +314,7 @@ function ExportDataRow() {
   );
 }
 
-function LogOutRow({ onLogout, goalCount }: { onLogout: () => void; goalCount: number }) {
+function LogOutRow({ onLogout, goalCount }: { onLogout: (provider?: 'apple' | 'email' | null) => void; goalCount: number }) {
   const { signOut } = useRally();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -333,7 +333,9 @@ function LogOutRow({ onLogout, goalCount }: { onLogout: () => void; goalCount: n
     if (busy) return;
     setBusy(true);
     try { await signOut(); } catch { /* clearing is best-effort; still log out */ }
-    onLogout();
+    // Hand the provider up: signOut() has just wiped the identity, so this is
+    // the last moment anything knows which door to send them back to.
+    onLogout(accountProvider);
   };
 
   if (!confirming) {

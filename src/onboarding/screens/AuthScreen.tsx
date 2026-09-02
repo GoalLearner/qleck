@@ -50,7 +50,7 @@ export default function AuthScreen({ flow, demoHints = false }: { flow: Onboardi
       <BackButton onPress={() => flow.nav('welcome')} />
       <Title style={{ marginTop: 26, marginBottom: 8 }}>Join Qleck</Title>
       <Sub style={{ marginBottom: 28 }}>
-        {ios ? 'One tap — your goals follow you to any device.' : 'Under a minute, promise.'}
+        {ios ? 'New or returning — one tap, and your goals follow you.' : 'Under a minute, promise.'}
       </Sub>
 
       {ios ? (

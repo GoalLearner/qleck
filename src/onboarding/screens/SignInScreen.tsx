@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import { night, nightFonts } from '../theme';
 import {
   NightInput, OutlineButton, PrimaryButton, Screen, Shake, Spacer, TextButton, Title,
@@ -80,7 +80,15 @@ export default function SignInScreen({ flow, demoHints }: { flow: OnboardingFlow
           style={{ height: 50, borderRadius: 25, marginTop: 10 }}
         />
       )}
-      <TextButton label="New here? Create an account" onPress={() => flow.nav('auth')} />
+      {/* This screen only knows email and password, but on iOS most accounts
+          are Sign in with Apple, which has neither — and Apple lives on the
+          door ('auth'). Labelled "New here? Create an account" it read as
+          signup only, so an Apple user who landed here could not find the way
+          back in. The door signs in and signs up both; the label now says so. */}
+      <TextButton
+        label={Platform.OS === 'ios' ? 'Sign in with Apple, or create an account' : 'New here? Create an account'}
+        onPress={() => flow.nav('auth')}
+      />
     </Screen>
   );
 }

@@ -8,11 +8,14 @@ import { Platform } from 'react-native';
 
 const KEY = 'qleck-identity';
 
+/** How the account was made. It decides which door a sign-out returns to. */
+export type AuthProvider = 'apple' | 'email';
+
 export interface DeviceIdentity {
   userId: string;
   token: string;
   /** Set once signed in; absent for anonymous device identities. */
-  provider?: 'apple' | 'email';
+  provider?: AuthProvider;
   /** P3 accounts only: rotates on every /auth/refresh. */
   refreshToken?: string;
 }

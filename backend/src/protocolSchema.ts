@@ -493,6 +493,40 @@ const CONDITIONAL_RE = new RegExp(
  * a gist longer than the row can show is the wall of text again, and a section
  * carrying both body and items renders twice.
  */
+/**
+ * REPAIR: drop a how_to that is malformed rather than failing the plan.
+ *
+ * A how_to is an enrichment. The rep sheet has always fallen back to the
+ * plain `details` paragraph — that fallback is what made the feature work for
+ * every goal built before it existed — so a broken one costs a nicer screen,
+ * never the plan. Stripping it lands the user on the fallback they would have
+ * had anyway.
+ *
+ * Returns how many were dropped, so the caller can leave a trace.
+ */
+export function stripBrokenHowTos(p: Protocol): number {
+  let dropped = 0;
+  for (const phase of p.phases ?? []) {
+    for (const st of phase.steps ?? []) {
+      const how = st.how_to;
+      if (!how) continue;
+      const secs = how.sections ?? [];
+      const ok =
+        !!how.gist?.trim() && how.gist.length <= 100 &&
+        !!how.why?.trim() && !!how.counts_as_done?.trim() &&
+        secs.length >= 2 && secs.length <= 4 &&
+        secs.every(sec => {
+          const hasBody = !!sec.body?.trim();
+          const hasItems = (sec.items?.length ?? 0) > 0;
+          return !!sec.heading?.trim() && hasBody !== hasItems &&
+            (!hasItems || (sec.items!.length >= 2 && sec.items!.length <= 8));
+        });
+      if (!ok) { delete st.how_to; dropped++; }
+    }
+  }
+  return dropped;
+}
+
 export function howToErrors(p: Protocol): string[] {
   const errs: string[] = [];
   const phases = p.phases ?? [];
@@ -553,12 +587,42 @@ export function howToErrors(p: Protocol): string[] {
  * A single-phase plan is untouched: a four-week reading habit that is the same
  * every week is honest, and says so by declaring one phase.
  */
-export function sequencingErrors(p: Protocol): string[] {
-  const errs: string[] = [];
+/**
+ * REPAIR, don't reject: fold an identical phase into the one before it.
+ *
+ * sequencingErrors was shipped as a hard failure and immediately cost a real
+ * user their plan. A 26-week goal came back with phases 2 and 3 carrying the
+ * same steps; the model could not differentiate them in three attempts, and
+ * generation failed outright — "The coach hit a snag", no protocol at all.
+ * That is a far worse outcome than the repetitive plan it was preventing. A
+ * mediocre plan is mediocre; no plan is a broken product.
+ *
+ * The rule's own wording already said what should happen — "if nothing
+ * genuinely changes between two phases, that is one phase" — so this does it
+ * deterministically rather than asking the model to. The surviving phase keeps
+ * its title and absorbs the other's weeks, so the plan still covers its full
+ * duration and nothing a person would feel is lost: the steps were identical.
+ *
+ * Returns the number of merges, so the caller can leave a trace.
+ */
+export function mergeIdenticalPhases(p: Protocol): number {
   const phases = p.phases ?? [];
-  // What a person would actually notice about a step. Title included because
-  // swapping a step for a different one is a real change; prose is not.
-  const fingerprint = (phase: ProtocolPhase) => (phase.steps ?? [])
+  let merged = 0;
+  for (let i = phases.length - 1; i >= 1; i--) {
+    if (phaseFingerprint(phases[i]) !== phaseFingerprint(phases[i - 1])) continue;
+    // The earlier phase swallows the later one's weeks and its name stands:
+    // it is the phase the person actually started.
+    phases[i - 1].end_week = Math.max(phases[i - 1].end_week, phases[i].end_week);
+    phases.splice(i, 1);
+    merged++;
+  }
+  return merged;
+}
+
+/** What a person would notice about a phase. Titles and focus prose are
+ *  excluded on purpose — rewording is the non-change being detected. */
+function phaseFingerprint(phase: ProtocolPhase): string {
+  return (phase.steps ?? [])
     .map(st => [
       st.title.trim().toLowerCase(),
       st.kind,
@@ -570,6 +634,12 @@ export function sequencingErrors(p: Protocol): string[] {
     ].join('|'))
     .sort()
     .join('\n');
+}
+
+export function sequencingErrors(p: Protocol): string[] {
+  const errs: string[] = [];
+  const phases = p.phases ?? [];
+  const fingerprint = phaseFingerprint;
 
   for (let i = 1; i < phases.length; i++) {
     if (fingerprint(phases[i]) === fingerprint(phases[i - 1])) {

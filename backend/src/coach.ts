@@ -6,7 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PRICE_TOOL, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, fabricationErrors, howToErrors, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sequencingErrors, sessionErrors, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
@@ -821,7 +821,8 @@ export async function generateProtocol(
   // Three attempts, not two: the physique pillar audit made validation
   // meaningfully stricter, and a third try (~$0.003) converts most
   // two-strike failures into a delivered plan instead of a user-facing 502.
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const LAST_GEN_ATTEMPT = 2;
+  for (let attempt = 0; attempt <= LAST_GEN_ATTEMPT; attempt++) {
     const messages: ChatMessage[] =
       attempt === 0
         ? baseMessages
@@ -847,6 +848,7 @@ export async function generateProtocol(
     if (result.refused) return { errors: ['api_refusal'] };
     const repaired = reconcileDuration(result.toolInput);
     const errors = validateProtocol(repaired);
+    const advisory: string[] = [];
     // Structural validity first; if that holds, the physique pillar audit
     // joins the same retry loop — a dropped pillar reads to the model as one
     // more validation error to fix, which is exactly what it is.
@@ -884,19 +886,42 @@ export async function generateProtocol(
           }
         }
       }
+      // A phase that changes nothing is folded into the one before it rather
+      // than failing the whole generation — see mergeIdenticalPhases.
+      mergeIdenticalPhases(repaired as Protocol);
       errors.push(...physiquePillarErrors(`${targetStatement} ${session.goal_text}`, repaired as Protocol));
       errors.push(...provenanceErrors(repaired as Protocol, structure.answers, assumableKeys));
       errors.push(...exhaustedKeyErrors(repaired as Protocol, session.domain, assumableKeys, structure.answers));
       errors.push(...sessionErrors(repaired as Protocol));
       errors.push(...milestoneProvenanceErrors(repaired as Protocol, structure.answers, assumableKeys, session.domain));
       errors.push(...ownPlanErrors(repaired as Protocol, session.own_plan ?? null));
-      errors.push(...howToErrors(repaired as Protocol));
-      errors.push(...sequencingErrors(repaired as Protocol));
-      errors.push(...fabricationErrors(repaired as Protocol, structure.answers, session.goal_text));
+      // A malformed how_to is dropped, not fatal — the sheet falls back to
+      // `details`, which is what every pre-how_to goal already shows.
+      stripBrokenHowTos(repaired as Protocol);
+
+      // ADVISORY, not blocking. These are QUALITY rules: a plan that trips one
+      // is worse than it should be, but still a plan. Blocking on them cost a
+      // real user their protocol on 2026-09-01 — three attempts rejected for
+      // two identical phases, and "The coach hit a snag" instead of 26 weeks of
+      // coaching. A mediocre plan is mediocre; no plan is a broken product.
+      //
+      // So they buy retries while retries are left, and on the final attempt
+      // they yield. The blocking set stays strictly for things that would break
+      // the APP — schema shape, session references, uncited numbers.
+      advisory.push(...howToErrors(repaired as Protocol));
+      advisory.push(...sequencingErrors(repaired as Protocol));
+      advisory.push(...fabricationErrors(repaired as Protocol, structure.answers, session.goal_text));
     }
-    await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
-    if (errors.length === 0) return { protocol: repaired as Protocol };
-    lastErrors = errors;
+    const clean = errors.length === 0;
+    await reclassifyRequest(env.DB, result.requestId, clean && advisory.length === 0 ? 'valid' : 'invalid');
+    if (clean && advisory.length === 0) return { protocol: repaired as Protocol };
+    // Last attempt: ship it if nothing is actually broken. The advisory notes
+    // are logged so the harness and the ledger can still see the quality miss.
+    if (clean && attempt === LAST_GEN_ATTEMPT) {
+      console.warn('protocol shipped with advisory issues:', advisory.slice(0, 4));
+      return { protocol: repaired as Protocol };
+    }
+    lastErrors = [...errors, ...advisory];
     lastOutput = result.toolInput;
   }
   return { errors: lastErrors };

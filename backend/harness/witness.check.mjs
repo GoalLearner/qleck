@@ -192,7 +192,12 @@ const failed = results.filter(r => !r.ok).length;
    (witness.ts selects an explicit column list and never serialises an
    object); these bars are what keep it that way. */
 const PROV_SECRET = 'I weigh 231 lbs and I drink to cope';
-sql(`INSERT OR REPLACE INTO goal_outcomes (session_id, goal_id, answers_snapshot) VALUES ('${crypto.randomUUID()}', '${goalId}', '{"bodyweight":"${PROV_SECRET}"}')`);
+// odds_at_verdict is NOT optional decoration: outcomes.check.mjs asserts every
+// goal_outcomes row carries numeric odds, and the first version of this bar
+// wrote a row without it — which left the local DB permanently failing that
+// check on every later harness run. A fixture that corrupts shared state is
+// worse than no fixture. Real rows always have odds; so does this one.
+sql(`INSERT OR REPLACE INTO goal_outcomes (session_id, goal_id, answers_snapshot, odds_at_verdict) VALUES ('${crypto.randomUUID()}', '${goalId}', '{"bodyweight":"${PROV_SECRET}"}', 75)`);
 
 const reShared = await api(`/goals/${goalId}/share`, { token });
 const provPage = await api(`/w/${reShared.body.token}`, { method: 'GET' });

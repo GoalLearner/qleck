@@ -727,6 +727,71 @@ export function fabricationErrors(
   return errs;
 }
 
+/**
+ * REPAIR: settle a step's session facts from the session itself.
+ *
+ * sessionErrors is a genuinely BLOCKING rule — a conditional rep with no
+ * session ("after each run, log it") has no idea which days it lives on, so it
+ * renders on the wrong ones, and that breaks the app rather than merely making
+ * the plan worse. But most of the ways a plan trips it are not judgement calls
+ * at all: the session already declares its days, so a step attached to it that
+ * disagrees is simply wrong in a way with one correct answer.
+ *
+ * So the four mechanical cases are fixed here rather than sent back to the
+ * model, which had already failed them three times over and cost the plan:
+ *   1. a conditional step with no session_id, when the plan declares exactly
+ *      ONE session — there is nothing else it could be attached to
+ *   2. an attached step with no fixed days
+ *   3. an attached step whose days disagree with its session's
+ *   4. an attached step asking for more reps per week than the session has days
+ *
+ * What is NOT repaired stays blocking, because each needs a decision this
+ * cannot make honestly: a malformed or duplicate session, a step pointing at a
+ * session that does not exist, and an orphan conditional when there are zero
+ * or several sessions to choose between. Guessing there would be inventing
+ * structure, which is the thing the whole validator layer exists to stop.
+ *
+ * Returns the number of repairs, so the caller can leave a trace.
+ */
+export function alignStepsToSessions(p: Protocol): number {
+  const sessions = new Map<string, ProtocolSession>();
+  for (const sess of p.sessions ?? []) {
+    if (!sess.id?.trim()) continue;
+    const days = Array.isArray(sess.days) ? sess.days.map(d => String(d).toLowerCase()) : [];
+    if (days.length < 1 || days.length > 7) continue;      // malformed: leave it to the validator
+    if (days.some(d => !VALID_DAYS.has(d))) continue;
+    sessions.set(sess.id, { ...sess, days });
+  }
+  if (sessions.size === 0) return 0;
+  const onlySession = sessions.size === 1 ? [...sessions.values()][0] : null;
+
+  let fixed = 0;
+  for (const ph of p.phases ?? []) {
+    for (const st of ph.steps ?? []) {
+      if (!st.session_id) {
+        const text = `${st.title} ${st.details ?? ''}`;
+        // Unambiguous only when there is exactly one session to mean.
+        if (!onlySession || !CONDITIONAL_RE.test(text)) continue;
+        st.session_id = onlySession.id;
+        fixed++;
+      }
+      const sess = sessions.get(st.session_id!);
+      if (!sess) continue;                                  // dangling ref: validator's job
+      const days = (st.frequency.days ?? []).map(d => String(d).toLowerCase());
+      const want = [...sess.days].sort().join(',');
+      if (days.length === 0 || [...days].sort().join(',') !== want) {
+        st.frequency.days = [...sess.days];
+        fixed++;
+      }
+      if (st.frequency.per_week > sess.days.length) {
+        st.frequency.per_week = sess.days.length;
+        fixed++;
+      }
+    }
+  }
+  return fixed;
+}
+
 export function sessionErrors(p: Protocol): string[] {
   const errs: string[] = [];
   const sessions = new Map<string, ProtocolSession>();

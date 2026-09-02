@@ -6,7 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PRICE_TOOL, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
@@ -889,6 +889,9 @@ export async function generateProtocol(
       // A phase that changes nothing is folded into the one before it rather
       // than failing the whole generation — see mergeIdenticalPhases.
       mergeIdenticalPhases(repaired as Protocol);
+      // A conditional rep inherits its session's days rather than costing the
+      // plan — see alignStepsToSessions for what stays blocking.
+      alignStepsToSessions(repaired as Protocol);
       errors.push(...physiquePillarErrors(`${targetStatement} ${session.goal_text}`, repaired as Protocol));
       errors.push(...provenanceErrors(repaired as Protocol, structure.answers, assumableKeys));
       errors.push(...exhaustedKeyErrors(repaired as Protocol, session.domain, assumableKeys, structure.answers));

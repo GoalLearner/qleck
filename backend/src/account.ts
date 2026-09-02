@@ -149,6 +149,8 @@ export interface AccountExport {
     id: string; status: string; started_on: string; duration_weeks: number;
     what_you_typed: string; the_accepted_goal: string; created_at: string;
     protocol: Protocol | null;
+    /** What you said your own odds were, before Qoach answered. */
+    your_own_odds: number | null;
     check_ins: { step_id: string; local_date: string; value: number | null }[];
   }[];
 }
@@ -178,11 +180,18 @@ export async function exportAccount(env: Env, userId: string): Promise<AccountEx
 
   const out: AccountExport['goals'] = [];
   for (const g of goals.results ?? []) {
-    const [proto, checks] = await Promise.all([
+    const [proto, checks, guess] = await Promise.all([
       env.DB.prepare(`SELECT json FROM protocols WHERE goal_id = ? ORDER BY version DESC LIMIT 1`)
         .bind(g.id).first<{ json: string }>(),
       env.DB.prepare(`SELECT step_id, local_date, value FROM check_ins WHERE goal_id = ? ORDER BY local_date`)
         .bind(g.id).all<{ step_id: string; local_date: string; value: number | null }>(),
+      // The user's own number is the user's own data, so it ships in the
+      // export from day one rather than becoming another thing we hold and
+      // never hand back. (The rest of goal_outcomes — the interview snapshot
+      // — is still missing from here; that gap predates this and is open.)
+      env.DB.prepare(
+        `SELECT user_estimate FROM goal_outcomes WHERE goal_id = ? AND user_estimate IS NOT NULL LIMIT 1`,
+      ).bind(g.id).first<{ user_estimate: number }>(),
     ]);
     let protocol: Protocol | null = null;
     try { protocol = proto ? (JSON.parse(proto.json) as Protocol) : null; } catch { /* keep null */ }
@@ -190,6 +199,7 @@ export async function exportAccount(env: Env, userId: string): Promise<AccountEx
       id: g.id, status: g.status, started_on: g.started_on, duration_weeks: g.duration_weeks,
       what_you_typed: g.goal_text, the_accepted_goal: g.statement, created_at: g.created_at,
       protocol,
+      your_own_odds: guess?.user_estimate ?? null,
       check_ins: checks.results ?? [],
     });
   }

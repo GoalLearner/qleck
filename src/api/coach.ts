@@ -163,10 +163,15 @@ export function repriceProtocol(sessionId: string, droppedStepIds: string[]): Pr
   return post(`/coach/sessions/${sessionId}/protocol/reprice`, { dropped_step_ids: droppedStepIds });
 }
 
-export function generateProtocol(sessionId: string, pace?: string, variant?: 'original'): Promise<ProtocolResponse> {
+export function generateProtocol(
+  sessionId: string, pace?: string, variant?: 'original', userEstimate?: number | null,
+): Promise<ProtocolResponse> {
   return post<ProtocolResponse>(`/coach/sessions/${sessionId}/protocol`, {
     ...(pace ? { pace } : {}),
     ...(variant ? { variant } : {}),
+    // Their own call on the odds, so goal_outcomes can hold all three numbers:
+    // what they thought, what Qoach said, and eventually what happened.
+    ...(typeof userEstimate === 'number' ? { userEstimate } : {}),
   });
 }
 

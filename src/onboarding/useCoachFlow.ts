@@ -151,11 +151,11 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setVariant('offer');
     setPickedOdds(null);
     setPhase('building');
-    generateProtocol(id, pace).then(
+    generateProtocol(id, pace, undefined, estimate).then(
       res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
       err => fail(err, buildPlan),
     );
-  }, [fail, pace]);
+  }, [fail, pace, estimate]);
 
   // Tier-1B: the commitment picker's repriced odds — dropping commitments
   // before locking can only lower the number, and this is where the lowered
@@ -183,7 +183,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setVariant('original');
     setPickedOdds(null);
     setPhase('building');
-    generateProtocol(id, undefined, 'original').then(
+    generateProtocol(id, undefined, 'original', estimate).then(
       res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
       err => fail(err, buildOriginal),
     );

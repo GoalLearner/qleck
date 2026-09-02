@@ -1073,6 +1073,13 @@ export default {
         // HERE because the client is never the thing holding the line.
         const ATTEMPT_FLOOR = 20;
         const variant = body.variant === 'original' ? 'original' as const : undefined;
+        // The user's own call on their odds, taken before the verdict was
+        // shown to them. Validated here for the same reason the attempt floor
+        // is: the client is never the thing holding the line. Absent is a
+        // legitimate answer — they were offered a way to skip the question.
+        const rawEstimate = Number(body.userEstimate);
+        const userEstimate =
+          Number.isInteger(rawEstimate) && rawEstimate >= 0 && rawEstimate <= 100 ? rawEstimate : null;
         if (variant) {
           const orig = verdict.decision === 'counter_offer' ? verdict.original_probability : undefined;
           if (typeof orig !== 'number' || orig < ATTEMPT_FLOOR) {
@@ -1104,8 +1111,8 @@ export default {
             const st = sessionStructure(session);
             await env.DB
               .prepare(
-                `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot, verdict_fallback, odds_rubric, odds_pass_rate)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot, verdict_fallback, odds_rubric, odds_pass_rate, user_estimate)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               )
               .bind(
                 session.id, session.domain,
@@ -1115,6 +1122,7 @@ export default {
                 verdict.verdict_fallback ? 1 : 0,
                 simState.odds?.rubric ?? null,
                 simState.odds?.pass_rate ?? null,
+                userEstimate,
               )
               .run()
               .catch(err => console.error('goal_outcomes write failed', err));
@@ -1139,8 +1147,8 @@ export default {
           const st = sessionStructure(session);
           await env.DB
             .prepare(
-              `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot, verdict_fallback, odds_rubric, odds_pass_rate)
-               VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
+              `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot, verdict_fallback, odds_rubric, odds_pass_rate, user_estimate)
+               VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
             )
             .bind(
               session.id, session.domain,
@@ -1148,6 +1156,7 @@ export default {
               JSON.stringify(verdict.factors ?? []),
               JSON.stringify(st.answers),
               verdict.verdict_fallback ? 1 : 0,
+              userEstimate,
             )
             .run()
             .catch(err => console.error('goal_outcomes write failed', err));

@@ -1,0 +1,13 @@
+-- What the USER thought their odds were, captured before the verdict was
+-- revealed to them (the "call your own odds" screen, 2026-09-02).
+--
+-- goal_outcomes already holds Qoach's number (odds_at_verdict) and, once it is
+-- known, what actually happened (outcome, adherence_pct). This is the third
+-- number, and it is the one nobody else has: with all three, the table can
+-- answer whether the COACH is miscalibrated or the USER is — and whether a
+-- person's own confidence carries any signal at all about whether they finish.
+--
+-- Same reasoning as the row itself: cheap now, impossible to backfill later.
+-- Null on every goal built before this shipped, and on anyone who skips the
+-- question, which is a legitimate answer rather than missing data.
+ALTER TABLE goal_outcomes ADD COLUMN user_estimate INTEGER;

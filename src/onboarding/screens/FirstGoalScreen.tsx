@@ -1658,12 +1658,14 @@ export default function FirstGoalScreen({
   /** Prefill for the intake box — the regenerate-old-goal path. */
   initialGoal?: string;
 }) {
-  // Ask for the guess only on the FIRST plan. NewGoalScreen hosts this same
-  // screen, so without the gate every in-app "+" would put a screen between the
-  // questions and the answer someone is waiting for — a moment worth having
-  // once, and a tax every time after.
+  // Ask on EVERY plan, not just the first (owner call, 2026-09-02). The gap
+  // is novel once, but CALIBRATION is not: with the guess stored beside
+  // Qoach's number and the eventual outcome, a few plans in you can honestly
+  // tell someone they run optimistic — their own history, which is the only
+  // kind of evidence this product is allowed to show. One guess per user
+  // would have been a curiosity; one per plan is a dataset.
   const { goals } = useRally();
-  const coach = useCoachFlow({ askEstimate: goals.length === 0 });
+  const coach = useCoachFlow({ askEstimate: true });
   // Recomputed only when the active goal set changes — locking a goal here
   // retires its whole domain (smoking ⊃ vaping ⊃ cigarettes) next time.
   const suggestions = React.useMemo(

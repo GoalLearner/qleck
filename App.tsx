@@ -32,7 +32,7 @@ import NewGoalScreen from './src/screens/NewGoalScreen';
 import OnboardingFlow, { type OnbScreen } from './src/onboarding/OnboardingFlow';
 import ProfileScreen from './src/screens/ProfileScreen';
 import { fetchMe } from './src/api/account';
-import { clearAccountHint, getStoredIdentity, hadAccount, onSessionRevoked, type AuthProvider } from './src/api/device';
+import { clearAccountHint, getStoredIdentity, hadAccount, lastAuthProvider, onSessionRevoked, type AuthProvider } from './src/api/device';
 import { installErrorReporting } from './src/api/errors';
 import NudgeManager from './src/components/NudgeManager';
 // Rally-era social surfaces (Plans/Streaks/Create/Friends/Event/Challenge
@@ -67,7 +67,10 @@ function Onboarding({ onDone, startScreen }: { onDone: () => void; startScreen?:
   );
 }
 
-function Tabs({ onLogout }: { onLogout: (provider?: AuthProvider | null) => void }) {
+/** `fresh` is the device reset: come back at the very top of the funnel. */
+export type LogoutOpts = { provider?: AuthProvider | null; fresh?: boolean };
+
+function Tabs({ onLogout }: { onLogout: (opts?: LogoutOpts) => void }) {
   return (
     <Tab.Navigator
       tabBar={props => <RallyTabBar {...props} />}
@@ -106,11 +109,13 @@ function AppShell() {
           const me = await fetchMe().catch(() => null);
           setResumeScreen(me && !me.displayName ? 'profile' : doorFor(identity.provider));
         } else if (!identity && (await hadAccount())) {
-          // The server ended this device's session (a password reset
-          // elsewhere, a reuse revocation) and the identity is gone. An
-          // account still exists though, so open at LOGIN rather than the
-          // welcome funnel — the goals are all still there behind it.
-          setResumeScreen('login');
+          // The identity is gone — a sign-out, a password reset elsewhere, a
+          // reuse revocation — but an account still exists, so open at a door
+          // rather than the welcome funnel; the goals are all still behind it.
+          // WHICH door matters: signOut() wipes the identity, so without the
+          // hint's provider every signed-out Apple user landed on a password
+          // form their account has never had.
+          setResumeScreen(doorFor(await lastAuthProvider()));
         }
       } catch { /* fresh funnel from the top */ }
       setLoggedIn(false);
@@ -122,9 +127,11 @@ function AppShell() {
     AsyncStorage.setItem('qleck-session', '1').catch(() => {});
     void clearAccountHint();
   };
-  const logOut = (provider?: AuthProvider | null) => {
+  const logOut = (opts?: LogoutOpts) => {
     setLoggedIn(false);
-    setResumeScreen(doorFor(provider));
+    // undefined starts the funnel at 'welcome', which is what a factory-fresh
+    // device and a just-deleted account should both see.
+    setResumeScreen(opts?.fresh ? undefined : doorFor(opts?.provider));
     AsyncStorage.removeItem('qleck-session').catch(() => {});
   };
   // A session the server ended mid-use drops straight to the login screen.

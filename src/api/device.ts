@@ -167,7 +167,23 @@ export function onSessionRevoked(listener: () => void): () => void {
 
 /** Did an account live on this device whose session was ended for it? */
 export async function hadAccount(): Promise<boolean> {
-  try { return (await AsyncStorage.getItem(HINT_KEY)) === '1'; } catch { return false; }
+  try { return (await AsyncStorage.getItem(HINT_KEY)) !== null; } catch { return false; }
+}
+
+/**
+ * Which door that account came through, for the launch AFTER a sign-out —
+ * by then the identity itself is gone (signOut resets it), so the hint is the
+ * only thing left that knows whether the password form is any use.
+ *
+ * null covers two cases that want the same answer: hints written before this
+ * stored a provider (the literal '1'), and accounts we simply cannot place.
+ * Both route to the door, which carries every way in.
+ */
+export async function lastAuthProvider(): Promise<AuthProvider | null> {
+  try {
+    const v = await AsyncStorage.getItem(HINT_KEY);
+    return v === 'apple' || v === 'email' ? v : null;
+  } catch { return null; }
 }
 
 /** Called on a real sign-in — the hint has served its purpose. */
@@ -193,7 +209,7 @@ export async function clearAccountHint(): Promise<void> {
  * it is relaunched.
  */
 async function endSession(current: DeviceIdentity): Promise<void> {
-  if (current.provider) await AsyncStorage.setItem(HINT_KEY, '1').catch(() => {});
+  if (current.provider) await AsyncStorage.setItem(HINT_KEY, current.provider).catch(() => {});
   await resetIdentity();
   // The boot gate reads this flag; leaving it set would send the next launch
   // straight back into the tabs with no identity behind them.

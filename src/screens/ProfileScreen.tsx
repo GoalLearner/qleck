@@ -5,7 +5,8 @@
 import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deleteAccount, exportMyData } from '../api/account';
-import { getStoredIdentity } from '../api/device';
+import Constants from 'expo-constants';
+import { clearAccountHint, getStoredIdentity } from '../api/device';
 import {
   ensureNudgePermission, fmtTime, getNudgePermission, loadNudgePrefs, saveNudgePrefs,
   type NudgePermission, type NudgePrefs,
@@ -19,6 +20,7 @@ import YouAvatar from '../components/YouAvatar';
 import { goalTitle } from '../components/protocolViews';
 import { useRally } from '../state/RallyContext';
 import { useTheme, type ThemePref } from '../state/ThemeContext';
+import type { LogoutOpts } from '../../App';
 import { colors, fonts, radii } from '../theme';
 
 // "Notifications" used to live here as a chevron that did nothing. It comes
@@ -179,7 +181,7 @@ function NudgesCard({ goals }: { goals: { id: string; statement: string; protoco
   );
 }
 
-export default function ProfileScreen({ onLogout }: { onLogout: (provider?: 'apple' | 'email' | null) => void }) {
+export default function ProfileScreen({ onLogout }: { onLogout: (opts?: LogoutOpts) => void }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { profile, goals } = useRally();
@@ -252,7 +254,8 @@ export default function ProfileScreen({ onLogout }: { onLogout: (provider?: 'app
 
         <ExportDataRow />
         <LogOutRow onLogout={onLogout} goalCount={goals.length} />
-        <DeleteAccountRow onDone={onLogout} />
+        <DeleteAccountRow onDone={() => onLogout({ fresh: true })} />
+        <VersionRow onLogout={onLogout} />
       </ScrollView>
     </FadeInUp>
   );
@@ -314,7 +317,105 @@ function ExportDataRow() {
   );
 }
 
-function LogOutRow({ onLogout, goalCount }: { onLogout: (provider?: 'apple' | 'email' | null) => void; goalCount: number }) {
+/**
+ * The version line, and behind seven taps the way back to a factory-fresh
+ * device.
+ *
+ * On iOS the identity lives in SecureStore — the Keychain — which SURVIVES
+ * deleting the app. So "uninstall and reinstall" does not return you to the
+ * first-run screens, and until this there was no way to reach them at all on
+ * a device that had ever signed in. That makes the welcome funnel untestable
+ * on the one device it matters on.
+ *
+ * Seven taps because this is a testing affordance, not a feature. A visible
+ * row here would sit beside Log out and Delete account and read like a third
+ * way to lose your data — it is not one, but the shape of the list would say
+ * otherwise. Hidden, it costs nobody anything and is always there when it is
+ * needed.
+ */
+function VersionRow({ onLogout }: { onLogout: (opts?: LogoutOpts) => void }) {
+  const { signOut } = useRally();
+  const [taps, setTaps] = useState(0);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // nativeBuildVersion is the CFBundleVersion actually in the installed app —
+  // app.json's buildNumber is only what the last commit INTENDED to ship, and
+  // those have disagreed before. On web neither exists, hence the fallbacks.
+  const version = Constants.nativeApplicationVersion ?? Constants.expoConfig?.version ?? '1.0.0';
+  const build = Constants.nativeBuildVersion ?? Constants.expoConfig?.ios?.buildNumber ?? 'web';
+
+  const reset = async () => {
+    if (busy) return;
+    setBusy(true);
+    // signOut already revokes the session server-side and clears the identity,
+    // the goals, the profile and the outboxes. What it deliberately keeps is
+    // the knowledge that this device HAD an account — which is exactly what a
+    // factory reset has to forget, or the next launch opens on a sign-in door
+    // instead of the funnel.
+    try { await signOut(); } catch { /* best effort — still reset locally */ }
+    await clearAccountHint().catch(() => {});
+    await AsyncStorage.multiRemove([
+      'qleck-milestones-seen', 'qleck-witness-offered',
+    ]).catch(() => {});
+    onLogout({ fresh: true });
+  };
+
+  return (
+    <View style={{ marginTop: 26, marginBottom: 8, alignItems: 'center' }}>
+      <Pressable onPress={() => setTaps(n => n + 1)} hitSlop={10}>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.sectionLabel }}>
+          Qleck v{version} ({build})
+        </Text>
+      </Pressable>
+
+      {taps >= 7 ? (
+        <View
+          style={{
+            marginTop: 14, marginHorizontal: 14, alignSelf: 'stretch', padding: 16,
+            borderRadius: radii.card, borderWidth: 1, borderColor: colors.border,
+            backgroundColor: colors.card,
+          }}
+        >
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: colors.ink }}>
+            Reset this device
+          </Text>
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 6 }}>
+            Forgets this device&apos;s sign-in and everything cached on it, so the app
+            opens on the first-run screens like a new install. Your account and your
+            goals stay on the server — sign back in and they return.
+          </Text>
+          {confirming ? (
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <Pressable
+                onPress={() => setConfirming(false)}
+                style={{ flex: 1, height: 44, borderRadius: radii.pill, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.ink }}>Keep it</Text>
+              </Pressable>
+              <Pressable
+                onPress={reset}
+                style={{ flex: 1, height: 44, borderRadius: radii.pill, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', opacity: busy ? 0.6 : 1 }}
+              >
+                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.creamText }}>
+                  {busy ? 'Resetting…' : 'Reset'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => setConfirming(true)}
+              style={{ marginTop: 14, height: 44, borderRadius: radii.pill, borderWidth: 1.5, borderColor: colors.dangerBorder, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.danger }}>Reset this device</Text>
+            </Pressable>
+          )}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function LogOutRow({ onLogout, goalCount }: { onLogout: (opts?: LogoutOpts) => void; goalCount: number }) {
   const { signOut } = useRally();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -335,7 +436,7 @@ function LogOutRow({ onLogout, goalCount }: { onLogout: (provider?: 'apple' | 'e
     try { await signOut(); } catch { /* clearing is best-effort; still log out */ }
     // Hand the provider up: signOut() has just wiped the identity, so this is
     // the last moment anything knows which door to send them back to.
-    onLogout(accountProvider);
+    onLogout({ provider: accountProvider });
   };
 
   if (!confirming) {

@@ -28,8 +28,11 @@ import { phaseForWeek, weekOf, weekStart, type CheckIn } from '../lib/protocolTi
 import type { ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
 
-const CELL = 24;
-const GAP = 5;
+// 22/4 rather than the Ledger screen's 24/4: seven cells and their gaps are a
+// fixed cost, and every pixel they give back goes to the rep's name. At 393pt
+// this is the difference between "Write one hoo..." and two readable lines.
+const CELL = 22;
+const GAP = 4;
 /** Past this many rows the grid groups by goal instead of listing every rep. */
 const ACCORDION_AFTER = 6;
 
@@ -69,7 +72,10 @@ function Row({ row, col, delay }: { row: LedgerRow; col: number; delay: number }
   return (
     <FadeInUp distance={6} duration={400} delay={delay} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7 }}>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontFamily: fonts.semibold, fontSize: 13, lineHeight: 16.9, color: colors.ink }}>
+        {/* Two lines, like the full Ledger screen. One line truncated most reps
+            to a few words, which is not enough to tell two of them apart —
+            and telling them apart is the whole job of this column. */}
+        <Text numberOfLines={2} style={{ fontFamily: fonts.semibold, fontSize: 13, lineHeight: 16.9, color: colors.ink }}>
           {row.step.title}
         </Text>
         {row.perfect ? (

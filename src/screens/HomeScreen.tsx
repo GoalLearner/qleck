@@ -27,9 +27,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Confetti, { type ConfettiHandle } from '../components/Confetti';
 import FadeInUp from '../components/FadeInUp';
 import { goalDot, goalTitle } from '../components/protocolViews';
+import { RepSheet, hasHowTo } from '../components/RepSheet';
 import { Pop } from '../onboarding/ui';
 import YouAvatar from '../components/YouAvatar';
-import type { ProtocolPhase } from '../api/coachTypes';
+import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { celebrateDay, celebrateGoal, celebratePlan, hapticCheck } from '../lib/celebrate';
 import { loadSeenMilestones, markMilestonesSeen } from '../lib/milestones';
@@ -239,7 +240,7 @@ function QtyInput({ qty, stacked }: { qty: QtyControls; stacked: boolean }) {
   );
 }
 
-function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false, readOnly = false }: {
+function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false, readOnly = false, onOpenHowTo }: {
   rep: DayRep;
   onCheck: () => void;
   onUncheck: () => void;
@@ -249,6 +250,10 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false, r
   stacked?: boolean;
   /** Day peek: the check displays state but takes no taps. */
   readOnly?: boolean;
+  /** Tapping the rep's TEXT opens its how-to. The check circle keeps its own
+   *  tap — banking a rep and reading about it are different intentions, and
+   *  the whole card being one target would make the wrong one easy to hit. */
+  onOpenHowTo?: () => void;
 }) {
   const chip = kindChip(rep);
   const scale = useRef(new Animated.Value(1)).current;
@@ -295,15 +300,21 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false, r
         <View style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: chip.bg, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: chip.fg }}>{chip.glyph}</Text>
         </View>
-        <View style={{ flex: 1, minWidth: 0, opacity: rep.checked ? 0.55 : 1 }}>
+        <Pressable
+          onPress={onOpenHowTo && hasHowTo(rep.step) ? onOpenHowTo : undefined}
+          style={{ flex: 1, minWidth: 0, opacity: rep.checked ? 0.55 : 1 }}
+        >
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, lineHeight: 19.5, color: colors.ink }}>{rep.step.title}</Text>
           <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: chip.fg, marginTop: 2 }}>{repMetric(rep, loggedValue)}</Text>
-          {!rep.checked && !!rep.step.details && (
+          {!rep.checked && !!(rep.step.how_to?.gist || rep.step.details) && (
             <Text numberOfLines={2} style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 4 }}>
-              {rep.step.details}
+              {rep.step.how_to?.gist || rep.step.details}
             </Text>
           )}
-        </View>
+          {!rep.checked && onOpenHowTo && hasHowTo(rep.step) ? (
+            <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.success, marginTop: 5 }}>How to do it ›</Text>
+          ) : null}
+        </Pressable>
         {showStepper
           ? (stacked ? null : <QtyInput qty={qty!} stacked={false} />)
           : check}
@@ -315,6 +326,13 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false, r
       )}
     </View>
   );
+}
+
+/** The sheet's header wants the phase the rep is living in right now. */
+function sheetFor(goal: ActiveGoal, step: ProtocolStep, today: string) {
+  const week = weekOf(goal.startedOn, today, goal.protocol.duration_weeks, goal.pauses);
+  const phase = phaseForWeek(goal.protocol, week);
+  return { step, goalId: goal.id, phaseLabel: `${phase.title} \u00b7 WK ${phase.start_week}\u2013${phase.end_week}` };
 }
 
 /* ── day states ─────────────────────────────────────────────────────────── */
@@ -956,7 +974,9 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
   const { checkInStep, uncheckStep, profile } = useRally();
   const m = useTodayModel(goals, byGoal);
   const milestone = useMilestoneCelebration(goals, byGoal);
+  const navigation = useNavigation<any>();
   const witness = useWitnessOffer(goals, byGoal);
+  const [sheet, setSheet] = useState<{ step: ProtocolStep; phaseLabel: string; goalId: string } | null>(null);
   const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   const multi = m.perGoal.length > 1;
@@ -991,6 +1011,15 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
         {milestone.pending
             ? <MilestoneCard hit={milestone.pending} onDismiss={milestone.dismiss} />
             : <WitnessOfferCard offer={witness} />}
+          {sheet ? (
+            <RepSheet
+              step={sheet.step}
+              phaseLabel={sheet.phaseLabel}
+              goalId={sheet.goalId}
+              onClose={() => setSheet(null)}
+              onTweak={() => { setSheet(null); navigation.navigate('AdjustPlan', { goalId: sheet.goalId }); }}
+            />
+          ) : null}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
 
         {m.allDone && (
@@ -1035,6 +1064,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
                     loggedValue={loggedValueFor(byGoal[g.goal.id] ?? [], rep.step.id, m.today)}
                     onCheck={() => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : null); }}
                     onUncheck={() => uncheckStep(g.goal.id, rep.step.id)}
+                    onOpenHowTo={() => setSheet(sheetFor(g.goal, rep.step, m.today))}
                   />
                 ))}
               </React.Fragment>
@@ -1123,6 +1153,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
   const m = useTodayModel(goals, byGoal);
   const milestone = useMilestoneCelebration(goals, byGoal);
   const witness = useWitnessOffer(goals, byGoal);
+  const [sheet, setSheet] = useState<{ step: ProtocolStep; phaseLabel: string; goalId: string } | null>(null);
   const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   useCelebrateOnDone(m.allDone, celebrate);
@@ -1166,6 +1197,15 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
           {milestone.pending
             ? <MilestoneCard hit={milestone.pending} onDismiss={milestone.dismiss} />
             : <WitnessOfferCard offer={witness} />}
+          {sheet ? (
+            <RepSheet
+              step={sheet.step}
+              phaseLabel={sheet.phaseLabel}
+              goalId={sheet.goalId}
+              onClose={() => setSheet(null)}
+              onTweak={() => { setSheet(null); navigation.navigate('AdjustPlan', { goalId: sheet.goalId }); }}
+            />
+          ) : null}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
 
           {m.allDone && (
@@ -1206,6 +1246,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
                       qty={qtyFor(g, rep)}
                       onCheck={() => { hapticCheck(); checkInStep(g.goal.id, rep.step.id, rep.step.kind === 'duration' ? rep.step.duration_minutes ?? null : null); }}
                       onUncheck={() => uncheckStep(g.goal.id, rep.step.id)}
+                      onOpenHowTo={() => setSheet(sheetFor(g.goal, rep.step, m.today))}
                     />
                   ))}
                 </React.Fragment>

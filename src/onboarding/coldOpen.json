@@ -1,0 +1,21 @@
+{
+  "_README": "CAPTURED, NOT WRITTEN. Regenerate with: cd backend && npm run capture:coldopen",
+  "promptVersion": 29,
+  "capturedAt": "2026-09-02",
+  "askedQuestions": 4,
+  "original": {
+    "request": "Run a full marathon in 3 weeks, never having run before.",
+    "probability": 3,
+    "durationWeeks": 3
+  },
+  "counter": {
+    "statement": "Set a first running milestone that's actually buildable in your window: complete a 5K on race day in ~8 weeks, training 4 days a week from a true zero baseline. (If you want the marathon itself, treat it as a 6–9 month build — not a 3-week ask.)",
+    "probability": 85,
+    "durationWeeks": 8,
+    "subtitle": "Right ambition, impossible timeline — let's build the version you can actually finish."
+  },
+  "risk": {
+    "line": "Zero running base + a 21-day marathon = a body that will not survive the attempt.",
+    "detail": "Going from never-running to 26.2 miles in three weeks isn't slow or hard — it's structurally impossible, and pushing it risks real injury. That's already priced into the 3% odds, which is why this can't be greenlit as stated."
+  }
+}

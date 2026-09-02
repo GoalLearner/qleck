@@ -1,13 +1,38 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, Text, useWindowDimensions, View } from 'react-native';
+// The cold open — the first six seconds.
+//
+// This used to be a three-slide carousel promising friends who cheer you on
+// and points you trade for "real treats from our partners". Neither exists:
+// the social surfaces are sealed in src/demo behind DEMO_ENABLED, and there
+// are no partners, no points and no vouchers. That copy was shipping into an
+// App Store review as an unbacked commercial promise, and it was the only
+// manufactured social proof anywhere in the product.
+//
+// What replaces it is the thing that actually makes Qleck different, moved
+// from fourth in line to first: a coach that tells you no. Today a stranger
+// meets that behaviour only after an account, a blank box and six questions —
+// so the person most likely to be impressed by a refusal is the person least
+// likely to reach one. Here it is the first thing they see, on somebody
+// else's goal, labelled as an example throughout, with the door out always
+// open.
+//
+// Every word and both numbers come from src/onboarding/coldOpen.json, which
+// is a real capture of a real run of the real prompt (backend/harness/
+// coldopen.mjs). Nothing on this screen is written by hand, because a demo
+// that flatters the coach is exactly the lie the product exists to refuse.
+// backend/harness/coldopen.check.mjs fails the harness if the capture and the
+// live prompt version drift apart.
+import React, { useEffect, useRef } from 'react';
+import { Animated, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AVATAR_GRADS, night, nightFonts } from '../theme';
-import { Float, GradientCircle, PrimaryButton, TextButton } from '../ui';
+import { night, nightFonts } from '../theme';
+import { OddsDial } from '../OddsDial';
+import { PrimaryButton, TextButton } from '../ui';
 import type { OnboardingFlow } from '../useOnboardingFlow';
+import cold from '../coldOpen.json';
 
 function Wordmark() {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 28 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
       <View
         style={{
           width: 30, height: 30, borderRadius: 10, backgroundColor: night.accent,
@@ -23,146 +48,63 @@ function Wordmark() {
   );
 }
 
-function Slide({ art, title, body, width }: { art: React.ReactNode; title: string; body: string; width: number }) {
+function Eyebrow({ text }: { text: string }) {
   return (
-    <View style={{ width, paddingHorizontal: 30, justifyContent: 'center', gap: 22 }}>
-      <View style={{ height: 190, alignItems: 'center', justifyContent: 'center' }}>{art}</View>
-      <View>
-        <Text
-          style={{
-            fontFamily: nightFonts.display, fontSize: 30, lineHeight: 33.6,
-            color: night.text, marginBottom: 10,
-          }}
-        >
-          {title}
+    <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 10.5, letterSpacing: 2.2, color: night.textGhost }}>
+      {text}
+    </Text>
+  );
+}
+
+/** The three beats. Each one mounts fresh, so its dial sweeps on arrival. */
+function Beat({ index }: { index: number }) {
+  if (index === 0) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', gap: 16 }}>
+        <Eyebrow text="AN EXAMPLE" />
+        <Text style={{ fontFamily: nightFonts.display, fontSize: 30, lineHeight: 37, color: night.text }}>
+          “{cold.original.request}”
         </Text>
-        <Text style={{ fontFamily: nightFonts.body, fontSize: 15, lineHeight: 23.25, color: night.textMuted }}>
-          {body}
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 15, lineHeight: 23, color: night.textMuted }}>
+          Somebody asked Qoach for this. Here is what it said back.
         </Text>
       </View>
+    );
+  }
+
+  const counter = index === 2;
+  const odds = counter ? cold.counter.probability : cold.original.probability;
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', gap: 14 }}>
+      <OddsDial
+        value={odds}
+        color={counter ? night.accent : night.danger}
+        condLabel={counter ? 'WHAT IT WILL BACK' : 'AS ASKED'}
+        size={216}
+        showTicks={false}
+      />
+      <Text style={{ fontFamily: nightFonts.display, fontSize: 23, lineHeight: 29, color: night.text }}>
+        {counter ? 'So it offered a better one.' : 'Qoach would not sign it.'}
+      </Text>
+      <Text style={{ fontFamily: nightFonts.body, fontSize: 14.5, lineHeight: 22, color: night.textMuted }}>
+        {counter ? cold.counter.statement : cold.risk.line}
+      </Text>
     </View>
   );
 }
 
-const GoalArt = () => (
-  <Float>
-    <View
-      style={{
-        width: 170, height: 170, borderRadius: 85, borderWidth: 2, borderColor: night.accentFaint,
-        alignItems: 'center', justifyContent: 'center',
-      }}
-    >
-      <View
-        style={{
-          width: 118, height: 118, borderRadius: 59, borderWidth: 2, borderColor: 'rgba(43,227,128,0.45)',
-          alignItems: 'center', justifyContent: 'center',
-        }}
-      >
-        <View
-          style={{
-            width: 64, height: 64, borderRadius: 32, backgroundColor: night.accent,
-            alignItems: 'center', justifyContent: 'center',
-            shadowColor: night.accent, shadowOpacity: 0.55, shadowRadius: 20, shadowOffset: { width: 0, height: 0 },
-          }}
-        >
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 26, color: night.accentInk }}>✓</Text>
-        </View>
-      </View>
-    </View>
-  </Float>
-);
-
-const FriendsArt = () => (
-  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-    <Float>
-      <GradientCircle size={72} colors={AVATAR_GRADS[1]} borderWidth={3} borderColor={night.bg}>
-        <Text style={{ fontFamily: nightFonts.display, fontSize: 22, color: night.accentInk }}>M</Text>
-      </GradientCircle>
-    </Float>
-    <Float delay={500} style={{ marginHorizontal: -12, zIndex: 2 }}>
-      <GradientCircle size={88} colors={AVATAR_GRADS[2]} borderWidth={3} borderColor={night.bg}>
-        <Text style={{ fontFamily: nightFonts.display, fontSize: 28, color: night.accentInk }}>S</Text>
-      </GradientCircle>
-    </Float>
-    <Float delay={1000}>
-      <GradientCircle size={72} colors={AVATAR_GRADS[3]} borderWidth={3} borderColor={night.bg}>
-        <Text style={{ fontFamily: nightFonts.display, fontSize: 22, color: night.accentInk }}>J</Text>
-      </GradientCircle>
-    </Float>
-  </View>
-);
-
-function RewardPill({
-  label, delay, solid, dashed,
-}: { label: string; delay: number; solid?: boolean; dashed?: boolean }) {
-  return (
-    <Float delay={delay}>
-      <View
-        style={{
-          paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999,
-          backgroundColor: solid ? night.accent : night.surface,
-          borderWidth: solid ? 0 : 1,
-          borderColor: dashed ? night.accentBorder : night.border,
-          borderStyle: dashed ? 'dashed' : 'solid',
-        }}
-      >
-        <Text
-          style={{
-            fontFamily: solid ? nightFonts.display : nightFonts.bodyMedium,
-            fontSize: solid ? 17 : 15,
-            color: solid ? night.accentInk : dashed ? night.accentText : night.text,
-          }}
-        >
-          {label}
-        </Text>
-      </View>
-    </Float>
-  );
-}
-
-const RewardsArt = () => (
-  <View style={{ alignItems: 'center', gap: 10 }}>
-    <RewardPill label="+25 pts · goal smashed" delay={0} solid />
-    <RewardPill label="+10 pts · coached Maya" delay={400} />
-    <RewardPill label="−20% voucher unlocked" delay={800} dashed />
-  </View>
-);
-
-const SLIDES = [
-  {
-    art: <GoalArt />,
-    title: 'Set goals you’ll actually smash',
-    body: 'Big dream or tiny habit — put it in writing, give it a deadline, watch it happen.',
-  },
-  {
-    art: <FriendsArt />,
-    title: 'Friends make it stick',
-    body: 'Invite your crew to coach, cheer and keep you honest. Winning alone is only half the fun.',
-  },
-  {
-    art: <RewardsArt />,
-    title: 'Wins turn into rewards',
-    body: 'Every smashed goal earns points. Trade them in for real treats from our partners.',
-  },
-];
+const NEXT_LABEL = ['Show me', 'So what would work?', 'Let’s go'];
 
 export default function WelcomeScreen({ flow }: { flow: OnboardingFlow }) {
   const insets = useSafeAreaInsets();
-  // The carousel track is exactly one screen per slide. onLayout would be more
-  // precise, but this container is full-bleed so the window width is the width.
-  const { width: windowWidth } = useWindowDimensions();
-  const [width, setWidth] = useState(windowWidth);
-  const x = useRef(new Animated.Value(0)).current;
-
+  // Cross-fade rather than a carousel track: the beats have to MOUNT as you
+  // reach them or both dials would sweep once, together, at app launch — and
+  // the sweep to an ugly number is the whole point of the second beat.
+  const fade = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    Animated.timing(x, {
-      toValue: -flow.slide * width,
-      duration: 450,
-      // cubic-bezier(.22, 1, .36, 1)
-      easing: Easing.bezier(0.22, 1, 0.36, 1),
-      useNativeDriver: true,
-    }).start();
-  }, [flow.slide, width, x]);
+    fade.setValue(0);
+    Animated.timing(fade, { toValue: 1, duration: 320, useNativeDriver: true }).start();
+  }, [flow.slide, fade]);
 
   return (
     <View
@@ -172,18 +114,17 @@ export default function WelcomeScreen({ flow }: { flow: OnboardingFlow }) {
         paddingBottom: Math.max(insets.bottom, 20) + 22,
       }}
     >
-      <Wordmark />
-
-      <View
-        style={{ flex: 1, marginTop: 10, overflow: 'hidden' }}
-        onLayout={e => setWidth(e.nativeEvent.layout.width || windowWidth)}
-      >
-        <Animated.View style={{ flexDirection: 'row', flex: 1, transform: [{ translateX: x }] }}>
-          {SLIDES.map(s => (
-            <Slide key={s.title} width={width} art={s.art} title={s.title} body={s.body} />
-          ))}
-        </Animated.View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 28 }}>
+        <Wordmark />
+        {/* The way past the example is always visible — nobody is held here. */}
+        <Pressable onPress={() => flow.nav('auth')} hitSlop={12}>
+          <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, color: night.textGhost }}>Skip</Text>
+        </Pressable>
       </View>
+
+      <Animated.View key={flow.slide} style={{ flex: 1, opacity: fade, paddingHorizontal: 30, paddingTop: 10 }}>
+        <Beat index={flow.slide} />
+      </Animated.View>
 
       <View style={{ flexDirection: 'row', gap: 7, justifyContent: 'center', paddingTop: 18, paddingBottom: 20 }}>
         {[0, 1, 2].map(i => (
@@ -200,11 +141,13 @@ export default function WelcomeScreen({ flow }: { flow: OnboardingFlow }) {
       </View>
 
       <View style={{ gap: 10, paddingHorizontal: 28 }}>
-        <PrimaryButton label="Let’s go" onPress={flow.welcomeNext} />
+        <PrimaryButton label={NEXT_LABEL[flow.slide] ?? 'Let’s go'} onPress={flow.welcomeNext} />
         <TextButton
           label="I already have an account"
           onPress={() => flow.nav('login')}
-          color="rgba(242,245,244,0.65)"
+          // Was hardcoded to the dark palette's ink, which turned this into
+          // white-on-cream the moment the appearance setting went light.
+          color={night.textMuted}
           height={48}
         />
       </View>

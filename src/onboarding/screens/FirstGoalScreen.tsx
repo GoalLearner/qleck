@@ -17,6 +17,7 @@ import { SimVerdict, simPhaseLabel, type SimPhase } from '../SimVerdict';
 import type { SimulationState } from '../../api/coachTypes';
 import { reportAiResponse } from '../../api/coach';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
+import PredictScreen, { bandFor } from './PredictScreen';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
 import type { PaceKey, Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
@@ -526,12 +527,51 @@ const PACE_LABELS: Record<PaceKey, string> = {
   custom: 'Yours',
 };
 
+/**
+ * The user's own call, next to Qoach's.
+ *
+ * Compared against original_probability — the honest read of the goal AS THEY
+ * ASKED FOR IT — never against the live dial value, which moves with the pace
+ * pills and is answering a different question. The prompt emits
+ * original_probability on every verdict (it equals success_probability when
+ * feasible, and can be 3% on a counter-offer), so the comparison is truthful in
+ * both directions: a user who overreached gets told, and a user who was harder
+ * on themselves than the numbers are gets told that too.
+ *
+ * Copy rules, which are what keep this from reading as a gimmick: never say the
+ * guess was wrong — the app asked for it — and stay FLAT when Qoach is the more
+ * optimistic one. Enthusiasm there is a promise the plan has not earned yet.
+ */
+function GuessGap({ estimate, v }: { estimate?: number | null; v: Verdict }) {
+  if (typeof estimate !== 'number') return null;
+  const theirs = v.original_probability ?? v.success_probability;
+  if (typeof theirs !== 'number') return null;
+  const gap = estimate - theirs;
+  const line = Math.abs(gap) < 12
+    ? 'You had that about right.'
+    : gap > 0
+      ? "You're more optimistic than I am."
+      : "You're harder on yourself than the numbers are.";
+  return (
+    <View style={{ alignItems: 'center', paddingTop: 10, gap: 5 }}>
+      <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost }}>
+        {`YOUR CALL: ${bandFor(estimate).toUpperCase()} · QOACH: ${theirs}%`}
+      </Text>
+      <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, color: night.textSoft, textAlign: 'center' }}>
+        {line}
+      </Text>
+    </View>
+  );
+}
+
 /** Canvas 5a/5c — feasible verdict with the odds dial, at 2-3 paces. */
 function FeasibleVerdict({
   v, pace, onPace, onBuild, onReset, missingRequired,
-  sim, prevSim, editedKey, answers, quickPicks, onEditInput, onPriceCustom, ownPlanMode,
+  sim, prevSim, editedKey, answers, quickPicks, onEditInput, onPriceCustom, ownPlanMode, estimate,
 }: {
   v: Verdict;
+  /** The user's own guess, when they were asked for one. */
+  estimate?: number | null;
   pace: PaceKey;
   onPace: (p: PaceKey) => void;
   onBuild: () => void;
@@ -687,7 +727,9 @@ function FeasibleVerdict({
           condLabel={sprinting ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
           size={wide ? 296 : Math.max(180, Math.min(width - 104, 296))}
           onPress={simActive && simPhase === 'done' ? () => replayRef.current?.() : undefined}
+          mark={estimate}
         />
+        <GuessGap estimate={estimate} v={v} />
         {simActive ? (
           <SimVerdict
             sim={sim ?? null}
@@ -849,9 +891,11 @@ function FeasibleVerdict({
 const ATTEMPT_FLOOR = 20;
 
 function CounterVerdict({
-  v, goalText, onBuild, onBuildOriginal, onReset, ownPlanMode,
+  v, goalText, onBuild, onBuildOriginal, onReset, ownPlanMode, estimate,
 }: {
   v: Verdict;
+  /** The user's own guess, when they were asked for one. */
+  estimate?: number | null;
   goalText: string;
   onBuild: () => void;
   onBuildOriginal: () => void;
@@ -950,7 +994,9 @@ function CounterVerdict({
           color={dialColor}
           condLabel={asked ? 'EVEN ALL-IN' : 'IF YOU SHOW UP'}
           size={wide ? 300 : Math.min(width - 100, 300)}
+          mark={estimate}
         />
+        <GuessGap estimate={estimate} v={v} />
       </View>
       <View style={{ minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}>
         <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18.5, color: night.textSoft, textAlign: 'center' }}>
@@ -1612,8 +1658,12 @@ export default function FirstGoalScreen({
   /** Prefill for the intake box — the regenerate-old-goal path. */
   initialGoal?: string;
 }) {
-  const coach = useCoachFlow();
+  // Ask for the guess only on the FIRST plan. NewGoalScreen hosts this same
+  // screen, so without the gate every in-app "+" would put a screen between the
+  // questions and the answer someone is waiting for — a moment worth having
+  // once, and a tax every time after.
   const { goals } = useRally();
+  const coach = useCoachFlow({ askEstimate: goals.length === 0 });
   // Recomputed only when the active goal set changes — locking a goal here
   // retires its whole domain (smoking ⊃ vaping ⊃ cigarettes) next time.
   const suggestions = React.useMemo(
@@ -1801,6 +1851,11 @@ export default function FirstGoalScreen({
     return <ChatThread coach={coach} answer={answer} setAnswer={setAnswer} onDismiss={onDismiss} dismissLabel={dismissLabel} />;
   }
 
+  /* their call, before ours */
+  if (coach.phase === 'predict') {
+    return <PredictScreen onPick={coach.commitEstimate} />;
+  }
+
   /* verdict — feasible (canvas 5a desktop / 5c phone) */
   if (coach.phase === 'verdict' && coach.verdict && coach.verdict.decision === 'feasible') {
     return (
@@ -1819,6 +1874,7 @@ export default function FirstGoalScreen({
         onEditInput={coach.editInput}
         onPriceCustom={coach.priceCustom}
         ownPlanMode={coach.ownPlanMode}
+        estimate={coach.estimate}
       />
     );
   }
@@ -1833,6 +1889,7 @@ export default function FirstGoalScreen({
         onBuildOriginal={coach.buildOriginal}
         onReset={coach.reset}
         ownPlanMode={coach.ownPlanMode}
+        estimate={coach.estimate}
       />
     );
   }

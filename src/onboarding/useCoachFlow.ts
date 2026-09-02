@@ -17,6 +17,7 @@ export type CoachPhase =
   | 'intake'      // typing the goal
   | 'thinking'    // waiting on session-start / answer
   | 'question'    // Qoach asked something
+  | 'predict'     // verdict in hand, waiting on the user's own guess
   | 'verdict'     // feasible or counter-offer on screen
   | 'building'    // waiting on protocol generation
   | 'rebuilding'  // regenerating after an assumption was corrected
@@ -42,8 +43,14 @@ export interface QaEntry {
   answer?: string;
 }
 
-export function useCoachFlow() {
+export function useCoachFlow(opts?: { askEstimate?: boolean }) {
   const [phase, setPhase] = useState<CoachPhase>('intake');
+  // Held in a ref so handleTurn keeps its [] deps: it is the single funnel for
+  // every AI turn and must never capture a stale value.
+  const askEstimate = useRef(!!opts?.askEstimate);
+  askEstimate.current = !!opts?.askEstimate;
+  /** What the user said their own odds were, before seeing Qoach's. */
+  const [estimate, setEstimate] = useState<number | null>(null);
   const [goalText, setGoalText] = useState('');
   const [question, setQuestion] = useState<CoachQuestion | null>(null);
   const [questionCount, setQuestionCount] = useState(0);
@@ -97,7 +104,9 @@ export function useCoachFlow() {
       setMissingRequired(res.missing_required ?? []);
       setVerdictAnswers(res.answers ?? {});
       if (res.quick_picks) setQuickPicks(res.quick_picks);
-      setPhase('verdict');
+      // The verdict is already in state either way — 'predict' only withholds
+      // the REVEAL, so the guess screen can read it if it ever needs to.
+      setPhase(askEstimate.current ? 'predict' : 'verdict');
     } else {
       setRefusal(res.refusal);
       setPhase('refused');
@@ -328,10 +337,17 @@ export function useCoachFlow() {
     healTries.current = 0;
     healing.current = false;
     setPickedOdds(null);
+    setEstimate(null);
     setProtocol(null);
     setError(null);
     setOwnPlanMode(false);
     setPhase('intake');
+  }, []);
+
+  /** Their call, then the reveal. `null` is the skip — no guess, no comparison. */
+  const commitEstimate = useCallback((pct: number | null) => {
+    setEstimate(pct);
+    setPhase('verdict');
   }, []);
 
   const retry = useCallback(() => { retryAction.current?.(); }, []);
@@ -360,6 +376,7 @@ export function useCoachFlow() {
     assumptions, quickPicks, missingRequired, fixAssumption,
     sim, prevSim, editedKey, editInput, switchPace, priceCustom, verdictAnswers,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan, ownPlanMode,
+    estimate, commitEstimate,
   };
 }
 

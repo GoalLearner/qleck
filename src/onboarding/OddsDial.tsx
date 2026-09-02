@@ -57,13 +57,17 @@ function useSweep(target: number) {
 }
 
 export function OddsDial({
-  value, color, condLabel, size = 300, showTicks = true, onPress,
+  value, color, condLabel, size = 300, showTicks = true, onPress, mark,
 }: {
   value: number;
   color: string;
   condLabel: string;
   size?: number;
   showTicks?: boolean;
+  /** The user's own call, drawn as a fixed tick across the arc. It does NOT
+   *  move when the arc does — switching pace slides Qoach's number past a
+   *  guess that was made once, and seeing that happen is the point. */
+  mark?: number | null;
   /** Override the tap. The simulated verdict passes its full lane replay —
    *  without this the dial's own sweep-replay swallows the press and the
    *  spec's "tap dial to replay" never reaches the lanes. */
@@ -84,6 +88,19 @@ export function OddsDial({
           strokeDasharray={`${ARC_LEN}`}
           strokeDashoffset={ARC_LEN * (1 - shown / 100)}
         />
+        {typeof mark === 'number' ? (
+          // A 2.5-unit dash placed by dash offset — no angle maths needed, and
+          // it rides the same path constant as the arc, so the two can never
+          // drift apart. Drawn after the arc so it stays visible over the fill.
+          <Path
+            d={ARC_D}
+            fill="none"
+            stroke={night.textGhost}
+            strokeWidth={18}
+            strokeDasharray={`2.5 ${ARC_LEN}`}
+            strokeDashoffset={-(ARC_LEN * Math.max(0, Math.min(100, mark))) / 100}
+          />
+        ) : null}
         {showTicks ? (
           <>
             <SvgText x="27.25" y="160" textAnchor="middle" fontSize="8.5" fontFamily={MONO} fill={night.textGhost}>0</SvgText>

@@ -94,13 +94,12 @@ function Row({ row, col, delay }: { row: LedgerRow; col: number; delay: number }
   );
 }
 
-export default function WeekLedger({ goals, byGoal, today, nextLine, onOpenLedger }: {
+export default function WeekLedger({ goals, byGoal, today, nextLine }: {
   goals: ActiveGoal[];
   byGoal: Record<string, CheckIn[]>;
   today: string;
   /** The "Friday: ..." line, which moves down here once the card is open. */
   nextLine: string | null;
-  onOpenLedger: () => void;
 }) {
   const monday = weekStart(today);
   const col = todayColumn(monday, today);
@@ -169,19 +168,17 @@ export default function WeekLedger({ goals, byGoal, today, nextLine, onOpenLedge
         );
       })}
 
-      {/* the only exit, beside the next-up line the closed card was showing */}
-      <Pressable
-        onPress={onOpenLedger}
-        style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-          marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border,
-        }}
-      >
-        <Text numberOfLines={1} style={{ flex: 1, fontFamily: fonts.medium, fontSize: 12.5, color: colors.muted }}>
-          {nextLine ?? ''}
-        </Text>
-        <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.success }}>Ledger ›</Text>
-      </Pressable>
+      {/* The next-up line the closed card was showing, and nothing else. The
+          design put a "Ledger ›" link beside it; the owner cut it (2026-09-02)
+          — this card is the week, so a link out of it was an exit nobody
+          needed. The full Ledger screen is still reached from Goals. */}
+      {nextLine ? (
+        <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
+          <Text numberOfLines={1} style={{ fontFamily: fonts.medium, fontSize: 12.5, color: colors.muted }}>
+            {nextLine}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

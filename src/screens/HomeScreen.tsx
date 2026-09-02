@@ -349,7 +349,7 @@ function sheetFor(goal: ActiveGoal, step: ProtocolStep, today: string) {
 //
 // NOTE: this replaced the confetti encore — the card's tap now belongs to the
 // ledger. The salute still fires on the transition to done (useCelebrateOnDone).
-function DayDone({ streak, preview, open, onToggle, goals, byGoal, today, onOpenLedger }: {
+function DayDone({ streak, preview, open, onToggle, goals, byGoal, today }: {
   streak: number;
   preview: string | null;
   open: boolean;
@@ -357,7 +357,6 @@ function DayDone({ streak, preview, open, onToggle, goals, byGoal, today, onOpen
   goals: ActiveGoal[];
   byGoal: Record<string, CheckIn[]>;
   today: string;
-  onOpenLedger: () => void;
 }) {
   const t = useRef(new Animated.Value(open ? 1 : 0)).current;
   // The grid stays mounted through the fold so it can animate shut.
@@ -423,7 +422,7 @@ function DayDone({ streak, preview, open, onToggle, goals, byGoal, today, onOpen
             the motion instead, and the card takes its size in one step. */}
         {mounted ? (
           <Animated.View style={{ opacity: t, transform: [{ translateY: lerp(-8, 0) }] }}>
-            <WeekLedger goals={goals} byGoal={byGoal} today={today} nextLine={preview} onOpenLedger={onOpenLedger} />
+            <WeekLedger goals={goals} byGoal={byGoal} today={today} nextLine={preview} />
           </Animated.View>
         ) : null}
       </Animated.View>
@@ -1109,7 +1108,6 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
               goals={goals}
               byGoal={byGoal}
               today={m.today}
-              onOpenLedger={() => navigation.navigate('Ledger')}
             />
           </Pop>
         )}
@@ -1306,7 +1304,6 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
                 goals={goals}
                 byGoal={byGoal}
                 today={m.today}
-                onOpenLedger={() => navigation.navigate('Ledger')}
               />
             </Pop>
           )}

@@ -140,7 +140,25 @@ device before submitting.
 
 ## 8. Still owed before submission (owner)
 
-- [ ] `wrangler secret put REVIEW_DEMO_PASSWORD`
+- [x] **`REVIEW_DEMO_PASSWORD` set 2026-09-02** — worker secret, owner-chosen,
+      never in a transcript. The door self-provisions: first login as
+      `review@qleck.app` creates the identity, so nothing needed seeding.
+      Verified live — a wrong password returns the same flat 401 `bad_login` as
+      any other, so the demo account cannot be found by probing.
+
+      **The App Review note MUST say how to reach the password field**, or this
+      fails review for a sign-in that works. The front door is Continue with
+      Apple and the email path is code-based, so credentials alone look broken:
+      typing the address into the signup box returns "couldn't deliver" (true —
+      Resend can only reach the owner's own address until the sending domain
+      lands). Wording:
+
+      > To sign in with the credentials above, tap "I already have an account"
+      > on the welcome screen and use the email and password fields.
+
+      Still owed: sign in as the demo account and BUILD ONE GOAL. A reviewer
+      landing on an empty Today has to sit through the interview and a live
+      model call before seeing the product.
 - [ ] Privacy policy + terms hosted at a public URL, naming the
       subprocessors in §5, linked from App Store Connect
 - [ ] Screenshots for both stores

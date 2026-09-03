@@ -29,6 +29,7 @@ import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, getGoalProvenance, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
 import { graduate, type GraduateBody } from './graduation';
+import { privacyHtml, termsHtml } from './legal';
 import { shareGoal, unshareGoal, witnessPage, witnessView } from './witness';
 import { exportAccount, purgeAccount } from './account';
 import { betaReadout } from './metrics';
@@ -725,6 +726,20 @@ export default {
         return json({ error: 'identity_attach_failed' }, 500, cors);
       }
       return sessionFor(targetUser, false);
+    }
+
+    /* ── Privacy and terms. Public, no auth, no account, and served from
+     * here so they need no domain, no hosting and no second deploy target —
+     * the store listing can link straight at them. Indexable on purpose:
+     * unlike the witness page, these are SUPPOSED to be findable. */
+    if (request.method === 'GET' && (url.pathname === '/privacy' || url.pathname === '/terms')) {
+      return new Response(url.pathname === '/privacy' ? privacyHtml() : termsHtml(), {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600',
+          'Referrer-Policy': 'no-referrer',
+        },
+      });
     }
 
     /* ── The witness (P4.5): a public, read-only page for one shared goal.

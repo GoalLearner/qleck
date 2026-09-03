@@ -142,11 +142,24 @@ export async function deleteAccount(): Promise<void> {
 /** Fire-and-forget friendly; throws on failure so callers may retry.
  *  A 409 means the handle was claimed between the availability check and
  *  this save — the profile keeps its name, the handle stays unset. */
-export async function saveMe(displayName: string, handle: string): Promise<void> {
+/**
+ * Update the parts of your profile the server owns.
+ *
+ * BLANK FIELDS ARE OMITTED, not sent. The endpoint writes with
+ * COALESCE(?, existing), so a field it receives as an empty string is a field
+ * it sets to empty — passing `''` for a handle silently WIPED it. Reachable
+ * today: Apple hands over a full name exactly once, so a returning Apple user
+ * whose name arrives with no username called this as saveMe(name, '').
+ */
+export async function saveMe(displayName?: string, handle?: string): Promise<void> {
+  const body: Record<string, string> = {};
+  if (displayName?.trim()) body.displayName = displayName.trim();
+  if (handle?.trim()) body.handle = handle.trim();
+  if (Object.keys(body).length === 0) return;
   const res = await authedFetch('/me', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ displayName, handle }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`save_me_failed_${res.status}`);
 }

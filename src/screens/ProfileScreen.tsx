@@ -4,14 +4,14 @@
 // ROADMAP P6 on a real backend.
 import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { deleteAccount, exportMyData } from '../api/account';
+import { deleteAccount, exportMyData, saveMe } from '../api/account';
 import Constants from 'expo-constants';
 import { clearAccountHint, getStoredIdentity } from '../api/device';
 import {
   ensureNudgePermission, fmtTime, getNudgePermission, loadNudgePrefs, saveNudgePrefs,
   type NudgePermission, type NudgePrefs,
 } from '../lib/nudges';
-import { Linking, Platform, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Share, Switch, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FadeInUp from '../components/FadeInUp';
@@ -195,9 +195,7 @@ export default function ProfileScreen({ onLogout }: { onLogout: (opts?: LogoutOp
       >
         <View style={{ alignItems: 'center', paddingTop: 18, paddingHorizontal: 20 }}>
           <YouAvatar size={84} fontSize={30} serif />
-          <Text style={{ fontFamily: fonts.serif, fontSize: 23, marginTop: 12, color: colors.ink }}>
-            {profile.fullName}
-          </Text>
+          <NameRow />
           <Text style={{ fontSize: 12.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 4 }}>
             @{profile.handle}
           </Text>
@@ -411,6 +409,96 @@ function VersionRow({ onLogout }: { onLogout: (opts?: LogoutOpts) => void }) {
           )}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Your name, and the way to fix it.
+ *
+ * It was collected once during onboarding and never editable again, so a typo
+ * on the signup screen was permanent — and an account created by a route that
+ * collects no name at all (Sign in with Apple, the review door) was stuck
+ * showing the seeded default forever.
+ *
+ * Name only. The handle is unique server-side and a rename there needs an
+ * availability check and a 409 path, which is its own change; this is the
+ * field people actually get wrong.
+ */
+function NameRow() {
+  const { profile, syncAccount } = useRally();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(profile.fullName);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const open = () => { setDraft(profile.fullName); setErr(''); setEditing(true); };
+
+  const save = async () => {
+    const next = draft.trim();
+    if (busy) return;
+    if (!next) { setErr('A name, however short.'); return; }
+    if (next === profile.fullName) { setEditing(false); return; }
+    setBusy(true);
+    setErr('');
+    try {
+      await saveMe(next);
+      // Re-read rather than patching local state: the server is what the next
+      // launch will show, so this proves the save landed instead of assuming
+      // it. syncAccount also re-derives the avatar's initials.
+      await syncAccount();
+      setEditing(false);
+    } catch {
+      setErr("Couldn't save that — try again in a moment.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <Pressable onPress={open} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12 }}>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 23, color: colors.ink }}>{profile.fullName}</Text>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.muted }}>Edit</Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={{ alignSelf: 'stretch', marginTop: 12, gap: 10 }}>
+      <TextInput
+        value={draft}
+        onChangeText={t => { setDraft(t); setErr(''); }}
+        autoFocus
+        maxLength={80}
+        returnKeyType="done"
+        onSubmitEditing={save}
+        placeholder="Your name"
+        placeholderTextColor={colors.muted}
+        style={{
+          height: 50, borderRadius: radii.pill, borderWidth: 1.5, borderColor: colors.outline,
+          paddingHorizontal: 18, textAlign: 'center',
+          fontFamily: fonts.serif, fontSize: 19, color: colors.ink,
+        }}
+      />
+      {err ? (
+        <Text style={{ textAlign: 'center', fontFamily: fonts.semibold, fontSize: 12, color: colors.danger }}>{err}</Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Pressable
+          onPress={() => setEditing(false)}
+          style={{ flex: 1, height: 44, borderRadius: radii.pill, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.ink }}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          onPress={save}
+          style={{ flex: 1, height: 44, borderRadius: radii.pill, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center', opacity: busy ? 0.6 : 1 }}
+        >
+          {busy ? <ActivityIndicator size="small" color={colors.creamText} />
+                : <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.creamText }}>Save</Text>}
+        </Pressable>
+      </View>
     </View>
   );
 }

@@ -20,12 +20,12 @@
 
 /* ── the three things code cannot know. Set before submission. ──────────── */
 
-/** Where people reach a human. TODO(owner): a real, monitored address. */
-const CONTACT_EMAIL = 'TODO-SET-CONTACT-EMAIL';
+/** Where people reach a human. Public the moment this deploys. */
+const CONTACT_EMAIL = 'richmondcampano93@gmail.com';
 /** Who "we" is, legally — a person's name is fine for a solo app. */
-const LEGAL_ENTITY = 'TODO-SET-LEGAL-NAME';
+const LEGAL_ENTITY = 'Richmond Campano';
 /** Whose law governs, e.g. "the State of Florida, USA". */
-const JURISDICTION = 'TODO-SET-JURISDICTION';
+const JURISDICTION = 'the State of California, USA';
 
 /** Last substantive change. Bump when the text changes, not on redeploys. */
 const EFFECTIVE = '3 September 2026';

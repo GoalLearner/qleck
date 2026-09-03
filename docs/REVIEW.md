@@ -104,8 +104,9 @@ party analytics, no ads, no data sold or shared for advertising.
   Goal text and interview answers are sent here.
   *(Note: the roadmap's P5 line says "naming Anthropic as subprocessor",
   written when the provider was Anthropic. The shipped provider is DeepSeek
-  — `AI_PROVIDER` in `backend/wrangler.toml`. The privacy policy must name
-  whichever is actually live at submission.)*
+  — `AI_PROVIDER` in `backend/wrangler.toml`. The shipped privacy policy
+  names DeepSeek; if the provider ever changes, `backend/src/legal.ts`
+  changes with it in the same commit.)*
 - **Resend** — transactional email for sign-in codes.
 
 Retention: AI prompt/response payloads are deleted after **30 days** by the
@@ -159,9 +160,31 @@ device before submitting.
       Still owed: sign in as the demo account and BUILD ONE GOAL. A reviewer
       landing on an empty Today has to sit through the interview and a live
       model call before seeing the product.
-- [ ] Privacy policy + terms hosted at a public URL, naming the
-      subprocessors in §5, linked from App Store Connect
-- [ ] Screenshots for both stores
+- [x] **Privacy policy + terms LIVE 2026-09-03** — served by the worker
+      itself, so there was no domain to buy and no hosting to stand up:
+      - https://qleck-api.richmondcampano93.workers.dev/privacy
+      - https://qleck-api.richmondcampano93.workers.dev/terms
+
+      Both name the §5 subprocessors, and the privacy page states plainly that
+      goal text and interview answers go to DeepSeek. Source is
+      `backend/src/legal.ts` — ONE copy, deliberately: a policy in docs/ plus a
+      policy on a website is two things that drift, and a policy that no longer
+      describes the app is worse than none. Editing the text means a deploy,
+      which is the correct amount of friction.
+
+      Contact, legal entity and governing law are constants at the top of that
+      file; while any is unset both pages render a red "not final" banner, so
+      an unfinished policy cannot quietly look finished. All three are set
+      (Richmond Campano, California) — note the contact address is now PUBLIC.
+
+      Still to do: paste the privacy URL into App Store Connect, and link the
+      terms from the listing or the EULA field. Not written by a lawyer; a
+      professional read is worth the money before the store listing goes live,
+      given the health-adjacent goals.
+- [ ] Screenshots for both stores. Material that now exists and did not
+      before: the cold open's refusal (3% -> 85%), the day-complete card with
+      the week ledger unrolled, the odds dial carrying the user's own guess
+      beside Qoach's, and a rep how-to sheet.
 - [x] First TestFlight upload — Xcode from the MacBook (not EAS; there is no
       eas.json and the owner signs locally). Play internal still owed.
 - [x] **Build 15 shipped 2026-09-01** — the first build testers can actually

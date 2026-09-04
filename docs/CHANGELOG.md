@@ -115,6 +115,27 @@ fails signing.
   private one in the list. You could share "quit smoking" with someone, forget,
   and never be told. The card now says **SHARED — ONE LINK IS LIVE**.
 
+### Build 29 · 3 Sep — the known bugs
+
+- **A denial no longer corroborates a claim.** `fabricationErrors` tested
+  whether a supporting word appeared anywhere in what you said, so "no
+  injuries" contains "injur" and licensed the plan to discuss "your ankle
+  injury" — the person saying a thing did NOT happen was read as evidence that
+  it did, which is the exact fabrication the guard exists to catch, waved
+  through on the strength of the denial. Reachable with ordinary answers.
+  Negated clauses are now stripped before corroboration, stopping at clause
+  boundaries so "no time, my knee still hurts" keeps the half that is a report.
+- **The fabrication guard has bars at last** (`npm run check:fabrication`,
+  9 of them, no model calls). It was previously exercised only through the paid
+  AI harness — the one rule protecting people from invented facts about
+  themselves had no cheap test. The bars were written first and immediately
+  caught the regex above, which had a literal backspace character where ``
+  was meant.
+- **`/me/export` carries the interview answers** as
+  `what_you_told_the_coach`. They are the most personal thing held about
+  anybody here and they were the one category the export omitted; an export
+  that leaves out the sensitive part is the wrong way round.
+
 ---
 
 ## Not shipped
@@ -142,11 +163,12 @@ fails signing.
 
 ### Known and unfixed
 
-- `repriceTrimmedProtocol` runs 2 of the 9 protocol validators, so the
-  commitment picker can produce a plan that skipped checks the normal path
-  enforces. Same family as the bug that cost a user their protocol on 1 Sep.
-- The fabrication guard corroborates against *extracted* answers, so one
-  incidental word can license a claim.
-- `/me/export` omits the interview answers. `your_own_odds` ships; the rest of
-  `goal_outcomes` does not.
+- **`repriceTrimmedProtocol`** — this entry was OVERSTATED and is corrected
+  here rather than deleted. It runs three validators, not two: `validateProtocol`,
+  `sessionErrors` and `physiquePillarErrors`, plus an explicit empty-phase
+  check. What it skips — `provenanceErrors`, `exhaustedKeyErrors`,
+  `milestoneProvenanceErrors` — all police the MODEL's obligations against the
+  answers, and REMOVING steps cannot violate any of them (milestones cite
+  answer keys, not step ids). Re-running them would risk refusing the user's
+  own deliberate choice to drop a commitment. No fix made, on purpose.
 - Play internal upload never done.

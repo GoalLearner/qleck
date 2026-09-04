@@ -679,8 +679,25 @@ export function fabricationErrors(
   p: Protocol, answers: Record<string, string>, goalText: string,
 ): string[] {
   const errs: string[] = [];
-  // What the person actually told us, as one haystack.
-  const said = `${goalText} ${Object.values(answers ?? {}).join(' ')}`.toLowerCase();
+  // What the person actually told us, as one haystack — MINUS anything they
+  // said in the negative.
+  //
+  // Corroboration used to be a bare substring test, so "no injuries" contains
+  // "injur" and licensed the plan to talk about "your ankle injury". The
+  // person saying a thing did NOT happen was being read as evidence that it
+  // did, which is exactly the fabrication this guard exists to catch, sailing
+  // through on the strength of the denial. Reachable with ordinary answers:
+  // "No injuries, and no fixed race booked" is a real one from the cold-open
+  // capture.
+  //
+  // Stripping is deliberately blunt and stops at clause boundaries, so
+  // "no time, my knee still hurts" keeps the half that is an actual report.
+  // Over-stripping only costs a retry — fabricationErrors is advisory — while
+  // under-stripping ships an invented fact, so the asymmetry favours strict.
+  const NEGATED = /\b(?:no|not|never|none|without|nothing|zero|didn't|dont|don't|doesn't|haven't|hasn't|isn't|aren't|free of)\b[^.!?;,]{0,48}/gi;
+  const said = `${goalText} ${Object.values(answers ?? {}).join(' ')}`
+    .toLowerCase()
+    .replace(NEGATED, ' ');
 
   // Each entry: the claim to look for, and the word that would corroborate it.
   const CLAIMS: { re: RegExp; needs: RegExp; what: string }[] = [

@@ -151,6 +151,8 @@ export interface AccountExport {
     protocol: Protocol | null;
     /** What you said your own odds were, before Qoach answered. */
     your_own_odds: number | null;
+    /** Every answer you gave the coach, as it recorded them. */
+    what_you_told_the_coach: Record<string, string> | null;
     check_ins: { step_id: string; local_date: string; value: number | null }[];
   }[];
 }
@@ -190,8 +192,8 @@ export async function exportAccount(env: Env, userId: string): Promise<AccountEx
       // never hand back. (The rest of goal_outcomes — the interview snapshot
       // — is still missing from here; that gap predates this and is open.)
       env.DB.prepare(
-        `SELECT user_estimate FROM goal_outcomes WHERE goal_id = ? AND user_estimate IS NOT NULL LIMIT 1`,
-      ).bind(g.id).first<{ user_estimate: number }>(),
+        `SELECT user_estimate, answers_snapshot FROM goal_outcomes WHERE goal_id = ? LIMIT 1`,
+      ).bind(g.id).first<{ user_estimate: number | null; answers_snapshot: string | null }>(),
     ]);
     let protocol: Protocol | null = null;
     try { protocol = proto ? (JSON.parse(proto.json) as Protocol) : null; } catch { /* keep null */ }
@@ -200,6 +202,15 @@ export async function exportAccount(env: Env, userId: string): Promise<AccountEx
       what_you_typed: g.goal_text, the_accepted_goal: g.statement, created_at: g.created_at,
       protocol,
       your_own_odds: guess?.user_estimate ?? null,
+      // The interview answers are the most personal thing held about anybody
+      // here — people describe their weight, their drinking, their money — and
+      // they were the one category the export left out. An export that omits
+      // the sensitive part is the wrong way round.
+      what_you_told_the_coach: (() => {
+        if (!guess?.answers_snapshot) return null;
+        try { return JSON.parse(guess.answers_snapshot) as Record<string, string>; }
+        catch { return null; }
+      })(),
       check_ins: checks.results ?? [],
     });
   }

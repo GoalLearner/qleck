@@ -481,6 +481,35 @@ function useGoalCelebrations(
   }, [key, m.allDone]);
 }
 
+/**
+ * The plan is locked and its first rep is not today.
+ *
+ * This used to render RestDay: "Easy, <name>. Nothing scheduled. Rest is part
+ * of the plan." — on the day somebody committed, having done nothing at all.
+ * Rest you have earned and a plan that has not started yet are identical to
+ * the rep count and opposite to the reader, and congratulating someone for a
+ * rest they did not take is the fastest way to feel like a slot machine.
+ *
+ * Only reachable when EVERY step in the phase is pinned to specific days and
+ * none of them is today: a quota step shows daily until its week is met, so
+ * most plans put something on the board immediately.
+ */
+function NotStartedYet({ preview }: { preview: string | null }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 30, paddingHorizontal: 24 }}>
+      <Text style={{ fontFamily: fonts.serif, fontSize: 30, color: colors.ink, textAlign: 'center' }}>Locked in.</Text>
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: colors.muted, textAlign: 'center' }}>
+        Nothing lands today — your plan starts on its own schedule.
+      </Text>
+      {preview && (
+        <Text style={{ fontFamily: fonts.bold, fontSize: 13.5, lineHeight: 20, color: colors.success, marginTop: 10, textAlign: 'center' }}>
+          {preview}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function RestDay({ preview }: { preview: string | null }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 30, paddingHorizontal: 24 }}>
@@ -816,6 +845,10 @@ function useTodayModel(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
     today, perGoal, done, total,
     allDone: total > 0 && done === total,
     restDay: total === 0,
+    // Nothing banked, ever. A rest day you have EARNED and a plan that has
+    // not started yet look identical to the rep count and could not be more
+    // different to the person reading it.
+    neverBanked: allCheckIns(byGoal).length === 0,
     strip: mergedWeekStrip(goals, byGoal, today),
     streak: streakDays(today, allCheckIns(byGoal)),
     missed: mergedMissedYesterday(goals, byGoal, today),
@@ -1078,7 +1111,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
 
   return (
     <>
-      <Header title={greeting(m.restDay && !m.allDone, profile.firstName)} sub={headerSub(m)} />
+      <Header title={greeting(m.restDay && !m.allDone && !m.neverBanked, profile.firstName)} sub={headerSub(m)} />
       <DimWhen on={ledgerOpen}>
         <WeekStrip days={m.strip} selected={m.today} onPick={d => setPeek(d.date === m.today ? null : d.date)} />
       </DimWhen>
@@ -1113,7 +1146,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
         )}
 
         {m.restDay ? (
-          <RestDay preview={m.preview} />
+          m.neverBanked ? <NotStartedYet preview={m.preview} /> : <RestDay preview={m.preview} />
         ) : (
           <>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
@@ -1261,7 +1294,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 40 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: fonts.serif, fontSize: 34, lineHeight: 38, color: colors.ink }}>
-            {greeting(m.restDay && !m.allDone, profile.firstName)}
+            {greeting(m.restDay && !m.allDone && !m.neverBanked, profile.firstName)}
           </Text>
           <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 6 }}>
             {peek ? `Peeking at ${weekdayName(peek)} — today keeps the clock` : headerSub(m)}
@@ -1309,7 +1342,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
           )}
 
           {m.restDay ? (
-            <RestDay preview={m.preview} />
+            m.neverBanked ? <NotStartedYet preview={m.preview} /> : <RestDay preview={m.preview} />
           ) : (
             <>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: 4 }}>

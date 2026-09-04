@@ -112,6 +112,12 @@ interface GoalModel {
 function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
   // A paused goal schedules nothing — it must not read as running (P4).
   const paused = m.goal.status === 'paused';
+  // Every goal is private until you share it, and a shared one used to look
+  // exactly like a private one here — you had to open the goal to find out.
+  // These goals are intimate; whether somebody else can see this one is not a
+  // detail to go hunting for. This is the whole of "public or private": there
+  // is no public, only you and at most one person you handed a link to.
+  const shared = !!m.goal.shareToken;
   return (
     <Pressable
       onPress={onOpen}
@@ -121,11 +127,22 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
         opacity: paused ? 0.62 : 1,
       }}
     >
-      {paused && (
-        <View style={{ alignSelf: 'flex-start', marginBottom: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: colors.outline }}>
-          <Text style={{ fontFamily: fonts.extrabold, fontSize: 9.5, letterSpacing: 1.3, color: colors.muted }}>
-            PAUSED — NOTHING SCHEDULED
-          </Text>
+      {(paused || shared) && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {paused && (
+            <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: colors.outline }}>
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 9.5, letterSpacing: 1.3, color: colors.muted }}>
+                PAUSED — NOTHING SCHEDULED
+              </Text>
+            </View>
+          )}
+          {shared && (
+            <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.successBg }}>
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 9.5, letterSpacing: 1.3, color: colors.success }}>
+                SHARED — ONE LINK IS LIVE
+              </Text>
+            </View>
+          )}
         </View>
       )}
       {/* one title, once: the serif line carries the goal; the dot is its

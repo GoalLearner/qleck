@@ -95,16 +95,29 @@ fails signing.
   [/terms](https://qleck-api.richmondcampano93.workers.dev/terms), served by the
   worker so there is one copy and no hosting to maintain.
 
+### Build 28 · 3 Sep — the last two concept items, mostly already done
+
+- **"Coached, or build your own?"** is DONE, as a fork rather than a question.
+  Intake offers all three branches at once: **Ask Qoach**, **"+ I already have
+  a plan"** (Qoach prices it as written, prompt v30), and **OR STEAL ONE**. A
+  visible fork beats an interview question — you see the choice instead of
+  answering something before you are allowed to make it.
+- **Public or private goals** is DONE in the only form that can honestly
+  exist, and deliberately no further. Every goal is private; the witness link
+  is the private→shared control (one goal, one person, revocable, effort
+  only). There is no "public" because there is nowhere public to be — no feed,
+  no friends, no discovery, all of it sealed until P6. A public toggle today
+  would be a control over nothing, which this codebase has already learned
+  once: the Notifications chevron was deleted with "a control over something
+  that doesn't exist is worse than no control."
+
+  What WAS missing was privacy-shaped: a shared goal looked identical to a
+  private one in the list. You could share "quit smoking" with someone, forget,
+  and never be told. The card now says **SHARED — ONE LINK IS LIVE**.
+
 ---
 
 ## Not shipped
-
-### From the concept notes, partly done
-
-- **Public or private goals** — exists only as the witness link: one goal, one
-  person, revocable. There is a `visibility` column but no general control.
-- **"Coached, or build your own?"** — a button on the intake screen rather than
-  a question the interview asks.
 
 ### Not started, deliberately
 

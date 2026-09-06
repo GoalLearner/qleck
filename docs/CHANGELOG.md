@@ -136,6 +136,30 @@ fails signing.
   anybody here and they were the one category the export omitted; an export
   that leaves out the sensitive part is the wrong way round.
 
+### Unreleased · 6 Sep — the wait tells the truth
+
+- **The loading screen stops lying about how long this takes.** It promised
+  "Real coaching takes 3–20 seconds". Across 33 measured production calls the
+  mean was 26s, a third ran past 40s and the slowest took 75s — so the promise
+  was broken on nearly every plan, and a person watching an unchanging screen
+  past a stated maximum reasonably concludes it has hung.
+
+  It now shows **elapsed seconds** — the number the owner asked for, and the
+  only honest one: a percentage would be elapsed over a guess, racing ahead
+  and then stalling near the end on exactly the slow plans where the
+  reassurance matters most. A plan is ONE model call with no progress signal;
+  there is nothing to be a percentage OF. The copy changes with the real wait
+  ("Writing your plan. Usually about half a minute." → at 30s "Taking longer
+  than usual" → at 45s "Still going. It hasn't stalled.") and the footer says
+  the one thing a waiting person needs: **Qoach is thinking, not stuck.**
+
+  Worse than the copy was the timer: during plan-building the interval was
+  **skipped entirely** and the line pinned to "Building your protocol…", so
+  the longest wait in the app was one frozen sentence. The pre-verdict lines
+  deliberately carry no figure — that phase's duration cannot be derived from
+  the request log, because the user's own thinking time sits between turns,
+  and inventing one would repeat the mistake being fixed.
+
 ---
 
 ## Not shipped
@@ -171,4 +195,17 @@ fails signing.
   answers, and REMOVING steps cannot violate any of them (milestones cite
   answer keys, not step ids). Re-running them would risk refusing the user's
   own deliberate choice to drop a commitment. No fix made, on purpose.
+- **There is no client-side request timeout.** Not in `src/api/coach.ts`, not
+  in `src/api/device.ts`, nowhere in `src/` — so React Native falls back to the
+  platform default (~60s on iOS). Three of the 33 measured calls ran past that,
+  which means those plans may have been *failing* rather than merely feeling
+  slow: the user sees "the coach hit a snag" after a minute and a retry costs
+  another ~26s. The fix is either an explicit longer timeout on the protocol
+  request or the detached-work-plus-poll pattern the simulation already uses.
+  Named here rather than bundled into the loading-screen change.
+- **`ai_requests` has no duration column.** Every figure in the entry above was
+  inferred from the gaps between consecutive attempts in one session, which is
+  only possible when a call was retried. A `duration_ms` column — one migration,
+  one INSERT — would make the copy calibratable from real data and would show
+  whether the retry fixes actually moved the number.
 - Play internal upload never done.

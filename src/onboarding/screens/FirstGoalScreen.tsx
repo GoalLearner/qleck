@@ -37,7 +37,34 @@ const GHOSTS = [
   '“read 10 min before bed”', '“do 20 clean pull-ups”', '“cold shower every morning”',
 ];
 
-const THINK_LINES = ['Reading your goal…', 'Stress-testing the timeline…', 'Building your protocol…'];
+/**
+ * What the wait says, chosen by how long it has ACTUALLY been.
+ *
+ * This replaced three lines that cycled on a 1.1s timer — "Reading your
+ * goal…", "Stress-testing the timeline…", "Building your protocol…" — which
+ * narrated work nobody could verify and told an identical story whether the
+ * answer landed in five seconds or seventy-five.
+ *
+ * The figure here is MEASURED. Across 33 production protocol calls the mean
+ * was 26s and a third ran past 40s; the old footer promised "3-20 seconds",
+ * which was wrong on nearly every call. Saying "about half a minute" is both
+ * true and, unlike a percentage, cannot stall at 99%.
+ *
+ * The pre-verdict lines carry no figure on purpose: that phase's duration
+ * cannot be derived from the request log, because a user's own thinking time
+ * sits between turns. Inventing one would repeat the mistake being fixed.
+ */
+const WAIT_LINES = {
+  building: [
+    { after: 0, line: 'Writing your plan. Usually about half a minute.' },
+    { after: 30, line: 'Taking longer than usual — still working.' },
+    { after: 45, line: 'Still going. It hasn’t stalled.' },
+  ],
+  thinking: [
+    { after: 0, line: 'Reading what you wrote.' },
+    { after: 20, line: 'Still reading — it hasn’t stalled.' },
+  ],
+} as const;
 
 // Mirrors MIN_CLARIFY_TURNS in backend/src/coach.ts: the server guarantees at
 // least this many questions, so the progress track can promise them.
@@ -1389,13 +1416,23 @@ function ProtocolReveal({
 /* ── thinking ───────────────────────────────────────────────────────────── */
 
 function ThinkingView({ building, onDismiss, dismissLabel }: { building: boolean; onDismiss: () => void; dismissLabel: string }) {
-  const [idx, setIdx] = useState(building ? 2 : 0);
+  // ELAPSED, not progress. A percentage would be this number over a guess,
+  // and real calls run 5s to 75s — it would race ahead and then stall near the
+  // end, on exactly the slow plans where the reassurance matters most.
+  //
+  // The old code did something worse than nothing here: during `building` the
+  // interval was SKIPPED and the line pinned to "Building your protocol…", so
+  // the longest wait in the app was one frozen sentence over two decorative
+  // loops. Nothing on screen changed whether the answer took five seconds or
+  // seventy-five, which is what made it read as hung.
+  const [secs, setSecs] = useState(0);
   useEffect(() => {
-    if (building) return;
-    const iv = setInterval(() => setIdx(i => i + 1), 1100);
+    const iv = setInterval(() => setSecs(s => s + 1), 1000);
     return () => clearInterval(iv);
-  }, [building]);
-  const line = building ? THINK_LINES[2] : THINK_LINES[idx % THINK_LINES.length];
+  }, []);
+  const stages = building ? WAIT_LINES.building : WAIT_LINES.thinking;
+  const line = stages.reduce((best, s) => (secs >= s.after ? s : best), stages[0]).line;
+  const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
   return (
     <Screen scroll={false}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 26 }}>
@@ -1420,16 +1457,25 @@ function ThinkingView({ building, onDismiss, dismissLabel }: { building: boolean
             </Pulse>
           </View>
         </Spin>
-        <View style={{ height: 46, justifyContent: 'center' }}>
-          <Pop key={line} duration={450}>
-            <Text style={{ fontFamily: nightFonts.display, fontSize: 17, color: night.text, textAlign: 'center' }}>
-              {line}
-            </Text>
-          </Pop>
+        {/* Both slots are FIXED height: the longest line wraps to two and the
+            short ones do not, so without this the clock would hop 13pt every
+            time the copy changed — the one moment it must look calm. */}
+        <View style={{ height: 78, gap: 8 }}>
+          <View style={{ height: 50, justifyContent: 'center' }}>
+            <Pop key={line} duration={450}>
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 17, color: night.text, textAlign: 'center' }}>
+                {line}
+              </Text>
+            </Pop>
+          </View>
+          {/* MONO so the width does not jump between 0:09 and 0:10 either. */}
+          <Text style={{ fontFamily: MONO, fontSize: 13, letterSpacing: 1, color: night.textGhost, textAlign: 'center' }}>
+            {clock}
+          </Text>
         </View>
       </View>
       <Text style={{ fontFamily: nightFonts.body, fontSize: 12, lineHeight: 19.2, color: night.textGhost, textAlign: 'center' }}>
-        Real coaching takes 3–20 seconds.{'\n'}Qoach is reading, not spinning.
+        Qoach is thinking, not stuck.
       </Text>
     </Screen>
   );

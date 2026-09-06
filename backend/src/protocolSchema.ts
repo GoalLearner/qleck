@@ -838,8 +838,16 @@ export function sessionErrors(p: Protocol): string[] {
         if (st.frequency.per_week > sess.days.length) {
           errs.push(`step "${st.title}" per_week ${st.frequency.per_week} exceeds its session's ${sess.days.length} day(s)/week`);
         }
-      } else if (CONDITIONAL_RE.test(text)) {
-        errs.push(`step "${st.title}" references another activity ("${(text.match(CONDITIONAL_RE) ?? [''])[0]}") but carries no session_id — attach it to the session it depends on (declare the session in sessions[] if missing)`);
+      } else if (CONDITIONAL_RE.test(text) && (st.frequency.days?.length ?? 0) === 0) {
+        // NARROWED (2026-09-06). This used to fire on conditional phrasing
+        // alone, so "log every run" was rejected even when the step carried
+        // mon/wed/fri of its own. The harm this rule exists to stop is a rep
+        // that does not know WHICH DAYS it lives on and therefore renders on
+        // the wrong ones — and a step with explicit days knows exactly. Firing
+        // on well-formed plans cost a whole generation attempt each time
+        // (~20s and a model call), which is most of what made plan-building
+        // feel like it had hung: production retries traced to here.
+        errs.push(`step "${st.title}" references another activity ("${(text.match(CONDITIONAL_RE) ?? [''])[0]}") but carries neither a session_id nor fixed days — attach it to the session it depends on, or give it the days it actually happens on`);
       }
     }
   }

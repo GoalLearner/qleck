@@ -823,8 +823,17 @@ export async function generateProtocol(
   // two-strike failures into a delivered plan instead of a user-facing 502.
   const LAST_GEN_ATTEMPT = 2;
   for (let attempt = 0; attempt <= LAST_GEN_ATTEMPT; attempt++) {
+    // A retry only earns the correction prompt when there is something to
+    // correct. When the model emitted NOTHING last round, validation says
+    // "protocol is not an object" and the old code dutifully replied "your
+    // previous protocol failed validation … Previous emission: null" — which
+    // is not a validation failure at all, it is a failed call, and asking a
+    // model to minimally correct `null` spends the attempt it was given to
+    // recover. Production shows it 1-2 times a day. Nothing to correct means
+    // retry clean.
+    const correcting = attempt > 0 && lastOutput !== null && lastOutput !== undefined;
     const messages: ChatMessage[] =
-      attempt === 0
+      !correcting
         ? baseMessages
         : [
             ...baseMessages,

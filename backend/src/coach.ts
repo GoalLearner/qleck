@@ -6,6 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PRICE_TOOL, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
+import { emissionFingerprint, planNextAttempt } from './retryPolicy';
 import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
@@ -818,20 +819,22 @@ export async function generateProtocol(
 
   let lastErrors: string[] = [];
   let lastOutput: unknown = null;
+  // The identity of the previous emission, so a model that answers a
+  // correction with the plan it was asked to correct can be spotted.
+  let lastFingerprint: string | null = null;
+  let repeatedLast = false;
   // Three attempts, not two: the physique pillar audit made validation
   // meaningfully stricter, and a third try (~$0.003) converts most
   // two-strike failures into a delivered plan instead of a user-facing 502.
   const LAST_GEN_ATTEMPT = 2;
   for (let attempt = 0; attempt <= LAST_GEN_ATTEMPT; attempt++) {
     // A retry only earns the correction prompt when there is something to
-    // correct. When the model emitted NOTHING last round, validation says
-    // "protocol is not an object" and the old code dutifully replied "your
-    // previous protocol failed validation … Previous emission: null" — which
-    // is not a validation failure at all, it is a failed call, and asking a
-    // model to minimally correct `null` spends the attempt it was given to
-    // recover. Production shows it 1-2 times a day. Nothing to correct means
-    // retry clean.
-    const correcting = attempt > 0 && lastOutput !== null && lastOutput !== undefined;
+    // correct AND the correction is still worth sending. Both exceptions are
+    // the same mistake — asking again for something already answered — and
+    // both are decided in retryPolicy.ts, where they can be checked without
+    // spending a model call. See planNextAttempt for the reasoning.
+    const { correcting, temperature, reason } = planNextAttempt({ attempt, lastOutput, repeated: repeatedLast });
+    if (reason) console.warn(`protocol attempt ${attempt} retried clean: ${reason}`);
     const messages: ChatMessage[] =
       !correcting
         ? baseMessages
@@ -852,9 +855,14 @@ export async function generateProtocol(
       tools: [protocolTool(PROTOCOL_TOOL_SCHEMA)],
       toolChoice: { type: 'tool', name: 'emit_protocol' },
       maxTokens: 8192,
-      temperature: 0.4,
+      temperature,
     });
     if (result.refused) return { errors: ['api_refusal'] };
+    // Taken before the repairs below mutate it: this is what the MODEL said,
+    // which is what the next attempt's decision turns on.
+    const fingerprint = emissionFingerprint(result.toolInput);
+    repeatedLast = fingerprint !== null && fingerprint === lastFingerprint;
+    lastFingerprint = fingerprint;
     // Phase weeks first: an overlap is a blocking validateProtocol error, and
     // failing there skips the whole repair layer below — including the
     // session/day fixes — so one arithmetic slip used to cost the plan.

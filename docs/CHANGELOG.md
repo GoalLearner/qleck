@@ -185,6 +185,27 @@ fails signing.
 
 ### Unreleased · 7 Sep
 
+- **A retry stops re-asking a question the model already answered.** In the
+  same incident, attempts 1 and 2 each returned attempt 0's protocol byte for
+  byte — and sent the identical correction prompt to get it, necessarily, since
+  the thing being corrected had not changed. Two paid calls and about forty
+  seconds bought nothing.
+
+  The loop already knew this shape: a NULL emission is retried clean, because
+  asking a model to "minimally correct `null`" spends the attempt it was given
+  to recover. A repeat is the same mistake wearing different clothes — the
+  model has read the errors and declined to move — so it is now retried clean
+  too, at a temperature (0.9 rather than 0.4) that can actually leave the
+  groove. Raised there and nowhere else.
+
+  The decision lives in `backend/src/retryPolicy.ts` so it can be checked
+  without spending a model call: `npm run check:retry`, 15 bars.
+
+  Not changed: `reviseProtocol` and the maintenance generator run their own
+  two-attempt loops and still lack even the null-emission guard. The repeat
+  rule cannot fire in two attempts, but "correct this null" can — worth its
+  own pass, not folded in silently here.
+
 - **"The coach hit a snag" traced to one arithmetic slip.** A real failure on
   7 Sep: for `Bench 315 lbs in 5 weeks` the model wrote phase 1 as weeks 1-3,
   phase 2 as weeks 4-5 and phase 3 — a one-week test phase — as week 5. Phase 3

@@ -1,0 +1,20 @@
+-- Migration 0017 — one claim on draft generation.
+--
+-- Two code paths generate the same protocol for one session and neither knew
+-- about the other. driveDraft (kicked on the verdict, and again on every
+-- prepare) checked only `draft_protocol IS NULL`, which is not a claim: two
+-- kicks 2 seconds apart both see null and both spend ~26 seconds and a paid
+-- call. And POST /protocol, on a cache miss, generates in-request regardless
+-- of whether a draft is already being written.
+--
+-- Both call sites carried a comment saying "driveSim's lock keeps this and the
+-- polls' drivers from ever doubling the work" — true of driveSim, which takes
+-- a working_until lock inside the simulation JSON, but with SIMULATIONS="off"
+-- the branch actually taken is driveDraft, which had no lock of any kind.
+--
+-- Production, 7 Sep 06:26: the verdict kicked a draft, the user tapped "Build
+-- my plan" ~27 seconds later while it was still running, and the server ran a
+-- second full generation alongside the first.
+--
+-- Epoch millis of when the current claim lapses. NULL = nobody is generating.
+ALTER TABLE coach_sessions ADD COLUMN draft_working_until INTEGER;

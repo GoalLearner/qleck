@@ -185,6 +185,38 @@ fails signing.
 
 ### Unreleased · 7 Sep
 
+- **One plan is no longer generated twice at once.** The verdict kicks a
+  background draft so that accepting a plan is instant, and every `prepare`
+  kicks another. `driveDraft` guarded with `draft_protocol IS NULL` — a read,
+  not a claim — so two kicks seconds apart both saw null and both spent ~26
+  seconds and a paid call on the same plan. Meanwhile `POST /protocol`
+  generated in-request on a cache miss without ever asking whether a draft was
+  already being written. On 7 Sep at 06:26 the user tapped "Build my plan" 27
+  seconds after the verdict, while its draft was still running, and two full
+  generations ran side by side.
+
+  Both call sites carried a comment saying *"driveSim's lock keeps this and the
+  polls' drivers from ever doubling the work"*. True of `driveSim`, which takes
+  a `working_until` lock — but with `SIMULATIONS="off"` the branch actually
+  taken is `driveDraft`, which had no lock of any kind. The comment described
+  protection the code path did not have.
+
+  There is now one claim (migration 0017, `draft_working_until`) that both
+  paths honour: a single conditional UPDATE, so the loser finds out by getting
+  zero changed rows back. It carries an expiry rather than trusting a release,
+  because the usual way a draft ends is its isolate being torn down when
+  `waitUntil` runs out — which is exactly what happened that night. And a
+  "Build my plan" that arrives mid-draft now waits briefly for it (bounded well
+  under a generation, abandoned the moment the claim lapses) and takes the
+  instant path when it lands, instead of starting a second generation.
+
+  `npm run check:draft` — 16 bars against a fake D1 and an injected clock.
+
+  Honest limit: a draft that is genuinely still running when the wait expires
+  still gets a second generation beside it. Bounding the wait is the deliberate
+  trade — every second spent waiting is added to the user's wait if the draft
+  does not land.
+
 - **A retry stops re-asking a question the model already answered.** In the
   same incident, attempts 1 and 2 each returned attempt 0's protocol byte for
   byte — and sent the identical correction prompt to get it, necessarily, since

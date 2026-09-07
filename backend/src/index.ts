@@ -25,6 +25,7 @@ import {
 } from './emailAuth';
 import { verifyAppleToken } from './apple';
 import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
+import { claimDraft, releaseDraft, waitForDraft } from './draftClaim';
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, getGoalProvenance, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
@@ -133,9 +134,16 @@ async function driveDraft(
   sessionId: string,
   deviceId: string,
 ): Promise<void> {
+  let claim: number | null = null;
   try {
     const session = await loadSession(env, sessionId, deviceId);
     if (!session || session.draft_protocol || !session.verdict || !session.simulation) return;
+    // `draft_protocol IS NULL` above is a READ, not a claim: the verdict kicks
+    // one of these and every prepare kicks another, and two that arrive
+    // seconds apart both see null and both spend ~26s and a paid call on the
+    // same plan. The claim is the thing that makes only one of them work.
+    claim = await claimDraft(env.DB, sessionId);
+    if (claim === null) return;                       // someone else has it
     const sim = JSON.parse(session.simulation) as SimulationState;
     const epoch = sim.epoch ?? 0;
     const verdict = JSON.parse(session.verdict) as Verdict;
@@ -149,6 +157,12 @@ async function driveDraft(
         .run();
     }
   } catch { /* accept falls back to in-request generation */ }
+  finally {
+    // Best effort only. The usual way a draft ends is not this line — it is
+    // the isolate being torn down when waitUntil runs out, which is why the
+    // claim carries its own expiry rather than trusting a release.
+    if (claim !== null) await releaseDraft(env.DB, sessionId, claim);
+  }
 }
 
 async function loadSession(env: Env, id: string, deviceId: string): Promise<SessionRow | null> {
@@ -1012,10 +1026,11 @@ export default {
         session.draft_protocol = null;
         session.simulation = null;
         const config: SimConfig = { pace, variant };
-        // Init, then a head start: driveSim locks before working, so this
-        // and the polls' drivers can never double the work — the new pace's
-        // draft begins ~2-4s before the first poll would have kicked it.
-        // With SIMULATIONS off, only the draft pre-generates (driveDraft).
+        // Init, then a head start — the new pace's draft begins ~2-4s before
+        // the first poll would have kicked it. Both branches claim before
+        // working, so this and the polls' drivers can never double the work.
+        // (driveDraft's claim is new: the comment used to credit driveSim's
+        // lock on a branch that never reaches driveSim.)
         ctx.waitUntil((async () => {
           await initSimulation(env, session, config);
           if (env.SIMULATIONS === 'off') await driveDraft(env, meta, session.id, deviceId);
@@ -1069,7 +1084,7 @@ export default {
       /* POST /coach/sessions/:id/protocol — generate for a verdict session. */
       const protoMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol$/);
       if (protoMatch) {
-        const session = await loadSession(env, protoMatch[1], deviceId);
+        let session = await loadSession(env, protoMatch[1], deviceId);
         if (!session) return json({ error: 'session_not_found' }, 404, cors);
         if (session.status === 'protocol' && session.protocol) {
           const cached = JSON.parse(session.protocol) as Protocol;
@@ -1099,6 +1114,24 @@ export default {
           const orig = verdict.decision === 'counter_offer' ? verdict.original_probability : undefined;
           if (typeof orig !== 'number' || orig < ATTEMPT_FLOOR) {
             return json({ error: 'below_attempt_floor', floor: ATTEMPT_FLOOR, original: orig ?? null }, 403, cors);
+          }
+        }
+        // A draft is very likely already being written: the verdict kicks one
+        // the moment it is issued, and it takes about as long as the user
+        // spends reading the verdict. Tapping "Build my plan" while it runs
+        // used to start a SECOND full generation beside the first — two paid
+        // calls for one plan (production, 7 Sep 06:26).
+        //
+        // So wait for it, briefly, and take the fast path below when it lands.
+        // The wait is bounded well under a generation and gives up the moment
+        // the claim lapses, because the common ending for a draft is its
+        // isolate being torn down, not a return. Nothing is lost by falling
+        // through: the synchronous path is exactly what used to happen.
+        if (!session.draft_protocol) {
+          const waited = await waitForDraft(env.DB, session.id);
+          if (waited) {
+            const fresh = await loadSession(env, session.id, deviceId);
+            if (fresh?.draft_protocol) session = fresh;
           }
         }
         // 2c fast path (owner decision 1): "Build my plan" accepts the
@@ -1485,8 +1518,8 @@ async function runCoachTurn(
       session.transcript = JSON.stringify(transcript);
       const simSession = { ...session, status: 'verdict', verdict: JSON.stringify(result.verdict) };
       // Init, then a head start on the draft while the user reads the
-      // verdict text — driveSim's lock keeps this and the polls' drivers
-      // from ever doubling the work.
+      // verdict text. Both branches claim before working, so this and the
+      // polls' drivers can never double the work.
       ctx.waitUntil((async () => {
         await initSimulation(env, simSession, { pace: 'steady', variant: null });
         if (env.SIMULATIONS === 'off') await driveDraft(env, meta, session.id, meta.deviceId);

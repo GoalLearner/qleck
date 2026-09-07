@@ -136,7 +136,7 @@ fails signing.
   anybody here and they were the one category the export omitted; an export
   that leaves out the sensitive part is the wrong way round.
 
-### Unreleased · 6 Sep — the wait tells the truth
+### Build 30 · 6 Sep — the wait tells the truth
 
 - **The wait becomes a receipt** (Claude Design canvas `Qleck Qoach Wait`,
   project 7091d355). By the time a plan is generating, the app is already

@@ -138,6 +138,29 @@ fails signing.
 
 ### Unreleased · 6 Sep — the wait tells the truth
 
+- **The wait becomes a receipt** (Claude Design canvas `Qleck Qoach Wait`,
+  project 7091d355). By the time a plan is generating, the app is already
+  holding the accepted goal, its duration and pace, Qoach's odds, the odds the
+  user called, the FOR / RISK / MOVE read cards and the whole interview — and
+  it was showing an empty orb. All of it is now on screen while they wait: the
+  read cards turn every 7 seconds, their own answers sit underneath, and the
+  elapsed clock is the only thing claiming anything. Pre-verdict there is no
+  plan and no odds, so that half shows their goal in their own words and a
+  dashed slot where the next question lands — sparse on purpose rather than
+  padded.
+- **The wait finally has a door.** `onDismiss` had been accepted and dropped
+  on the floor by this screen since the original port, so a 75-second wait had
+  no exit at all. It is a quiet link until a minute has passed and a bordered
+  button after, and both go through a sheet, because leaving costs the whole
+  interview and one tap should not spend that.
+
+  The canvas' sheet said *"your answers are saved"*. **They are not** — the
+  coach session id lives in a `useRef`, there is no `GET /coach/sessions/:id`,
+  and nothing is written down until a plan is locked. The shipped copy says
+  what is true: coming back starts again from the goal. Making the design's
+  version true is a real feature (persist the session, add the route, offer a
+  resume) and is listed below rather than faked.
+
 - **The loading screen stops lying about how long this takes.** It promised
   "Real coaching takes 3–20 seconds". Across 33 measured production calls the
   mean was 26s, a third ran past 40s and the slowest took 75s — so the promise
@@ -208,4 +231,14 @@ fails signing.
   only possible when a call was retried. A `duration_ms` column — one migration,
   one INSERT — would make the copy calibratable from real data and would show
   whether the retry fixes actually moved the number.
+- **Leaving a wait loses the interview.** The design for the wait screen's
+  exit assumed the goal, answers and verdict survive it. They do not: the coach
+  session id is client-side only and there is no route to re-read a session,
+  so a resume would need persistence plus `GET /coach/sessions/:id`. The
+  shipped copy states the real cost instead of the intended one.
+- **The landing handoff is not built.** The canvas resolves the wait before it
+  hands over — ring stops, "Plan ready.", clock freezes — then the plan rises
+  over the receipt, sharing the goal headline so it never moves. Today the
+  plan still replaces the screen in a hard cut. It touches `ProtocolReveal`,
+  so it is its own change.
 - Play internal upload never done.

@@ -37,35 +37,6 @@ const GHOSTS = [
   '“read 10 min before bed”', '“do 20 clean pull-ups”', '“cold shower every morning”',
 ];
 
-/**
- * What the wait says, chosen by how long it has ACTUALLY been.
- *
- * This replaced three lines that cycled on a 1.1s timer — "Reading your
- * goal…", "Stress-testing the timeline…", "Building your protocol…" — which
- * narrated work nobody could verify and told an identical story whether the
- * answer landed in five seconds or seventy-five.
- *
- * The figure here is MEASURED. Across 33 production protocol calls the mean
- * was 26s and a third ran past 40s; the old footer promised "3-20 seconds",
- * which was wrong on nearly every call. Saying "about half a minute" is both
- * true and, unlike a percentage, cannot stall at 99%.
- *
- * The pre-verdict lines carry no figure on purpose: that phase's duration
- * cannot be derived from the request log, because a user's own thinking time
- * sits between turns. Inventing one would repeat the mistake being fixed.
- */
-const WAIT_LINES = {
-  building: [
-    { after: 0, line: 'Writing your plan. Usually about half a minute.' },
-    { after: 30, line: 'Taking longer than usual — still working.' },
-    { after: 45, line: 'Still going. It hasn’t stalled.' },
-  ],
-  thinking: [
-    { after: 0, line: 'Reading what you wrote.' },
-    { after: 20, line: 'Still reading — it hasn’t stalled.' },
-  ],
-} as const;
-
 // Mirrors MIN_CLARIFY_TURNS in backend/src/coach.ts: the server guarantees at
 // least this many questions, so the progress track can promise them.
 const QUESTION_FLOOR = 3;
@@ -1413,71 +1384,399 @@ function ProtocolReveal({
   );
 }
 
-/* ── thinking ───────────────────────────────────────────────────────────── */
+/* ── the wait ───────────────────────────────────────────────────────────── */
 
-function ThinkingView({ building, onDismiss, dismissLabel }: { building: boolean; onDismiss: () => void; dismissLabel: string }) {
-  // ELAPSED, not progress. A percentage would be this number over a guess,
-  // and real calls run 5s to 75s — it would race ahead and then stall near the
-  // end, on exactly the slow plans where the reassurance matters most.
-  //
-  // The old code did something worse than nothing here: during `building` the
-  // interval was SKIPPED and the line pinned to "Building your protocol…", so
-  // the longest wait in the app was one frozen sentence over two decorative
-  // loops. Nothing on screen changed whether the answer took five seconds or
-  // seventy-five, which is what made it read as hung.
+/**
+ * The wait, ported from the Claude Design canvas `Qleck Qoach Wait`
+ * (project 7091d355) — "the wait as a receipt".
+ *
+ * Generating a plan is ONE model call with no progress signal, so there is
+ * nothing here for a percentage to be a percentage OF. Measured across 33
+ * production calls: mean 26s, a third past 40s, slowest 75s. The only motion
+ * that claims anything is the clock, and the clock is elapsed — true by
+ * construction. Everything else on screen was already on file before the wait
+ * started: the accepted goal, Qoach's odds beside the odds the user called,
+ * the read cards, their own answers.
+ *
+ * What this replaced: an orb, one line, and a promise of "3–20 seconds" that
+ * was wrong on nearly every call.
+ */
+
+// Every line is backed by the same 33-call sample. Nothing here says "almost
+// done" — that is the one thing the client cannot know.
+const WAIT_COPY = {
+  building: [
+    { after: 0, head: 'Writing your plan.', sub: 'Usually about half a minute.' },
+    { after: 30, head: 'Taking longer than usual.', sub: 'A third of plans run past 40 seconds.' },
+    { after: 45, head: 'Still writing. It hasn’t stalled.', sub: 'The longest we have measured is 75 seconds.' },
+    { after: 60, head: 'Past a minute. Still writing.', sub: 'You can stop, but the goal starts over.' },
+  ],
+  thinking: [
+    { after: 0, head: 'Reading what you wrote.', sub: 'Your first question is on its way.' },
+    { after: 30, head: 'Taking longer than usual.', sub: 'Qoach is thinking, not stuck.' },
+    { after: 60, head: 'Past a minute. Still thinking.', sub: 'You can stop, but the goal starts over.' },
+  ],
+} as const;
+
+/** The canvas' default card cadence, exposed there as a tweak. */
+const CARD_SECONDS = 7;
+/** Below this the door is a quiet link; at it, a bordered button. */
+const DOOR_LOUD_AT = 60;
+
+type WaitCard = { tag: string; color: string; line: string; detail: string };
+
+/** Reads night.* at call time — the palette object is mutated in place by the
+ *  appearance setting, so a module-level colour would freeze to one mode. */
+function waitCards(v: Verdict | null): WaitCard[] {
+  if (!v) return [];
+  if (v.reads?.length) {
+    const TAG = { for: 'FOR', risk: 'RISK', move: 'MOVE' } as const;
+    const COLOR = { for: night.accentText, risk: night.warn, move: night.violetText } as const;
+    return v.reads.map(r => ({ tag: TAG[r.kind], color: COLOR[r.kind], line: r.line, detail: r.detail }));
+  }
+  // Verdicts stored before prompt v28 carry no read cards. Their success
+  // factors are the same material one level rawer — but sorting them into
+  // FOR / RISK / MOVE would be a classification nobody actually made, so
+  // they keep a neutral tag.
+  return (v.success_factors ?? []).map((line, i) => ({
+    tag: 'WHY IT LANDS',
+    color: night.accentText,
+    line,
+    detail: v.success_factor_notes?.[i] ?? '',
+  }));
+}
+
+function WaitEyebrow({ text, color }: { text: string; color?: string }) {
+  return (
+    <Text style={{ fontFamily: MONO, fontSize: 10, lineHeight: 12, fontWeight: '700', letterSpacing: 1.6, color: color ?? night.textGhost }}>
+      {text}
+    </Text>
+  );
+}
+
+/** Fade + 10pt rise as the read cards turn. Keyed on the card index by the
+ *  caller, so a new mount is the transition. */
+function SoftIn({ children }: { children: React.ReactNode }) {
+  const t = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(t, { toValue: 1, duration: 500, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
+  }, [t]);
+  return (
+    <Animated.View
+      style={{
+        opacity: t,
+        transform: [{ translateY: t.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+function ThinkingView({
+  coach, building, onDismiss,
+}: { coach: CoachFlow; building: boolean; onDismiss: () => void }) {
+  // ELAPSED, not progress. A percentage would be this number over a guess: it
+  // would race ahead and then stall near the end, on exactly the slow plans
+  // where the reassurance matters most.
   const [secs, setSecs] = useState(0);
+  const [sheet, setSheet] = useState(false);
   useEffect(() => {
     const iv = setInterval(() => setSecs(s => s + 1), 1000);
     return () => clearInterval(iv);
   }, []);
-  const stages = building ? WAIT_LINES.building : WAIT_LINES.thinking;
-  const line = stages.reduce((best, s) => (secs >= s.after ? s : best), stages[0]).line;
+
+  const stages = building ? WAIT_COPY.building : WAIT_COPY.thinking;
+  const stage = stages.reduce((best, s) => (secs >= s.after ? s : best), stages[0]);
   const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  const loud = secs >= DOOR_LOUD_AT;
+
+  const v = coach.verdict ?? null;
+  const cards = building ? waitCards(v) : [];
+  const cardIdx = cards.length ? Math.floor(secs / CARD_SECONDS) % cards.length : 0;
+  const card = cards[cardIdx];
+  const weeks = v?.pace_options?.find(o => o.key === coach.pace)?.duration_weeks ?? v?.duration_weeks;
+  const odds = coach.chosenOdds;
+  const answers = coach.qa.filter(e => e.answer);
+
   return (
-    <Screen scroll={false}>
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 26 }}>
-        <Spin duration={9000}>
-          <View
-            style={{
-              width: 170, height: 170, borderRadius: 85, borderWidth: 2,
-              borderColor: 'rgba(43,227,128,0.3)', borderStyle: 'dashed',
-              alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <Pulse>
+    <View style={{ flex: 1 }}>
+      <Screen scroll={false} horizontal={24}>
+        {/* status — the only row that is the same in both phases */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, height: 52 }}>
+          <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+            <Spin duration={9000} style={{ position: 'absolute' }}>
+              <View style={{ width: 52, height: 52, borderRadius: 26, borderWidth: 1.5, borderStyle: 'dashed', borderColor: night.borderDashed }} />
+            </Spin>
+            <View
+              style={{
+                width: 32, height: 32, borderRadius: 16, backgroundColor: night.accent,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: night.accentInk }}>Q</Text>
+            </View>
+          </View>
+          <View style={{ flex: 1, height: 44, justifyContent: 'center', gap: 2 }}>
+            <Text numberOfLines={1} style={{ fontFamily: nightFonts.bodyMedium, fontSize: 15, lineHeight: 20, color: night.text }}>
+              {stage.head}
+            </Text>
+            <Text numberOfLines={1} style={{ fontFamily: nightFonts.body, fontSize: 13, lineHeight: 18, color: night.textMuted }}>
+              {stage.sub}
+            </Text>
+          </View>
+          {/* MONO so the width does not jump between 0:09 and 0:10. */}
+          <Text style={{ fontFamily: MONO, fontSize: 15, lineHeight: 20, color: night.textMuted }}>{clock}</Text>
+        </View>
+
+        {building ? (
+          <>
+            <View style={{ marginTop: 30 }}><WaitEyebrow text="WRITING FROM YOUR VERDICT" /></View>
+            <View style={{ marginTop: 10, height: 87, overflow: 'hidden' }}>
+              <Text numberOfLines={3} style={{ fontFamily: nightFonts.display, fontSize: 25, lineHeight: 29, color: night.text }}>
+                {coach.chosenStatement ?? coach.goalText}
+              </Text>
+            </View>
+            {v?.subtitle ? (
+              <Text numberOfLines={2} style={{ marginTop: 6, height: 40, fontFamily: nightFonts.body, fontSize: 14, lineHeight: 20, color: night.textMuted }}>
+                {v.subtitle}
+              </Text>
+            ) : (
+              <View style={{ height: 46 }} />
+            )}
+            {weeks ? (
+              <Text style={{ marginTop: 10, fontFamily: MONO, fontSize: 11.5, lineHeight: 14, fontWeight: '500', letterSpacing: 0.8, color: night.textGhost }}>
+                {weeks} WEEKS · {coach.pace.toUpperCase()} PACE
+              </Text>
+            ) : null}
+
+            {/* Their number beside Qoach's. Both were on file before the wait
+                started; "YOU CALLED" only appears when they actually called. */}
+            {odds != null ? (
               <View
                 style={{
-                  width: 110, height: 110, borderRadius: 55, backgroundColor: night.accent,
-                  alignItems: 'center', justifyContent: 'center',
-                  shadowColor: night.accent, shadowOpacity: 0.5, shadowRadius: 28, shadowOffset: { width: 0, height: 0 },
+                  marginTop: 18, backgroundColor: night.surface, borderWidth: 1, borderColor: night.border,
+                  borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16,
+                  flexDirection: 'row', alignItems: 'center', gap: 14,
                 }}
               >
-                <Text style={{ fontFamily: nightFonts.display, fontSize: 44, color: night.accentInk }}>Q</Text>
+                <View>
+                  <WaitEyebrow text="QOACH'S ODDS" />
+                  <Text style={{ marginTop: 4, fontFamily: MONO, fontSize: 34, lineHeight: 38, fontWeight: '700', color: night.accentText }}>
+                    {odds}
+                  </Text>
+                </View>
+                {coach.pickedOdds != null ? (
+                  <>
+                    <View style={{ width: 1, height: 44, backgroundColor: night.border }} />
+                    <View>
+                      <WaitEyebrow text="YOU CALLED" />
+                      <Text style={{ marginTop: 4, fontFamily: MONO, fontSize: 34, lineHeight: 38, fontWeight: '700', color: night.text }}>
+                        {coach.pickedOdds}
+                      </Text>
+                    </View>
+                  </>
+                ) : null}
+                <Text style={{ flex: 1, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 16, color: night.textMuted }}>
+                  Odds it lands if the reps happen as written.
+                </Text>
               </View>
-            </Pulse>
-          </View>
-        </Spin>
-        {/* Both slots are FIXED height: the longest line wraps to two and the
-            short ones do not, so without this the clock would hop 13pt every
-            time the copy changed — the one moment it must look calm. */}
-        <View style={{ height: 78, gap: 8 }}>
-          <View style={{ height: 50, justifyContent: 'center' }}>
-            <Pop key={line} duration={450}>
-              <Text style={{ fontFamily: nightFonts.display, fontSize: 17, color: night.text, textAlign: 'center' }}>
-                {line}
+            ) : null}
+
+            {card ? (
+              <View style={{ marginTop: 14, height: 150 }}>
+                <SoftIn key={cardIdx}>
+                  <View
+                    style={{
+                      height: 150, backgroundColor: night.surfaceDeep, borderWidth: 1, borderColor: night.border,
+                      borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <WaitEyebrow text={card.tag} color={card.color} />
+                      <Text style={{ fontFamily: MONO, fontSize: 10, lineHeight: 12, fontWeight: '500', color: night.textGhost }}>
+                        {cardIdx + 1} / {cards.length}
+                      </Text>
+                    </View>
+                    <Text numberOfLines={2} style={{ marginTop: 8, height: 44, fontFamily: nightFonts.display, fontSize: 17, lineHeight: 22, color: night.text }}>
+                      {card.line}
+                    </Text>
+                    <Text numberOfLines={3} style={{ marginTop: 6, height: 54, fontFamily: nightFonts.body, fontSize: 13, lineHeight: 18, color: night.textMuted }}>
+                      {card.detail}
+                    </Text>
+                  </View>
+                </SoftIn>
+              </View>
+            ) : null}
+
+            {answers.length ? (
+              <>
+                <View style={{ marginTop: 18 }}><WaitEyebrow text={`YOUR ANSWERS · ${answers.length}`} /></View>
+                <View style={{ marginTop: 8, gap: 10 }}>
+                  {answers.slice(0, 2).map((e, i) => (
+                    <View key={i}>
+                      <Text numberOfLines={1} style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12, lineHeight: 16, color: night.textGhost }}>
+                        Q{i + 1} · {e.question.question}
+                      </Text>
+                      <Text numberOfLines={2} style={{ height: 36, fontFamily: nightFonts.body, fontSize: 13.5, lineHeight: 18, color: night.text }}>
+                        {e.answer}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+          </>
+        ) : (
+          <>
+            {/* Pre-verdict there is no plan, no odds and no read cards. What
+                there IS: their own words, and whatever they have already
+                answered. Nothing is dressed up to fill the space. */}
+            <View style={{ marginTop: 30, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <WaitEyebrow text="YOUR GOAL, YOUR WORDS" />
+              <WaitEyebrow text={`QUESTION ${Math.max(1, coach.questionCount + 1)} · AT LEAST ${QUESTION_FLOOR}`} color={night.accentText} />
+            </View>
+            <View style={{ marginTop: 10, height: 108, overflow: 'hidden' }}>
+              <Text numberOfLines={4} style={{ fontFamily: nightFonts.display, fontSize: 22, lineHeight: 27, color: night.text }}>
+                “{coach.goalText}”
               </Text>
-            </Pop>
-          </View>
-          {/* MONO so the width does not jump between 0:09 and 0:10 either. */}
-          <Text style={{ fontFamily: MONO, fontSize: 13, letterSpacing: 1, color: night.textGhost, textAlign: 'center' }}>
-            {clock}
-          </Text>
+            </View>
+            {answers.length ? (
+              <>
+                <View style={{ marginTop: 22 }}><WaitEyebrow text="SO FAR" /></View>
+                <View style={{ marginTop: 8, gap: 10 }}>
+                  {answers.map((e, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        backgroundColor: night.surface, borderWidth: 1, borderColor: night.border, borderRadius: 18,
+                        paddingTop: 12, paddingBottom: 14, paddingHorizontal: 16,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'baseline' }}>
+                        <Text style={{ fontFamily: MONO, fontSize: 11, lineHeight: 16, fontWeight: '700', color: night.accentText }}>Q{i + 1}</Text>
+                        <Text numberOfLines={2} style={{ flex: 1, height: 32, fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 16, color: night.textMuted }}>
+                          {e.question.question}
+                        </Text>
+                      </View>
+                      <Text numberOfLines={3} style={{ marginTop: 6, height: 60, fontFamily: nightFonts.body, fontSize: 14, lineHeight: 20, color: night.text }}>
+                        {e.answer}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+            <View
+              style={{
+                marginTop: answers.length ? 10 : 22, height: 72, borderWidth: 1.5, borderStyle: 'dashed',
+                borderColor: night.borderDashed, borderRadius: 18,
+                flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16,
+              }}
+            >
+              <Text style={{ fontFamily: MONO, fontSize: 11, lineHeight: 16, fontWeight: '700', color: night.textGhost }}>
+                Q{Math.max(1, coach.questionCount + 1)}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                <Dot delay={0} />
+                <Dot delay={300} />
+                <Dot delay={600} />
+              </View>
+              <Text style={{ fontFamily: nightFonts.body, fontSize: 13, lineHeight: 18, color: night.textGhost }}>
+                Lands here when it’s ready
+              </Text>
+            </View>
+          </>
+        )}
+
+        <Spacer />
+
+        {/* The door. It was never rendered before this screen: onDismiss has
+            been accepted and dropped on the floor since the canvas port, so a
+            75-second wait had no exit at all. It is quiet until a minute has
+            passed, and it always goes through the sheet — leaving costs the
+            whole interview, and one tap should not spend that. */}
+        <View style={{ height: 44, justifyContent: 'center' }}>
+          {loud ? (
+            <Pressable
+              onPress={() => setSheet(true)}
+              style={{
+                height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: night.borderDashed,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 14, color: night.text }}>
+                {building ? 'Stop writing this plan' : 'Stop and start over'}
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => setSheet(true)} hitSlop={8} style={{ alignItems: 'center' }}>
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, color: night.textGhost }}>
+                Leave — this goal starts over
+              </Text>
+            </Pressable>
+          )}
         </View>
-      </View>
-      <Text style={{ fontFamily: nightFonts.body, fontSize: 12, lineHeight: 19.2, color: night.textGhost, textAlign: 'center' }}>
-        Qoach is thinking, not stuck.
-      </Text>
-    </Screen>
+      </Screen>
+
+      {sheet ? (
+        <Pressable
+          onPress={() => setSheet(false)}
+          style={{
+            position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+            backgroundColor: night.scrim, justifyContent: 'flex-end',
+          }}
+        >
+          <Pop duration={300}>
+            <View
+              style={{
+                backgroundColor: night.surface, borderTopWidth: 1, borderTopColor: night.border,
+                borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                paddingTop: 20, paddingHorizontal: 24, paddingBottom: 34,
+              }}
+            >
+              <Text style={{ fontFamily: MONO, fontSize: 11, lineHeight: 14, fontWeight: '500', letterSpacing: 0.6, color: night.textGhost }}>
+                {clock} · {building ? 'STILL WRITING BEHIND THIS' : 'STILL THINKING BEHIND THIS'}
+              </Text>
+              <Text style={{ marginTop: 14, fontFamily: nightFonts.display, fontSize: 23, lineHeight: 28, color: night.text }}>
+                {building ? 'Stop writing this plan?' : 'Stop and start over?'}
+              </Text>
+              {/* The canvas said "your answers are saved". They are not: the
+                  coach session id lives in a ref, there is no GET for a
+                  session, and nothing is written down until a plan is locked.
+                  Saying so is the whole point of this screen. */}
+              <Text style={{ marginTop: 10, fontFamily: nightFonts.body, fontSize: 14, lineHeight: 21, color: night.textMuted }}>
+                {answers.length
+                  ? 'Leaving throws away more than the wait. Your goal, your answers and Qoach’s verdict are only held while this is open — coming back starts again from the goal, and the questions come again too.'
+                  : 'Leaving throws away more than the wait. Your goal is only held while this is open — coming back means typing it again.'}
+              </Text>
+              <View style={{ marginTop: 22, gap: 10 }}>
+                <Pressable
+                  onPress={() => setSheet(false)}
+                  style={{ height: 52, borderRadius: 26, backgroundColor: night.accent, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: night.accentInk }}>Keep waiting</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => { setSheet(false); onDismiss(); }}
+                  style={{
+                    height: 48, borderRadius: 24, borderWidth: 1.5, borderColor: night.borderDashed,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 14.5, color: night.text }}>Leave and start over</Text>
+                </Pressable>
+              </View>
+              {/* True by construction: the plan landing unmounts this whole
+                  screen, sheet included. */}
+              <Text style={{ marginTop: 16, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 16, color: night.textGhost, textAlign: 'center' }}>
+                If it finishes while this is open, it opens instead.
+              </Text>
+            </View>
+          </Pop>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -1891,7 +2190,7 @@ export default function FirstGoalScreen({
 
   /* thinking / building — full-screen orb only outside the conversation */
   if (coach.phase === 'building' || coach.phase === 'rebuilding' || (coach.phase === 'thinking' && coach.qa.length === 0)) {
-    return <ThinkingView building={coach.phase === 'building'} onDismiss={onDismiss} dismissLabel={dismissLabel} />;
+    return <ThinkingView coach={coach} building={coach.phase !== 'thinking'} onDismiss={onDismiss} />;
   }
 
   /* clarify conversation — chat thread (canvas section 2) */

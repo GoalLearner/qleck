@@ -280,6 +280,74 @@ export const PROTOCOL_TOOL_SCHEMA = {
 } as const;
 
 /**
+ * Repair phases whose week ranges overlap or leave a gap.
+ *
+ * Production, 7 Sep, "Bench 315 lbs in 5 weeks": the model wrote ph1 weeks
+ * 1-3, ph2 weeks 4-5, ph3 weeks 5-5 — a one-week test phase that starts on
+ * the week the phase before it ends. `validateProtocol` said `phase "ph3"
+ * start_week 5 does not follow week 5` and the whole generation failed. Three
+ * attempts, three byte-identical outputs, "The coach hit a snag" — and,
+ * because validation failed, NONE of the repair layer downstream ever ran, so
+ * four session/day mismatches that would have been fixed for free were never
+ * reached either. One arithmetic slip cost the user their plan.
+ *
+ * Phase boundaries are not a judgement call. The model chose where each phase
+ * STARTS — that is the content — and the end weeks are bookkeeping that has to
+ * agree with it. So an overlap truncates the earlier phase to end just before
+ * the next one begins (the minimal edit, and almost always what was meant: a
+ * taper squeezed onto the end of the block before it), and a gap is closed by
+ * pulling the later phase back, keeping its length.
+ *
+ * What it will NOT do, because each would be inventing: merge phases, drop
+ * one, reorder them, or touch a single step. A phase that cannot be placed
+ * without swallowing the one before it keeps its own start pushed later
+ * instead, and anything still malformed after this still fails validation.
+ *
+ * Runs BEFORE reconcileDuration on purpose — that one bails on phases which
+ * do not already tile, so an overlap used to disable the duration repair too.
+ *
+ * Returns the number of edits, so the caller can leave a trace.
+ */
+export function retilePhaseWeeks(p: unknown): number {
+  const proto = p as Protocol;
+  if (!proto || typeof proto !== 'object' || !Array.isArray(proto.phases) || proto.phases.length === 0) return 0;
+  const phases = proto.phases;
+  // Non-numeric weeks are a different failure with a different fix; leave the
+  // whole thing to the validator rather than inventing a tiling for it.
+  if (phases.some(ph => !Number.isFinite(ph?.start_week) || !Number.isFinite(ph?.end_week))) return 0;
+
+  let edits = 0;
+  let prevEnd = 0;
+  for (let i = 0; i < phases.length; i++) {
+    const ph = phases[i];
+    const len = Math.max(1, ph.end_week - ph.start_week + 1);
+    let start = ph.start_week;
+
+    if (start <= prevEnd) {
+      const prev = phases[i - 1];
+      if (prev && start > prev.start_week) {
+        // Truncate the phase before it. It keeps at least its own first week.
+        prev.end_week = start - 1;
+        edits++;
+      } else {
+        // Truncating would erase the previous phase, so this one moves.
+        start = prevEnd + 1;
+        edits++;
+      }
+    } else if (start > prevEnd + 1) {
+      start = prevEnd + 1;                                   // close the gap
+      edits++;
+    }
+
+    if (ph.start_week !== start) ph.start_week = start;
+    const end = start + len - 1;
+    if (ph.end_week !== end) { ph.end_week = end; edits++; }
+    prevEnd = ph.end_week;
+  }
+  return edits;
+}
+
+/**
  * Repair the one inconsistency models reliably produce: phases that tile
  * correctly but disagree with the declared duration_weeks ("phases end at week
  * 8 but duration_weeks is 6"). The phases ARE the plan — duration_weeks is a

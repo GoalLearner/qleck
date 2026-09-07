@@ -6,7 +6,7 @@ import {
   ASK_TOOL, AUDIT_SYSTEM, AUDIT_TOOL, COACH_SYSTEM, MAINTENANCE_SYSTEM, PRICE_TOOL, PROTOCOL_SYSTEM,
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
-import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
@@ -855,6 +855,10 @@ export async function generateProtocol(
       temperature: 0.4,
     });
     if (result.refused) return { errors: ['api_refusal'] };
+    // Phase weeks first: an overlap is a blocking validateProtocol error, and
+    // failing there skips the whole repair layer below — including the
+    // session/day fixes — so one arithmetic slip used to cost the plan.
+    retilePhaseWeeks(result.toolInput);
     const repaired = reconcileDuration(result.toolInput);
     const errors = validateProtocol(repaired);
     const advisory: string[] = [];
@@ -993,6 +997,10 @@ ${goalAsData(feedback)}
       maxTokens: 8192,
     });
     if (result.refused) return { errors: ['api_refusal'] };
+    // Phase weeks first: an overlap is a blocking validateProtocol error, and
+    // failing there skips the whole repair layer below — including the
+    // session/day fixes — so one arithmetic slip used to cost the plan.
+    retilePhaseWeeks(result.toolInput);
     const repaired = reconcileDuration(result.toolInput);
     const errors = validateProtocol(repaired);
     const revised = repaired as Protocol;
@@ -1076,6 +1084,10 @@ export async function maintenanceProtocol(
       maxTokens: 8192,
     });
     if (result.refused) return { errors: ['api_refusal'] };
+    // Phase weeks first: an overlap is a blocking validateProtocol error, and
+    // failing there skips the whole repair layer below — including the
+    // session/day fixes — so one arithmetic slip used to cost the plan.
+    retilePhaseWeeks(result.toolInput);
     const repaired = reconcileDuration(result.toolInput);
     const errors = validateProtocol(repaired);
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');

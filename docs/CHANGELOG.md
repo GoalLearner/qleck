@@ -185,6 +185,32 @@ fails signing.
 
 ### Unreleased · 7 Sep
 
+- **"The coach hit a snag" traced to one arithmetic slip.** A real failure on
+  7 Sep: for `Bench 315 lbs in 5 weeks` the model wrote phase 1 as weeks 1-3,
+  phase 2 as weeks 4-5 and phase 3 — a one-week test phase — as week 5. Phase 3
+  therefore started on the week phase 2 ended. `validateProtocol` is BLOCKING,
+  so all three attempts died on that, the user got the snag screen, and the
+  retry burned another three calls: six model calls over 2m15s, five rejected,
+  three of them returning byte-identical output.
+
+  Worse, the repair layer runs only *after* `validateProtocol` passes, so the
+  four session/day mismatches in the same plan — which `alignStepsToSessions`
+  fixes for free — were never even reached. One overlap disabled everything.
+
+  `retilePhaseWeeks` now repairs it before validation, on the same principle as
+  `reconcileDuration`: an overlap truncates the earlier phase to end just
+  before the next begins (the minimal edit, and what a taper squeezed onto the
+  end of a block usually means), and a gap is closed by pulling the later phase
+  back with its length intact. It will not merge, drop, reorder or resize a
+  phase's steps, and non-numeric weeks stay the validator's problem. Running it
+  first also re-enables `reconcileDuration`, which bails on untiled phases and
+  so was disabled by the same slip.
+
+  Replaying the stored production payload through the fixed pipeline: one edit,
+  `validateProtocol` clean, `alignStepsToSessions` repairs its four, session
+  errors clean. `npm run check:phases` — 13 bars, no model calls, the first of
+  which is that exact plan.
+
 - **A swipe can no longer throw away a plan mid-generation.** The in-app "+"
   is an iOS modal, which is swipe-to-dismiss by default, and the coach session
   is held in memory only — nothing about it is written down until a plan is

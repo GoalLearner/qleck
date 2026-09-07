@@ -1994,7 +1994,7 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
 // in-app "+" modal (dismiss = cancel). The Qoach surfaces keep Electric Night
 // in both — the coach is its own sub-brand.
 export default function FirstGoalScreen({
-  onLocked, onDismiss, dismissLabel = 'Skip for now', demoHints = true, initialGoal,
+  onLocked, onDismiss, dismissLabel = 'Skip for now', demoHints = true, initialGoal, onBusy,
 }: {
   onLocked: (plan: AcceptedPlan) => void;
   onDismiss: () => void;
@@ -2002,6 +2002,11 @@ export default function FirstGoalScreen({
   demoHints?: boolean;
   /** Prefill for the intake box — the regenerate-old-goal path. */
   initialGoal?: string;
+  /** True while an AI call is in flight and there is nothing to come back to.
+   *  The host uses it to take away the swipe-to-dismiss gesture: the coach
+   *  session lives in memory, so a stray swipe during a 60-second generation
+   *  throws away the goal, the interview and the verdict silently. */
+  onBusy?: (busy: boolean) => void;
 }) {
   // Ask on EVERY plan, not just the first (owner call, 2026-09-02). The gap
   // is novel once, but CALIBRATION is not: with the guess stored beside
@@ -2011,6 +2016,13 @@ export default function FirstGoalScreen({
   // would have been a curiosity; one per plan is a dataset.
   const { goals } = useRally();
   const coach = useCoachFlow({ askEstimate: true });
+  // An AI call is in flight and nothing about this session is written down
+  // yet, so leaving now loses the goal, the interview and the verdict. The
+  // host takes the swipe gesture away for exactly these phases — deliberate
+  // exits (the door on the wait screen, Cancel) still work.
+  const busy = coach.phase === 'thinking' || coach.phase === 'building' || coach.phase === 'rebuilding';
+  useEffect(() => { onBusy?.(busy); }, [busy, onBusy]);
+  useEffect(() => () => { onBusy?.(false); }, [onBusy]);
   // Recomputed only when the active goal set changes — locking a goal here
   // retires its whole domain (smoking ⊃ vaping ⊃ cigarettes) next time.
   const suggestions = React.useMemo(

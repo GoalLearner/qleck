@@ -183,6 +183,21 @@ fails signing.
   the request log, because the user's own thinking time sits between turns,
   and inventing one would repeat the mistake being fixed.
 
+### Unreleased · 7 Sep
+
+- **A swipe can no longer throw away a plan mid-generation.** The in-app "+"
+  is an iOS modal, which is swipe-to-dismiss by default, and the coach session
+  is held in memory only — nothing about it is written down until a plan is
+  locked. One accidental downward swipe during a 60-second generation
+  therefore discarded the goal, the entire interview and the verdict, silently,
+  with nothing to come back to. Reported from the field more than once.
+
+  The gesture is now latched off while a call is in flight, and only then;
+  Cancel and the wait screen's own door still leave, and both say what leaving
+  costs. `usePreventRemove` is what actually does it — on iOS it sets the
+  sheet's `preventNativeDismiss`, where `gestureEnabled: false` governs the
+  interactive pop gesture on PUSHED screens and leaves a modal's drag alone.
+
 ---
 
 ## Not shipped

@@ -185,6 +185,21 @@ fails signing.
 
 ### Build 31 · 7 Sep — the snag, taken apart
 
+#### 8 Sep — a follow-up from the device
+
+- **The read cards can be read.** Closed, a card is a 150pt slot that turns
+  every 7 seconds, so the headline clamps at two lines and the detail at three
+  — and the longest reads, which are the ones worth having, lost their point
+  mid-sentence with no way in. Tapping now opens all three in full, scrollable,
+  with the odds card and the answers standing down to make room; the carousel
+  freezes while it is open, because a card that turned away mid-sentence would
+  be worse than the clamp it was opened to escape. `TAP TO READ` says so on the
+  card, since nothing else about it looked tappable.
+- **The 45-second status line stopped truncating.** "The longest we have
+  measured is 75 seconds." did not fit the one-line slot beside the clock on a
+  393pt screen. It is "Longest measured: 75 seconds." now — same fact, and
+  visible.
+
 Three of the four fixes below are server-side and went live on the 7th; only
 the swipe fix needed a build. The diagnosis started from one real session —
 `Bench 315 lbs in 5 weeks`, six protocol calls in 2m15s, five rejected — and

@@ -1408,7 +1408,7 @@ const WAIT_COPY = {
   building: [
     { after: 0, head: 'Writing your plan.', sub: 'Usually about half a minute.' },
     { after: 30, head: 'Taking longer than usual.', sub: 'A third of plans run past 40 seconds.' },
-    { after: 45, head: 'Still writing. It hasn’t stalled.', sub: 'The longest we have measured is 75 seconds.' },
+    { after: 45, head: 'Still writing. It hasn’t stalled.', sub: 'Longest measured: 75 seconds.' },
     { after: 60, head: 'Past a minute. Still writing.', sub: 'You can stop, but the goal starts over.' },
   ],
   thinking: [
@@ -1481,6 +1481,9 @@ function ThinkingView({
   // where the reassurance matters most.
   const [secs, setSecs] = useState(0);
   const [sheet, setSheet] = useState(false);
+  // Opening the reads freezes the carousel. A card that turned away
+  // mid-sentence would be worse than the clamp it was opened to escape.
+  const [readsOpen, setReadsOpen] = useState(false);
   useEffect(() => {
     const iv = setInterval(() => setSecs(s => s + 1), 1000);
     return () => clearInterval(iv);
@@ -1493,7 +1496,9 @@ function ThinkingView({
 
   const v = coach.verdict ?? null;
   const cards = building ? waitCards(v) : [];
-  const cardIdx = cards.length ? Math.floor(secs / CARD_SECONDS) % cards.length : 0;
+  const frozenIdx = useRef(0);
+  if (!readsOpen && cards.length) frozenIdx.current = Math.floor(secs / CARD_SECONDS) % cards.length;
+  const cardIdx = cards.length ? frozenIdx.current : 0;
   const card = cards[cardIdx];
   const weeks = v?.pace_options?.find(o => o.key === coach.pace)?.duration_weeks ?? v?.duration_weeks;
   const odds = coach.chosenOdds;
@@ -1552,7 +1557,7 @@ function ThinkingView({
 
             {/* Their number beside Qoach's. Both were on file before the wait
                 started; "YOU CALLED" only appears when they actually called. */}
-            {odds != null ? (
+            {odds != null && !readsOpen ? (
               <View
                 style={{
                   marginTop: 18, backgroundColor: night.surface, borderWidth: 1, borderColor: night.border,
@@ -1583,33 +1588,85 @@ function ThinkingView({
               </View>
             ) : null}
 
+            {/* Closed, a card is a 150pt slot that turns every 7 seconds, so
+                both halves are clamped and the longest reads lost their point
+                mid-sentence with no way in. Tapping opens all three, in full,
+                and stops the rotation — a card that turned away while you were
+                reading it would be worse than the clamp. */}
             {card ? (
-              <View style={{ marginTop: 14, height: 150 }}>
-                <SoftIn key={cardIdx}>
-                  <View
-                    style={{
-                      height: 150, backgroundColor: night.surfaceDeep, borderWidth: 1, borderColor: night.border,
-                      borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16,
-                    }}
+              readsOpen ? (
+                <View style={{ marginTop: 14, flex: 1 }}>
+                  <Pressable
+                    onPress={() => setReadsOpen(false)}
+                    style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingBottom: 8 }}
+                    hitSlop={8}
                   >
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <WaitEyebrow text={card.tag} color={card.color} />
-                      <Text style={{ fontFamily: MONO, fontSize: 10, lineHeight: 12, fontWeight: '500', color: night.textGhost }}>
-                        {cardIdx + 1} / {cards.length}
+                    <WaitEyebrow text="QOACH'S READ" />
+                    <WaitEyebrow text="TAP TO CLOSE" color={night.accentText} />
+                  </Pressable>
+                  <ScrollView
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ gap: 10, paddingBottom: 12 }}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {cards.map((k, i) => (
+                      <View
+                        key={i}
+                        style={{
+                          backgroundColor: night.surfaceDeep, borderWidth: 1, borderColor: night.border,
+                          borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                          <WaitEyebrow text={k.tag} color={k.color} />
+                          <Text style={{ fontFamily: MONO, fontSize: 10, lineHeight: 12, fontWeight: '500', color: night.textGhost }}>
+                            {i + 1} / {cards.length}
+                          </Text>
+                        </View>
+                        <Text style={{ marginTop: 8, fontFamily: nightFonts.display, fontSize: 17, lineHeight: 22, color: night.text }}>
+                          {k.line}
+                        </Text>
+                        {k.detail ? (
+                          <Text style={{ marginTop: 6, fontFamily: nightFonts.body, fontSize: 13, lineHeight: 18, color: night.textMuted }}>
+                            {k.detail}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : (
+                <View style={{ marginTop: 14, height: 150 }}>
+                  <SoftIn key={cardIdx}>
+                    <Pressable
+                      onPress={() => setReadsOpen(true)}
+                      style={{
+                        height: 150, backgroundColor: night.surfaceDeep, borderWidth: 1, borderColor: night.border,
+                        borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <WaitEyebrow text={card.tag} color={card.color} />
+                        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'baseline' }}>
+                          <WaitEyebrow text="TAP TO READ" color={night.accentText} />
+                          <Text style={{ fontFamily: MONO, fontSize: 10, lineHeight: 12, fontWeight: '500', color: night.textGhost }}>
+                            {cardIdx + 1} / {cards.length}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text numberOfLines={2} style={{ marginTop: 8, height: 44, fontFamily: nightFonts.display, fontSize: 17, lineHeight: 22, color: night.text }}>
+                        {card.line}
                       </Text>
-                    </View>
-                    <Text numberOfLines={2} style={{ marginTop: 8, height: 44, fontFamily: nightFonts.display, fontSize: 17, lineHeight: 22, color: night.text }}>
-                      {card.line}
-                    </Text>
-                    <Text numberOfLines={3} style={{ marginTop: 6, height: 54, fontFamily: nightFonts.body, fontSize: 13, lineHeight: 18, color: night.textMuted }}>
-                      {card.detail}
-                    </Text>
-                  </View>
-                </SoftIn>
-              </View>
+                      <Text numberOfLines={3} style={{ marginTop: 6, height: 54, fontFamily: nightFonts.body, fontSize: 13, lineHeight: 18, color: night.textMuted }}>
+                        {card.detail}
+                      </Text>
+                    </Pressable>
+                  </SoftIn>
+                </View>
+              )
             ) : null}
 
-            {answers.length ? (
+            {answers.length && !readsOpen ? (
               <>
                 <View style={{ marginTop: 18 }}><WaitEyebrow text={`YOUR ANSWERS · ${answers.length}`} /></View>
                 <View style={{ marginTop: 8, gap: 10 }}>
@@ -1689,7 +1746,9 @@ function ThinkingView({
           </>
         )}
 
-        <Spacer />
+        {/* The reads take the slack themselves when open: two flex:1
+            siblings would split it and halve the thing being read. */}
+        {readsOpen ? null : <Spacer />}
 
         {/* The door. It was never rendered before this screen: onDismiss has
             been accepted and dropped on the floor since the canvas port, so a

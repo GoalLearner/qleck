@@ -183,7 +183,13 @@ fails signing.
   the request log, because the user's own thinking time sits between turns,
   and inventing one would repeat the mistake being fixed.
 
-### Unreleased · 7 Sep
+### Build 31 · 7 Sep — the snag, taken apart
+
+Three of the four fixes below are server-side and went live on the 7th; only
+the swipe fix needed a build. The diagnosis started from one real session —
+`Bench 315 lbs in 5 weeks`, six protocol calls in 2m15s, five rejected — and
+every claim here was checked against its stored payloads rather than guessed.
+
 
 - **One plan is no longer generated twice at once.** The verdict kicks a
   background draft so that accepting a plan is instant, and every `prepare`

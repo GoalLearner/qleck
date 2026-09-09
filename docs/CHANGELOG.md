@@ -441,6 +441,30 @@ sequenced and checked against the code before a line was written.
   out-price it. `protocols.kind` lands for the per-rep drop's cap fix.
   Client plumbing (`applyEdit`, `oddsStale`; an unpriced plan locks with no
   odds, which the server already treats as a fine state) is in, unused.
+- **The plan on the reveal is editable.** The cousin's underlined item —
+  *"do you want Qleck to build your protocol or do you want to build it
+  yourself?"* — answered as an editable plan rather than a blank canvas. Tap
+  a rep and its row becomes a form, in place: title, Do it / Amount / Minutes,
+  the target, seven day toggles or a per-week stepper, details. **+ ADD A
+  REP** at the foot of a phase opens the same form empty. One rep at a time;
+  Save goes to the server as one op, and a refusal comes back with Qoach's
+  reason in amber while the form stays open.
+
+  Honest by construction: a rep that follows a session shows *"Follows your
+  run days — change the session, not the rep"* and no toggles, because the
+  session repair would silently revert them. A change to the work itself
+  turns the odds chip into **— UNPRICED** and the bottom bar says *"Changed
+  reps aren't priced yet — this locks without odds"*; a details-only edit
+  changes nothing about the number. A drop's re-price does not un-stale an
+  edited plan — it priced the drops, not the edits — and the assumption-fix
+  box warns that a rebuild throws hand edits away. The affordances finally
+  have a line under the summary: *"Tap a rep to change it · × drops it and
+  re-prices."*
+
+  Server: re-saving a rep with nothing changed is not a change (the editor
+  re-sends the whole form; `check:edit` is 43 bars now). Pricing an EDITED
+  plan is the next, gated step — until it lands, a changed plan locks with no
+  odds rather than the number of the plan it used to be.
 
 ---
 

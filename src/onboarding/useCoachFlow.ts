@@ -185,7 +185,9 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
         if (res.protocol && typeof res.odds === 'number') {
           setProtocol(res.protocol);
           setPickedOdds(res.odds);
-          setOddsStale(false);
+          // NOT un-staled here: the drop price describes the drops, not the
+          // edits. Once the reprice prices the whole diff (its own gated
+          // step) this is where the plan becomes priced again.
         }
         return { refused: res.refused ?? [] };
       })

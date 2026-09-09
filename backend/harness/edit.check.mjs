@@ -109,6 +109,13 @@ console.log('\nprotocol edits\n');
   ok('per_week outside 1..7 is refused', 'refused' in r && /1 to 7/.test(r.refused.reason));
 }
 {
+  // An editor re-saves the whole form; what arrives unchanged is unchanged.
+  const r = upd(plan(), 's1', { frequency: { days: ['mon', 'wed', 'fri'], per_week: 3 }, title: 'Easy run', kind: 'duration', duration_minutes: 40 });
+  ok('re-saving a rep with nothing changed is not a change', 'protocol' in r && r.pricing === 'unchanged', 'protocol' in r ? r.pricing : r.refused.reason);
+  const r2 = upd(plan(), 's1', { frequency: { per_week: 3 } });
+  ok('re-saving the same per_week keeps the pinned days and is not a change', 'protocol' in r2 && r2.pricing === 'unchanged' && got(r2).frequency.days.length === 3);
+}
+{
   const p = plan([step({ session_id: 'sess1' })], { sessions: [{ id: 'sess1', type: 'run', days: ['mon', 'wed', 'fri'] }] });
   const r = upd(p, 's1', { frequency: { days: ['mon'] } });
   ok('a session-attached rep’s days are locked, and the reason names the session', 'refused' in r && /run session/.test(r.refused.reason));

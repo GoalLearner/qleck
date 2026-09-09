@@ -12,7 +12,7 @@ import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
-import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, TextButton, Title } from '../ui';
+import { NightInput, Pop, PrimaryButton, Pulse, Screen, Segmented, Shake, Spacer, Spin, TextButton, Title } from '../ui';
 import { OddsChip, OddsDial } from '../OddsDial';
 import { SimVerdict, simPhaseLabel, type SimPhase } from '../SimVerdict';
 import type { SimulationState } from '../../api/coachTypes';
@@ -22,7 +22,7 @@ import PredictScreen, { bandFor } from './PredictScreen';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
 import { ATTEMPT_FLOOR } from '../../api/coachTypes';
-import type { PaceKey, Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
+import type { PaceKey, Protocol, ProtocolEditOp, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
 import Confetti, { type ConfettiHandle } from '../../components/Confetti';
 import { celebratePlan } from '../../lib/celebrate';
 import { DEFAULT_WEEKS, GOAL_INPUT_MAX, clampWeeks, foldTimeline } from '../../lib/goalTimeline';
@@ -197,7 +197,190 @@ function CoachFooter({ surface, sessionId }: {
   );
 }
 
-function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onToggleDrop }: {
+/* ── the rep editor ─────────────────────────────────────────────────────── */
+
+const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+const DAY_GLYPH: Record<string, string> = { mon: 'M', tue: 'T', wed: 'W', thu: 'T', fri: 'F', sat: 'S', sun: 'S' };
+const KIND_OPTIONS = [
+  { key: 'binary', label: 'Do it' },
+  { key: 'quantity', label: 'Amount' },
+  { key: 'duration', label: 'Minutes' },
+];
+
+/** The form's state. Strings for the numbers so a half-typed field is not
+ *  coerced under the user's thumb. */
+type StepDraft = {
+  title: string;
+  kind: 'binary' | 'quantity' | 'duration';
+  days: string[];
+  perWeek: number;
+  amount: string;
+  unit: string;
+  minutes: string;
+  details: string;
+};
+
+function draftFrom(step: ProtocolStep | null): StepDraft {
+  return {
+    title: step?.title ?? '',
+    kind: (step?.kind as StepDraft['kind']) ?? 'binary',
+    days: step?.frequency.days ? [...step.frequency.days] : [],
+    perWeek: step?.frequency.per_week ?? 3,
+    amount: step?.quantity ? String(step.quantity.amount) : '',
+    unit: step?.quantity?.unit ?? '',
+    minutes: step?.duration_minutes ? String(step.duration_minutes) : '',
+    details: step?.details ?? '',
+  };
+}
+
+/** The draft as the ONE op the server accepts. A session-attached rep sends
+ *  no frequency at all — the server would refuse it, and the form never
+ *  showed the days. Server-owned fields are simply not here. */
+function opFromDraft(d: StepDraft, step: ProtocolStep | null, phaseId: string, attached: boolean): ProtocolEditOp {
+  const frequency = d.days.length ? { per_week: d.days.length, days: d.days } : { per_week: d.perWeek };
+  const target =
+    d.kind === 'quantity' ? { quantity: { amount: Number(d.amount), unit: d.unit.trim() } }
+    : d.kind === 'duration' ? { duration_minutes: Number(d.minutes) }
+    : {};
+  if (step) {
+    return {
+      op: 'update', step_id: step.id,
+      patch: { title: d.title.trim(), kind: d.kind, ...(attached ? {} : { frequency }), ...target, details: d.details.trim() },
+    };
+  }
+  return { op: 'add', phase_id: phaseId, step: { title: d.title.trim(), kind: d.kind, frequency, ...target, details: d.details.trim() } };
+}
+
+/**
+ * The inline rep editor — the cousin's underlined item, "do you want Qleck to
+ * build your protocol or do you want to build it yourself?", answered as an
+ * editable plan rather than a blank canvas. Tap a rep on the reveal and it
+ * becomes this form, in place; "+ ADD A REP" opens it empty at the foot of
+ * a phase. One rep at a time.
+ *
+ * Inline rather than a Modal on purpose: the intake is itself presented
+ * modally, RepSheet is the wrong palette, and a Modal-over-modal is the iOS
+ * race that "Tweak" used to lose. The style is the assumption-fix box's.
+ *
+ * What it does NOT offer is deliberate. Server-owned fields (id, session,
+ * provenance, how_to) are not here. A rep that follows a session shows the
+ * session's days and no toggles: the session repair would silently revert
+ * any change, which is worse than refusing. The server is the gate — a
+ * refusal comes back with Qoach's reason and the form stays open.
+ */
+function StepEditor({ step, sessionType, saving, error, onSave, onCancel }: {
+  /** Null = a new rep. */
+  step: ProtocolStep | null;
+  /** Set when the rep follows a session: its days are the session's. */
+  sessionType?: string;
+  saving: boolean;
+  error?: string;
+  onSave: (d: StepDraft) => void;
+  onCancel: () => void;
+}) {
+  const [d, setD] = useState<StepDraft>(() => draftFrom(step));
+  const set = <K extends keyof StepDraft>(k: K, v: StepDraft[K]) => setD(cur => ({ ...cur, [k]: v }));
+  const toggleDay = (day: string) =>
+    set('days', d.days.includes(day) ? d.days.filter(x => x !== day) : DAY_KEYS.filter(x => x === day || d.days.includes(x)));
+  const perWeek = d.days.length || d.perWeek;
+  const amountOk = d.kind !== 'quantity' || (Number.isFinite(Number(d.amount)) && d.amount.trim() !== '' && Number(d.amount) >= 0 && !!d.unit.trim());
+  const minutesOk = d.kind !== 'duration' || (Number(d.minutes) >= 1 && Number(d.minutes) <= 600);
+  const canSave = !!d.title.trim() && amountOk && minutesOk && !saving;
+  const box = { height: 40, fontSize: 13.5, borderRadius: 12, paddingHorizontal: 12 } as const;
+  const stepBtn = (label: string, onPress: () => void, disabled: boolean) => (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={6}
+      style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.35 : 1 }}
+    >
+      <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>{label}</Text>
+    </Pressable>
+  );
+  return (
+    <View
+      style={{
+        marginVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: night.accentBorder,
+        backgroundColor: night.surfaceDeep, padding: 12, gap: 10,
+      }}
+    >
+      <View>
+        <MonoLabel text={step ? 'CHANGE THIS REP' : 'NEW REP'} color={night.accent} style={{ marginBottom: 6 }} />
+        <NightInput value={d.title} onChangeText={v => set('title', v)} placeholder="What you'll do" maxLength={80} style={box} autoFocus />
+      </View>
+      <Segmented options={KIND_OPTIONS} value={d.kind} onChange={k => set('kind', k as StepDraft['kind'])} height={32} fontSize={12} />
+      {d.kind === 'quantity' ? (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {/* minWidth 0: a text input has an intrinsic width that otherwise
+              beats flex and pushes the unit box past the card's edge. */}
+          <NightInput value={d.amount} onChangeText={v => set('amount', v)} placeholder="Amount" keyboardType="decimal-pad" style={[box, { flex: 1, minWidth: 0 }]} />
+          <NightInput value={d.unit} onChangeText={v => set('unit', v)} placeholder="Unit — km, pages, reps" maxLength={16} style={[box, { flex: 1.4, minWidth: 0 }]} />
+        </View>
+      ) : d.kind === 'duration' ? (
+        <NightInput value={d.minutes} onChangeText={v => set('minutes', v)} placeholder="Minutes" keyboardType="number-pad" style={box} />
+      ) : null}
+      {sessionType ? (
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: night.textGhost }}>
+          Follows your {sessionType} days — change the session, not the rep.
+        </Text>
+      ) : (
+        <View style={{ gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            {DAY_KEYS.map(day => {
+              const on = d.days.includes(day);
+              return (
+                <Pressable
+                  key={day}
+                  onPress={() => toggleDay(day)}
+                  style={{
+                    flex: 1, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: on ? night.accent : night.surface, borderWidth: 1, borderColor: on ? night.accent : night.border,
+                  }}
+                >
+                  <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: on ? night.accentInk : night.textMuted }}>{DAY_GLYPH[day]}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>{d.days.length ? 'On those days' : 'Any days'}</Text>
+            <View style={{ flex: 1 }} />
+            {stepBtn('−', () => set('perWeek', Math.max(1, d.perWeek - 1)), !!d.days.length || d.perWeek <= 1)}
+            <Text style={{ fontFamily: nightFonts.display, fontSize: 12.5, color: night.text, minWidth: 74, textAlign: 'center' }}>{perWeek}× a week</Text>
+            {stepBtn('+', () => set('perWeek', Math.min(7, d.perWeek + 1)), !!d.days.length || d.perWeek >= 7)}
+          </View>
+        </View>
+      )}
+      <NightInput
+        value={d.details}
+        onChangeText={v => set('details', v)}
+        placeholder="How to do it (optional)"
+        maxLength={400}
+        multiline
+        style={[box, { height: 60, paddingTop: 10, textAlignVertical: 'top' }]}
+      />
+      {error ? (
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: '#F7B32B' }}>{error}</Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        <Pressable
+          onPress={() => canSave && onSave(d)}
+          disabled={!canSave}
+          style={{ flex: 1, height: 40, borderRadius: 12, backgroundColor: canSave ? night.accent : night.hairline, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: canSave ? night.accentInk : night.textMuted }}>
+            {saving ? 'Saving…' : step ? 'Save' : 'Add rep'}
+          </Text>
+        </Pressable>
+        <Pressable onPress={onCancel} style={{ height: 40, paddingHorizontal: 12, justifyContent: 'center' }}>
+          <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, color: night.textFaint }}>Cancel</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onToggleDrop, onEdit }: {
   step: ProtocolStep;
   onFixAssumption?: (key: string) => void;
   /** Tier-1B commitment picker: this step is marked for removal. */
@@ -205,6 +388,8 @@ function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onTogg
   /** Qoach refused the drop — the structural reason, shown in amber. */
   refusedReason?: string;
   onToggleDrop?: () => void;
+  /** Tap the rep to change it. Absent once locked, and on a dropped rep. */
+  onEdit?: () => void;
 }) {
   const k = kindStyle(step.kind);
   return (
@@ -223,7 +408,7 @@ function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onTogg
       >
         <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: k.fg }}>{k.glyph}</Text>
       </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
+      <Pressable disabled={!onEdit} onPress={onEdit} style={{ flex: 1, minWidth: 0 }}>
         {step.source === 'qoach' ? (
           <Text style={{ fontFamily: MONO, fontSize: 8.5, fontWeight: '700', letterSpacing: 1.2, color: night.violetText, marginBottom: 2 }}>
             QOACH ADDED
@@ -260,7 +445,7 @@ function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onTogg
             ) : null}
           </Pressable>
         ) : null}
-      </View>
+      </Pressable>
       {/* Sits beside its rep rather than stranded at the far edge: the column
           is width-capped in ProtocolReveal, which is what pinned these chips
           to the horizon in a desktop browser. */}
@@ -290,6 +475,7 @@ function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onTogg
 /** One phase: a header that always shows, reps only while open. */
 function PhaseCard({
   phase, open, isLast, milestones, onToggle, onFixAssumption, dropped, refused, onToggleDrop,
+  editingId, addingHere, renderEditor, onEdit, onAdd,
 }: {
   phase: ProtocolPhase;
   open: boolean;
@@ -300,6 +486,14 @@ function PhaseCard({
   dropped?: Set<string>;
   refused?: Record<string, string>;
   onToggleDrop?: (id: string) => void;
+  /** The rep whose row is the editor right now, if it is in this phase. */
+  editingId?: string | null;
+  /** A new rep is being written at the foot of THIS phase. */
+  addingHere?: boolean;
+  /** Renders the editor for a rep (null = a new one). */
+  renderEditor?: (step: ProtocolStep | null) => React.ReactNode;
+  onEdit?: (id: string) => void;
+  onAdd?: () => void;
 }) {
   const weeks = phase.start_week === phase.end_week
     ? `WEEK ${phase.start_week}`
@@ -349,15 +543,27 @@ function PhaseCard({
       {open ? (
         <View style={{ paddingHorizontal: 16 }}>
           {phase.steps.map(step => (
-            <StepRow
-              key={step.id}
-              step={step}
-              onFixAssumption={onFixAssumption}
-              dropped={dropped?.has(step.id) ?? false}
-              refusedReason={refused?.[step.id]}
-              onToggleDrop={onToggleDrop ? () => onToggleDrop(step.id) : undefined}
-            />
+            editingId === step.id && renderEditor ? (
+              <React.Fragment key={step.id}>{renderEditor(step)}</React.Fragment>
+            ) : (
+              <StepRow
+                key={step.id}
+                step={step}
+                onFixAssumption={onFixAssumption}
+                dropped={dropped?.has(step.id) ?? false}
+                refusedReason={refused?.[step.id]}
+                onToggleDrop={onToggleDrop ? () => onToggleDrop(step.id) : undefined}
+                onEdit={onEdit && !dropped?.has(step.id) ? () => onEdit(step.id) : undefined}
+              />
+            )
           ))}
+          {addingHere && renderEditor ? (
+            renderEditor(null)
+          ) : onAdd ? (
+            <Pressable onPress={onAdd} style={{ paddingVertical: 11, borderTopWidth: 1, borderTopColor: night.hairline, alignItems: 'center' }}>
+              <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, color: night.textGhost }}>+ ADD A REP</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -1150,7 +1356,7 @@ function CounterVerdict({
  * strip gives the whole span at a glance, and locking in actually pays off.
  */
 function ProtocolReveal({
-  protocol, statement, odds, onLock, onRestart, quickPicks, onFixAssumption, onReprice,
+  protocol, statement, odds, onLock, onRestart, quickPicks, onFixAssumption, onReprice, onEdit, oddsStale,
 }: {
   protocol: Protocol;
   statement: string;
@@ -1162,8 +1368,51 @@ function ProtocolReveal({
   /** Tier-1B: drop commitments → server refuses structural drops with
    *  reasons and re-prices the rest (the odds prop then updates). */
   onReprice?: (ids: string[]) => Promise<{ refused: { step_id: string; reason: string }[] } | null>;
+  /** The editor: one op, applied server-side to the stored plan. A refusal
+   *  comes back with Qoach's reason; null means the call itself failed. */
+  onEdit?: (op: ProtocolEditOp) => Promise<{ refused?: { step_id: string; reason: string } } | null>;
+  /** The work itself has changed since the plan was last priced. No number
+   *  on file describes it, so none is shown, and it locks without one. */
+  oddsStale?: boolean;
 }) {
   const [open, setOpen] = useState(0);
+  // The editor: which rep is the form (or which phase has an empty one at
+  // its foot), the in-flight save, and Qoach's refusal if any. One at a time.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [addingPhase, setAddingPhase] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | undefined>();
+  const [saving, setSaving] = useState(false);
+  // Reps the user has changed — the assumption-fix box warns that a rebuild
+  // throws these away.
+  const [editedIds, setEditedIds] = useState<Set<string>>(new Set());
+  const sessionTypeOf = (step: ProtocolStep) => protocol.sessions?.find(s => s.id === step.session_id)?.type;
+  const closeEditor = () => { setEditingId(null); setAddingPhase(null); setEditError(undefined); };
+  const startEdit = (id: string) => { setAddingPhase(null); setEditError(undefined); setEditingId(id); };
+  const startAdd = (phaseId: string) => { setEditingId(null); setEditError(undefined); setAddingPhase(phaseId); };
+  const saveDraft = (d: StepDraft, step: ProtocolStep | null, phaseId: string) => {
+    if (!onEdit || saving) return;
+    setSaving(true);
+    setEditError(undefined);
+    onEdit(opFromDraft(d, step, phaseId, !!step?.session_id))
+      .then(res => {
+        if (!res) { setEditError('Couldn\u2019t reach Qoach \u2014 try again.'); return; }
+        if (res.refused) { setEditError(`Qoach kept it \u2014 ${res.refused.reason}`); return; }
+        if (step) setEditedIds(s => new Set(s).add(step.id));
+        closeEditor();
+      })
+      .finally(() => setSaving(false));
+  };
+  const renderEditor = (phaseId: string) => (step: ProtocolStep | null) => (
+    <StepEditor
+      key={step?.id ?? `add-${phaseId}`}
+      step={step}
+      sessionType={step ? sessionTypeOf(step) : undefined}
+      saving={saving}
+      error={editError}
+      onSave={d => saveDraft(d, step, phaseId)}
+      onCancel={closeEditor}
+    />
+  );
   // Commitment picker state: what the user marked for removal, what Qoach
   // refused (with reasons), and the before→after odds delta.
   const [droppedIds, setDroppedIds] = useState<Set<string>>(new Set());
@@ -1252,8 +1501,14 @@ function ProtocolReveal({
               </Text>
             </View>
             <View style={{ flex: 1 }} />
-            {/* 5d: the verdict number rides along, same conditional, smaller badge */}
-            {odds !== undefined ? <OddsChip value={odds} /> : null}
+            {/* 5d: the verdict number rides along, same conditional, smaller badge.
+                Once the work has been edited no number on file describes the
+                plan, and the chip says so instead of showing one. */}
+            {oddsStale ? (
+              <View style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: night.surface, borderWidth: 1, borderColor: night.border }}>
+                <Text style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: '700', letterSpacing: 1.2, color: night.textDim }}>— UNPRICED</Text>
+              </View>
+            ) : odds !== undefined ? <OddsChip value={odds} /> : null}
           </View>
 
           <Text style={{ fontFamily: nightFonts.display, fontSize: 21, lineHeight: 26.25, color: night.text, marginTop: 8 }}>
@@ -1265,6 +1520,13 @@ function ProtocolReveal({
             {protocol.duration_weeks} weeks · {phases.length} {phases.length === 1 ? 'phase' : 'phases'}
             {openingReps ? ` · starts at ${openingReps} reps a week` : ''}
           </Text>
+          {/* The affordances were invisible: a bare × in open phases only, and
+              the re-price button hidden until the first mark. One line. */}
+          {onEdit && !locked ? (
+            <Text style={{ marginTop: 4, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: night.textGhost }}>
+              Tap a rep to change it · × drops it and re-prices.
+            </Text>
+          ) : null}
 
           <WeekStrip
             weeks={protocol.duration_weeks}
@@ -1290,11 +1552,16 @@ function ProtocolReveal({
                 dropped={droppedIds}
                 refused={refused}
                 onToggleDrop={onReprice && !locked ? toggleDrop : undefined}
+                editingId={editingId}
+                addingHere={addingPhase === phase.id}
+                renderEditor={onEdit && !locked ? renderEditor(phase.id) : undefined}
+                onEdit={onEdit && !locked ? startEdit : undefined}
+                onAdd={onEdit && !locked ? () => startAdd(phase.id) : undefined}
               />
             ))}
           </View>
 
-          {delta && delta.from !== delta.to ? (
+          {delta && delta.from !== delta.to && !oddsStale ? (
             <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <Text style={{ fontFamily: nightFonts.display, fontSize: 14, color: night.textFaint, textDecorationLine: 'line-through' }}>{delta.from}</Text>
               <Text style={{ fontFamily: nightFonts.display, fontSize: 12, color: night.accent }}>→</Text>
@@ -1327,6 +1594,14 @@ function ProtocolReveal({
               <Text style={{ fontFamily: nightFonts.display, fontSize: 13.5, color: night.text }}>
                 What's your {fixingKey.replace(/_/g, ' ')}?
               </Text>
+              {/* A rebuild regenerates the whole plan from the corrected
+                  input. Hand edits do not survive it, and saying so beats
+                  replaying them (which would be guessing at intent). */}
+              {editedIds.size ? (
+                <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: '#F7B32B' }}>
+                  Rebuilding discards the reps you changed.
+                </Text>
+              ) : null}
               {(quickPicks?.[fixingKey] ?? []).length > 0 ? (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   {(quickPicks?.[fixingKey] ?? []).map(pick => (
@@ -1415,6 +1690,14 @@ function ProtocolReveal({
             </Pop>
           ) : (
             <>
+              {/* Until edits are priced (their own, gated step), a changed
+                  plan locks with no odds rather than the number of the plan
+                  it used to be. Said here, where the finger is. */}
+              {oddsStale ? (
+                <Text style={{ marginBottom: 8, textAlign: 'center', fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: night.textGhost }}>
+                  Changed reps aren’t priced yet — this locks without odds.
+                </Text>
+              ) : null}
               <PrimaryButton label="Lock it in" onPress={lockIn} />
               {/* "Adjust something" used to sit here: a stub whose whole
                   behaviour was a toast at the top of the screen saying it was
@@ -2466,6 +2749,8 @@ export default function FirstGoalScreen({
         onLock={lockIn}
         onRestart={coach.reset}
         onReprice={coach.repriceWithDrops}
+        onEdit={coach.applyEdit}
+        oddsStale={coach.oddsStale}
       />
     );
   }

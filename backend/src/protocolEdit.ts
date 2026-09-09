@@ -141,18 +141,26 @@ export function applyProtocolOp<P extends EditableProtocol>(
       if (sess) {
         return { refused: { step_id: step.id, reason: `this rep follows its ${sess.type} session's days — change the session, not the rep` } };
       }
+      // An editor re-saves the whole form, so a frequency that arrives
+      // identical to what is stored is not a change: the plan's odds still
+      // describe it. Only a real difference flips `shape`.
       const days = patch.frequency.days !== undefined ? normDays(patch.frequency.days) : undefined;
+      const had = step.frequency.days ?? [];
       if (days && days.length) {
-        step.frequency = { per_week: days.length, days };
-        shape = true;
+        if (had.join() !== days.join()) {
+          step.frequency = { per_week: days.length, days };
+          shape = true;
+        }
       } else if (patch.frequency.per_week !== undefined) {
         const n = Math.round(Number(patch.frequency.per_week));
         if (!Number.isFinite(n) || n < 1 || n > 7) return { refused: { step_id: step.id, reason: 'per week must be 1 to 7' } };
         // Pinned days that no longer fit the count are dropped rather than
         // silently trimmed to a subset the user did not choose.
-        step.frequency = { per_week: n, ...(step.frequency.days && step.frequency.days.length === n ? { days: step.frequency.days } : {}) };
-        shape = true;
-      } else if (days && !days.length) {
+        const keep = had.length === n;
+        const same = n === step.frequency.per_week && (keep || had.length === 0);
+        step.frequency = { per_week: n, ...(keep ? { days: had } : {}) };
+        if (!same) shape = true;
+      } else if (days && !days.length && had.length) {
         step.frequency = { per_week: step.frequency.per_week };  // days cleared
         shape = true;
       }

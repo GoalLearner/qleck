@@ -1022,6 +1022,14 @@ export function validateProtocol(p: unknown): string[] {
   return errs;
 }
 
+/** How many commitments an own-plan text carries: non-empty lines longer
+ *  than two characters. ONE counter, shared by the interview band
+ *  (interviewBand.ts) and ownPlanErrors below, so the two never disagree
+ *  about the same text. */
+export function ownPlanLineCount(ownPlan: string): number {
+  return ownPlan.split(/\n+/).map(l => l.trim()).filter(l => l.length > 2).length;
+}
+
 /** Tier-2 own-plan reviews: the protocol must remain the USER'S plan.
  *  Every step declares provenance, their commitments survive as user-sourced
  *  steps, and Qoach's required additions never outnumber the plan they were
@@ -1037,7 +1045,7 @@ export function ownPlanErrors(p: Protocol, ownPlan: string | null): string[] {
   }
   const userSteps = steps.filter(st => st.source === 'user').length;
   const qoachSteps = steps.filter(st => st.source === 'qoach').length;
-  const planLines = ownPlan.split(/\n+/).map(l => l.trim()).filter(l => l.length > 2).length;
+  const planLines = ownPlanLineCount(ownPlan);
   const minUser = Math.min(2, Math.max(1, planLines));
   if (userSteps < minUser) {
     errs.push(`own-plan review: at least ${minUser} step(s) must realize the user's own commitments (source 'user') — their plan has ${planLines} commitment line(s) but only ${userSteps} step(s) carry source 'user'. Keep their commitments as steps; amend amounts only where the verdict said so.`);

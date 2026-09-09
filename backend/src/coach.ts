@@ -8,7 +8,8 @@ import {
 } from './prompts';
 import { emissionFingerprint, planNextAttempt } from './retryPolicy';
 import { clampToLadder, ladderFor, ladderLine, pacingDirection } from './pace';
-import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
+import { interviewBand } from './interviewBand';
+import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, ownPlanLineCount, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
@@ -27,8 +28,6 @@ import {
 // Between the floor and the cap the coach chooses freely, and the readiness
 // audit below can veto a thin verdict — that is what carries an
 // under-specified goal to a 4th or 5th question while a simple one stops at 3.
-const MIN_CLARIFY_TURNS = 3;
-const MAX_CLARIFY_TURNS = 5;
 
 export interface SessionRow {
   id: string;
@@ -453,16 +452,13 @@ export async function coachTurn(
   const progressing =
     session.last_extract_added === undefined || session.last_extract_added > 0 || needsConcreteness;
   const wantsMore = (missing.length > 0 || needsConcreteness) && progressing;
-  // Tier-2 own-plan reviews: the plan itself carries most of what an
-  // interview collects, and the user's posture is "check my work", not
-  // "coach me" — so the band tightens to 1-2 questions, no extension. One
-  // question is still FORCED: odds priced with zero user facts would be the
-  // exact dishonesty the coached lane's floor exists to prevent.
+  // Tier-2 own-plan reviews: a plan that says a lot carries most of what an
+  // interview collects, so the band tightens to 1-2 questions. A plan that
+  // says little does not — and the old rule could not tell them apart, so a
+  // one-line plan was asked LESS than a blank goal and the gaps were filled
+  // silently. The band now scales with the plan; see interviewBand.ts.
   const ownPlanMode = !!session.own_plan;
-  const minTurns = ownPlanMode ? 1 : MIN_CLARIFY_TURNS;
-  const ceiling = ownPlanMode
-    ? 2
-    : wantsMore ? MAX_CLARIFY_TURNS + 1 : MAX_CLARIFY_TURNS;
+  const { minTurns, ceiling } = interviewBand(ownPlanMode ? ownPlanLineCount(session.own_plan!) : null, wantsMore);
   const atCeiling = session.clarify_turns >= ceiling;
   const forceAsk =
     session.clarify_turns < minTurns ||

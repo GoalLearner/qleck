@@ -394,6 +394,27 @@ sequenced and checked against the code before a line was written.
   working — and the helper line under the stepper says so, which is only true
   because the counter-offer picker shipped first. `npm run check:timeline`,
   16 fixtures.
+- **A thin own-plan gets a real interview.** "I already have a plan" used to
+  tighten the interview to one or two questions, no extension, whatever the
+  plan said — on the theory that the plan carries most of what an interview
+  collects. True of a five-line plan; false of a one-line one, and the rule
+  could not tell them apart. So a user who typed *"run more"* under "I
+  already have a plan" was asked LESS than a user who typed nothing, and the
+  gaps were filled silently. The cousin's note was the other way round: *"if
+  the user gets stumped, Qleck comes back in for suggestions."*
+
+  The band now scales with how much the plan says. Four or more commitment
+  lines keep today's one-to-two. Two or three earn two-to-three (four while
+  the answers keep adding facts); one earns two-to-four (five). The floor
+  rises to two for every thin plan — odds priced on a single fact would be
+  the dishonesty the coached floor exists to prevent. The line counter is the
+  one `ownPlanErrors` already used, now shared, so the two rules never
+  disagree about the same text. Server-side, live; nothing to build.
+
+  Honest limit: the steer the model reads still SAYS "one or two questions".
+  The band is enforced by withholding the verdict tool, so behaviour is right
+  regardless — but parameterising that text is a prompt edit, gated by the
+  paid harness, and is its own later commit. `npm run check:band`, 20 bars.
 
 ---
 

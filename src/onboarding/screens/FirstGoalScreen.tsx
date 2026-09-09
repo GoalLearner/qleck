@@ -40,7 +40,7 @@ const GHOSTS = [
   '“read 10 min before bed”', '“do 20 clean pull-ups”', '“cold shower every morning”',
 ];
 
-// Mirrors MIN_CLARIFY_TURNS in backend/src/coach.ts: the server guarantees at
+// Mirrors MIN_CLARIFY_TURNS in backend/src/interviewBand.ts: the server guarantees at
 // least this many questions, so the progress track can promise them.
 const QUESTION_FLOOR = 3;
 

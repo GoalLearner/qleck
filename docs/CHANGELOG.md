@@ -298,7 +298,7 @@ every claim here was checked against its stored payloads rather than guessed.
   sheet's `preventNativeDismiss`, where `gestureEnabled: false` governs the
   interactive pop gesture on PUSHED screens and leaves a modal's drag alone.
 
-### Unreleased · 9 Sep — the cousin's list, step 0
+### Build 32 · 9 Sep — the cousin’s list: the bugs, the picker, by-when, the editor
 
 The owner and his cousin produced nine notes. Two were bugs hit by accident;
 they go first, one commit each. The rest is a plan (`~/.claude/plans/`),

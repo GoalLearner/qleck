@@ -430,7 +430,10 @@ const SUBTASK_TITLE_RE = /\b(warm[\s-]?up|cool[\s-]?down)\b/i;
  *  - derived_from key not in answers (nor a sentinel) -> reject
  *  - assumption when the interview collected everything required -> reject
  */
-const PROVENANCE_SENTINELS = new Set(['goal_text', 'standard_practice']);
+// 'user': the number was typed by the user in the plan editor. A hand-set
+// target has no answer key to cite and is not standard practice; it is the
+// user's own call, and the sheet says so. Set only by protocolEdit.ts.
+const PROVENANCE_SENTINELS = new Set(['goal_text', 'standard_practice', 'user']);
 
 export function provenanceErrors(
   p: Protocol,

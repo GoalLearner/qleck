@@ -117,10 +117,13 @@ function StepProvenance({ step, answers }: {
   const from = step.derived_from ?? [];
   // A key we cannot show a value for says nothing useful, so it is dropped
   // rather than rendered as an empty promise.
-  const cited = from.filter(k => k !== 'goal_text' && k !== 'standard_practice' && answers?.[k]);
+  const cited = from.filter(k => k !== 'goal_text' && k !== 'standard_practice' && k !== 'user' && answers?.[k]);
   const fromGoal = from.includes('goal_text');
   const standard = from.includes('standard_practice');
-  if (!cited.length && !fromGoal && !standard && !step.assumption) return null;
+  // A number the user typed in the plan editor. Not from their answers and
+  // not standard practice: their own call, said as such.
+  const fromUser = from.includes('user');
+  if (!cited.length && !fromGoal && !standard && !fromUser && !step.assumption) return null;
 
   const Line = ({ children, dim }: { children: React.ReactNode; dim?: boolean }) => (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 5 }}>
@@ -144,6 +147,7 @@ function StepProvenance({ step, answers }: {
         </Line>
       ))}
       {fromGoal ? <Line>from your goal, as you wrote it</Line> : null}
+      {fromUser ? <Line>you set this number yourself</Line> : null}
       {/* Said plainly on purpose: this number is NOT from their answers. */}
       {standard ? <Line dim>standard practice for this kind of goal — not from your answers</Line> : null}
       {step.assumption ? (

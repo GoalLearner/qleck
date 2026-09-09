@@ -24,8 +24,9 @@ import {
   rotateRefresh, startEmailCode, verifyEmailCode, verifyPassword, type CodePurpose,
 } from './emailAuth';
 import { verifyAppleToken } from './apple';
-import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
+import { editProtocolStep, classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import { claimDraft, releaseDraft, waitForDraft } from './draftClaim';
+import type { EditOp } from './protocolEdit';
 
 /** The attempt floor (owner call): the coach will not put its name on a plan
  *  it prices below this — the user's ORIGINAL ask on a counter-offer, or a
@@ -187,6 +188,18 @@ function customPaceFloor(verdict: Verdict, pace: PaceKey | undefined):
     return { error: 'below_attempt_floor', floor: ATTEMPT_FLOOR, priced: custom.success_probability, pace: 'custom' };
   }
   return null;
+}
+
+/** The odds the plan was actually built at: the attempt's honest number
+ *  when the user insisted on their original, else the chosen pace's rung,
+ *  else the verdict's own. Written down with the plan so an edited plan has
+ *  a ceiling and a re-price has a baseline — the client used to be the
+ *  only thing that knew this. Null when the verdict carried no number. */
+function chosenOddsFor(verdict: Verdict, pace: PaceKey, variant: 'original' | undefined): number | null {
+  const n = variant === 'original'
+    ? verdict.original_probability
+    : verdict.pace_options?.find(o => o.key === pace)?.success_probability ?? verdict.success_probability;
+  return typeof n === 'number' && Number.isFinite(n) ? Math.round(n) : null;
 }
 
 async function loadSession(env: Env, id: string, deviceId: string): Promise<SessionRow | null> {
@@ -1085,6 +1098,29 @@ export default {
         return json({ sessionId: session.id, pace: out.pace }, 200, cors);
       }
 
+      /* POST /coach/sessions/:id/protocol/edit {op} — one edit to the
+       * accepted (unlocked) protocol: rename, re-time, re-target, or add a
+       * rep. Applied to the STORED plan, refused with a reason when it would
+       * no longer be a plan. No model call; the odds go stale until the
+       * user re-prices or locks. */
+      const editMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol\/edit$/);
+      if (editMatch && request.method === 'POST') {
+        const session = await loadSession(env, editMatch[1], deviceId);
+        if (!session) return json({ error: 'session_not_found' }, 404, cors);
+        if (session.status !== 'protocol' || !session.protocol || !session.verdict) {
+          return json({ error: 'no_protocol_yet', status: session.status }, 409, cors);
+        }
+        const op = body.op === 'update' || body.op === 'add' ? (body as unknown as EditOp) : null;
+        if (!op) return json({ error: 'invalid_op' }, 400, cors);
+        const out = await editProtocolStep(env, session, op);
+        if ('refused' in out) return json({ sessionId: session.id, refused: out.refused }, 200, cors);
+        return json({
+          sessionId: session.id, protocol: out.protocol, step_id: out.step_id, pricing: out.pricing,
+          odds: out.pricing === 'stale' ? null : session.plan_odds ?? null,
+          ...assumptionPayload(session, out.protocol),
+        }, 200, cors);
+      }
+
       /* POST /coach/sessions/:id/protocol/reprice {dropped_step_ids} —
        * Tier-1B commitment picker: trim the accepted (unlocked) protocol,
        * refuse structure-breaking drops with reasons, re-price the rest. */
@@ -1178,9 +1214,10 @@ export default {
           simState.config.pace === wantPace && simState.config.variant === wantVariant
         ) {
           const draft = JSON.parse(session.draft_protocol) as Protocol;
+          const chosen = chosenOddsFor(verdict, wantPace as PaceKey, wantVariant ?? undefined);
           await env.DB
-            .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, updated_at = datetime('now') WHERE id = ?`)
-            .bind(JSON.stringify(draft), session.id)
+            .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, base_protocol = ?, plan_odds = ?, odds_ceiling = ?, updated_at = datetime('now') WHERE id = ?`)
+            .bind(JSON.stringify(draft), JSON.stringify(draft), chosen, chosen, session.id)
             .run();
           {
             const st = sessionStructure(session);
@@ -1212,10 +1249,13 @@ export default {
         if (!result.protocol) {
           return json({ error: 'protocol_generation_failed', details: result.errors }, 502, cors);
         }
-        await env.DB
-          .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, updated_at = datetime('now') WHERE id = ?`)
-          .bind(JSON.stringify(result.protocol), session.id)
-          .run();
+        {
+          const chosen = chosenOddsFor(verdict, pace ?? 'steady', variant);
+          await env.DB
+            .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, base_protocol = ?, plan_odds = ?, odds_ceiling = ?, updated_at = datetime('now') WHERE id = ?`)
+            .bind(JSON.stringify(result.protocol), JSON.stringify(result.protocol), chosen, chosen, session.id)
+            .run();
+        }
         // 2c's calibration dataset starts here (owner spec): the verdict row
         // is written at protocol save, outcome left null until known.
         {

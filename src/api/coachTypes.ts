@@ -18,6 +18,38 @@ export type PaceKey = 'sprint' | 'steady' | 'relaxed' | 'custom';
  *  client only states it, and never fires a build it knows will be refused. */
 export const ATTEMPT_FLOOR = 20;
 
+/** One edit to an unlocked plan — mirrors backend/src/protocolEdit.ts. The
+ *  server applies it to the STORED protocol; server-owned fields (id,
+ *  session_id, derived_from, how_to, source…) are not in the patch on
+ *  purpose, and are ignored if sent. */
+export type ProtocolEditOp =
+  | {
+      op: 'update';
+      step_id: string;
+      patch: {
+        title?: string;
+        kind?: 'binary' | 'quantity' | 'duration';
+        frequency?: { per_week?: number; days?: string[] };
+        quantity?: { amount?: number; unit?: string };
+        duration_minutes?: number;
+        details?: string;
+      };
+    }
+  | {
+      op: 'add';
+      phase_id: string;
+      step: {
+        title: string;
+        kind: 'binary' | 'quantity' | 'duration';
+        frequency: { per_week: number; days?: string[] };
+        quantity?: { amount: number; unit: string };
+        duration_minutes?: number;
+        details?: string;
+        /** Only a step that came from the suggest call untouched. */
+        source?: 'user' | 'qoach';
+      };
+    };
+
 export interface PaceOption {
   key: PaceKey;
   duration_weeks: number;

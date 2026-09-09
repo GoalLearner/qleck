@@ -9,6 +9,7 @@ import {
 import { emissionFingerprint, planNextAttempt } from './retryPolicy';
 import { clampToLadder, ladderFor, ladderLine, pacingDirection } from './pace';
 import { interviewBand } from './interviewBand';
+import { applyProtocolOp, type EditOp } from './protocolEdit';
 import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, ownPlanLineCount, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
@@ -45,6 +46,12 @@ export interface SessionRow {
   simulation?: string | null;
   /** Tier-2: the user's own plan under review (NULL = coached intake). */
   own_plan?: string | null;
+  /** The protocol AS GENERATED, never edited — the pricing baseline. */
+  base_protocol?: string | null;
+  /** Odds of the CURRENT protocol; NULL = stale since the last edit. */
+  plan_odds?: number | null;
+  /** The chosen pace's odds at generation — an edited plan's ceiling. */
+  odds_ceiling?: number | null;
   /** Transient (never persisted): keys the latest extraction added. Fuels the
    *  progress gate — a 6th question must be EARNED by a productive 5th. */
   last_extract_added?: number;
@@ -1461,6 +1468,60 @@ export async function priceCustomPace(
 }
 
 /**
+ * The structural gate a changed plan has to clear, shared by the drop picker
+ * and the editor so the two can never disagree about what "still a plan"
+ * means: no emptied phase, the schema, the session rules, and the physique
+ * pillars. NOT the provenance/exhausted-key/milestone validators — those
+ * police the MODEL's obligations against the answers, and a user's change
+ * cannot violate them (docs/CHANGELOG.md, build 29). Returns the first
+ * reason, or null.
+ */
+export function protocolFirstError(goalStatement: string): (p: Protocol) => string | null {
+  return (p: Protocol) => {
+    if (p.phases.some(ph => ph.steps.length === 0)) return 'that phase would be left with nothing to do';
+    const errs = [
+      ...validateProtocol(p),
+      ...sessionErrors(p),
+      ...physiquePillarErrors(goalStatement, p),
+    ];
+    return errs.length ? String(errs[0]) : null;
+  };
+}
+
+/**
+ * One edit to the accepted, not-yet-locked protocol — rename, re-time,
+ * re-target, or add a rep. The rules live in protocolEdit.ts and are
+ * bar-tested there; this is the persistence. No model call: the edited plan
+ * is priced later, in one batch, when the user re-prices or locks
+ * ("Re-price & lock"). Until then plan_odds is NULL and the reveal shows
+ * no number, because none describes the plan.
+ */
+export async function editProtocolStep(
+  env: Env,
+  session: SessionRow,
+  op: EditOp,
+): Promise<
+  | { protocol: Protocol; step_id: string; pricing: 'unchanged' | 'stale' }
+  | { refused: { step_id: string; reason: string } }
+> {
+  const verdict = JSON.parse(session.verdict!) as Verdict;
+  const stored = JSON.parse(session.protocol!) as Protocol;
+  const out = applyProtocolOp(stored, op, protocolFirstError(verdict.goal_statement));
+  if ('refused' in out) return out;
+  session.protocol = JSON.stringify(out.protocol);
+  if (out.pricing === 'stale') session.plan_odds = null;
+  await env.DB
+    .prepare(
+      out.pricing === 'stale'
+        ? `UPDATE coach_sessions SET protocol = ?, plan_odds = NULL, updated_at = datetime('now') WHERE id = ?`
+        : `UPDATE coach_sessions SET protocol = ?, updated_at = datetime('now') WHERE id = ?`,
+    )
+    .bind(session.protocol, session.id)
+    .run();
+  return { protocol: out.protocol, step_id: out.step_id, pricing: out.pricing };
+}
+
+/**
  * Tier-1B commitment picker: the user drops commitments from the accepted
  * (not-yet-locked) protocol; the server is the gate. Structure is law —
  * a drop that breaks the validators (an emptied phase, a lost pillar, a
@@ -1488,15 +1549,7 @@ export async function repriceTrimmedProtocol(
     ...p,
     phases: p.phases.map(ph => ({ ...ph, steps: ph.steps.filter(s => !ids.has(s.id)) })),
   });
-  const firstError = (p: Protocol): string | null => {
-    if (p.phases.some(ph => ph.steps.length === 0)) return 'that phase would be left with nothing to do';
-    const errs = [
-      ...validateProtocol(p),
-      ...sessionErrors(p),
-      ...physiquePillarErrors(verdict.goal_statement, p),
-    ];
-    return errs.length ? String(errs[0]) : null;
-  };
+  const firstError = protocolFirstError(verdict.goal_statement);
 
   const refused: { step_id: string; reason: string }[] = [];
   if (firstError(trim(full, new Set(wanted)))) {
@@ -1545,9 +1598,10 @@ export async function repriceTrimmedProtocol(
   if (!Number.isFinite(p)) return { error: 'price_failed', refused };
   p = Math.max(1, Math.min(cur, p)); // dropping can only cost
   session.protocol = JSON.stringify(trimmed);
+  session.plan_odds = p;
   await env.DB
-    .prepare(`UPDATE coach_sessions SET protocol = ?, updated_at = datetime('now') WHERE id = ?`)
-    .bind(session.protocol, session.id)
+    .prepare(`UPDATE coach_sessions SET protocol = ?, plan_odds = ?, updated_at = datetime('now') WHERE id = ?`)
+    .bind(session.protocol, p, session.id)
     .run();
   return { protocol: trimmed, odds: p, note: String(input?.note ?? '').trim().slice(0, 220), refused };
 }

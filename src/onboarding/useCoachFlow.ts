@@ -6,8 +6,8 @@
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { answerCoachQuestion, generateProtocol, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, startCoachSession } from '../api/coach';
-import type { PaceKey, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
+import { answerCoachQuestion, editProtocol, generateProtocol, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, startCoachSession } from '../api/coach';
+import type { PaceKey, ProtocolEditOp, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
 import {
   ATTEMPT_FLOOR, CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
   type CoachTurnResponse, type Protocol, type Verdict,
@@ -161,6 +161,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setPace(use);
     setVariant('offer');
     setPickedOdds(null);
+    setOddsStale(false);
     setPhase('building');
     generateProtocol(id, use, undefined, estimate).then(
       res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
@@ -172,6 +173,10 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
   // before locking can only lower the number, and this is where the lowered
   // number lives (the lock and the reveal chip both prefer it).
   const [pickedOdds, setPickedOdds] = useState<number | null>(null);
+  // True once an edit has changed the work itself: no number on file
+  // describes the plan any more, and the reveal must not show one until it
+  // is re-priced or locked. A details-only edit does not set it.
+  const [oddsStale, setOddsStale] = useState(false);
   const repriceWithDrops = useCallback((ids: string[]): Promise<{ refused: { step_id: string; reason: string }[] } | null> => {
     const id = sessionId.current;
     if (!id || !ids.length) return Promise.resolve(null);
@@ -180,8 +185,29 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
         if (res.protocol && typeof res.odds === 'number') {
           setProtocol(res.protocol);
           setPickedOdds(res.odds);
+          setOddsStale(false);
         }
         return { refused: res.refused ?? [] };
+      })
+      .catch(() => null);
+  }, []);
+
+  /** One edit to the accepted plan. The server applies it to the stored
+   *  protocol; a refusal comes back with the reason and nothing changes. A
+   *  change to the work itself makes the odds stale until the plan is
+   *  re-priced or locked. Null = the call itself failed. */
+  const applyEdit = useCallback((op: ProtocolEditOp): Promise<{ refused?: { step_id: string; reason: string } } | null> => {
+    const id = sessionId.current;
+    if (!id) return Promise.resolve(null);
+    return editProtocol(id, op)
+      .then(res => {
+        if (res.refused) return { refused: res.refused };
+        if (!res.protocol) return null;
+        setProtocol(res.protocol);
+        setAssumptions(res.assumptions ?? []);
+        setQuickPicks(res.quick_picks ?? {});
+        if (res.pricing === 'stale') { setOddsStale(true); setPickedOdds(null); }
+        return {};
       })
       .catch(() => null);
   }, []);
@@ -193,6 +219,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     if (!id) return;
     setVariant('original');
     setPickedOdds(null);
+    setOddsStale(false);
     setPhase('building');
     generateProtocol(id, undefined, 'original', estimate).then(
       res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
@@ -382,12 +409,15 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     protocol && verdict
       // durationWeeks comes from the PROTOCOL: a sprint or relaxed pace means
       // the verdict's headline weeks and the generated plan's weeks differ.
-      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: pickedOdds ?? chosenOdds, protocol, coachSessionId: sessionId.current ?? undefined }
+      // An edited, not-yet-re-priced plan locks with NO odds rather than the
+      // number of the plan it used to be; parseCreateGoal treats absence as a
+      // fine state. "Re-price & lock" (step 1c) makes this the rare path.
+      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: oddsStale ? undefined : (pickedOdds ?? chosenOdds), protocol, coachSessionId: sessionId.current ?? undefined }
       : null;
 
   return {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
-    pace, setPace, chosenOdds, pickedOdds, repriceWithDrops, chosenStatement, buildOriginal,
+    pace, setPace, chosenOdds, pickedOdds, oddsStale, repriceWithDrops, applyEdit, chosenStatement, buildOriginal,
     assumptions, quickPicks, missingRequired, fixAssumption,
     sim, prevSim, editedKey, editInput, switchPace, priceCustom, verdictAnswers,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan, ownPlanMode,

@@ -415,6 +415,32 @@ sequenced and checked against the code before a line was written.
   The band is enforced by withholding the verdict tool, so behaviour is right
   regardless — but parameterising that text is a prompt edit, gated by the
   paid harness, and is its own later commit. `npm run check:band`, 20 bars.
+- **The server can edit a plan** (invisible until the editor lands). The
+  foundation for "build it yourself": `POST /coach/sessions/:id/protocol/edit`
+  takes ONE op — rename, re-time, re-target, or add a rep — and applies it to
+  the STORED protocol, never to a plan the client sent back. Refused, with the
+  reason, when the result would no longer be a plan; the gate is the same one
+  the drop picker uses (`protocolFirstError`, now shared), so the two can
+  never disagree about what "still a plan" means.
+
+  The rules that keep it honest are deterministic and pinned by 41 bars
+  (`npm run check:edit`): server-owned fields in a patch are ignored, never
+  trusted; any edit other than prose deletes the rep's `how_to` — it described
+  the old rep, and a counts-as-done saying "40 minutes" after the user set 20
+  is a fabrication on screen; a number the user typed cites `derived_from:
+  ['user']` (a new legal citation — the sheet says *"you set this number
+  yourself"*) and drops any assumption; a session-attached rep's days are
+  locked, because the session repair would silently revert them; days win
+  over per-week.
+
+  Migration 0018 writes three things down the server never recorded: the
+  plan **as generated** (the pricing baseline), the odds of the **current**
+  plan (NULL = stale, and the reveal shows no number that does not describe
+  the plan), and the chosen pace's odds at generation — an edited plan's
+  **ceiling**: it can match the coach's design at that runway, never
+  out-price it. `protocols.kind` lands for the per-rep drop's cap fix.
+  Client plumbing (`applyEdit`, `oddsStale`; an unpriced plan locks with no
+  odds, which the server already treats as a fine state) is in, unused.
 
 ---
 

@@ -163,6 +163,24 @@ export function repriceProtocol(sessionId: string, droppedStepIds: string[]): Pr
   return post(`/coach/sessions/${sessionId}/protocol/reprice`, { dropped_step_ids: droppedStepIds });
 }
 
+/** One edit to the accepted (unlocked) protocol — rename, re-time, re-target,
+ *  or add a rep. The server applies it to the stored plan and refuses with a
+ *  reason when it would no longer be a plan. No model call; `pricing: 'stale'`
+ *  means the odds no longer describe the plan until it is re-priced. */
+export function editProtocol(sessionId: string, op: import('./coachTypes').ProtocolEditOp): Promise<{
+  protocol?: import('./coachTypes').Protocol;
+  step_id?: string;
+  pricing?: 'unchanged' | 'stale';
+  odds?: number | null;
+  refused?: { step_id: string; reason: string };
+  assumptions?: import('./coachTypes').StepAssumption[];
+  correctable_keys?: string[];
+  quick_picks?: Record<string, string[]>;
+  error?: string;
+}> {
+  return post(`/coach/sessions/${sessionId}/protocol/edit`, op);
+}
+
 export function generateProtocol(
   sessionId: string, pace?: string, variant?: 'original', userEstimate?: number | null,
 ): Promise<ProtocolResponse> {

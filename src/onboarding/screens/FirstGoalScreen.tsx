@@ -1138,7 +1138,6 @@ function ProtocolReveal({
   const [fixingKey, setFixingKey] = useState<string | null>(null);
   const [fixValue, setFixValue] = useState('');
   const [locked, setLocked] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
   const confettiRef = useRef<ConfettiHandle>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -1154,8 +1153,6 @@ function ProtocolReveal({
   const active = phases[open] ?? phases[0];
   const firstRep = phases[0]?.steps[0]?.title ?? '';
   const openingReps = (phases[0]?.steps ?? []).reduce((n, st) => n + st.frequency.per_week, 0);
-
-  const say = (msg: string) => { setNote(msg); later(() => setNote(null), 2800); };
 
   const lockIn = () => {
     if (locked) return;
@@ -1348,12 +1345,11 @@ function ProtocolReveal({
           ) : (
             <>
               <PrimaryButton label="Lock it in" onPress={lockIn} />
-              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 26, marginTop: 4 }}>
-                <TextButton
-                  label="Adjust something"
-                  height={40}
-                  onPress={() => say('Adjusting mid-plan lands after launch — Start over for a different plan.')}
-                />
+              {/* "Adjust something" used to sit here: a stub whose whole
+                  behaviour was a toast at the top of the screen saying it was
+                  not built. A tester reported it as "nothing happens", which
+                  was accurate. Editing lands in this slot when it is real. */}
+              <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 4 }}>
                 <TextButton label="Start over" height={40} onPress={onRestart} />
               </View>
             </>
@@ -1361,23 +1357,6 @@ function ProtocolReveal({
         </View>
         <CoachFooter surface="protocol" />
       </View>
-
-      {note ? (
-        <View style={{ position: 'absolute', top: 18, left: 0, right: 0, alignItems: 'center' }} pointerEvents="none">
-          <Pop>
-            <View
-              style={{
-                maxWidth: 460, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 11,
-                backgroundColor: night.surface, borderWidth: 1, borderColor: night.border,
-              }}
-            >
-              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, lineHeight: 18, color: night.text, textAlign: 'center' }}>
-                {note}
-              </Text>
-            </View>
-          </Pop>
-        </View>
-      ) : null}
 
       <Confetti ref={confettiRef} />
     </View>

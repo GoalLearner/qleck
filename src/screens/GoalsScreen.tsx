@@ -486,8 +486,13 @@ function PauseButton({ paused, onToggle }: { paused: boolean; onToggle: () => vo
   );
 }
 
-function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onShare, onStopSharing }: {
-  m: GoalModel; onBack: () => void; onDrop: () => void; onTweak: () => void;
+function DetailView({ m, onBack, onDrop, onTweak, onRegenerate, onTogglePause, shareUrl, onShare, onStopSharing }: {
+  m: GoalModel; onBack: () => void; onDrop: () => void; onTweak: (stepId?: string) => void;
+  /** Old-shape goals only: rebuild with the current engine. Lives on the
+   *  parent because DetailView has no navigator of its own — the button used
+   *  to reach for `navigation` here and got the DOM global instead, which
+   *  TypeScript accepts and iOS throws on. Nothing happened when tapped. */
+  onRegenerate: () => void;
   onTogglePause: () => Promise<void>;
   shareUrl: string | null;
   onShare: () => Promise<string>;
@@ -513,7 +518,7 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onSha
         </View>
         {!protocol.sessions?.length && (
           <Pressable
-            onPress={() => (navigation as any).navigate('NewGoal', { prefill: m.goal.statement, replaceGoalId: m.goal.id })}
+            onPress={onRegenerate}
             style={{ marginTop: 10, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' }}
           >
             <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.creamText }}>⟳ Regenerate with the new engine</Text>
@@ -553,7 +558,7 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onSha
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', marginTop: 14, paddingHorizontal: 4 }}>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: colors.sectionLabel }}>Plan feels off? </Text>
-        <Pressable onPress={onTweak}>
+        <Pressable onPress={() => onTweak()}>
           <Text style={{ fontFamily: fonts.bold, fontSize: 12.5, color: colors.accentLink, textDecorationLine: 'underline' }}>
             Tweak it with Qoach
           </Text>
@@ -569,7 +574,7 @@ function DetailView({ m, onBack, onDrop, onTweak, onTogglePause, shareUrl, onSha
           phaseLabel={sheet.phaseLabel}
           goalId={m.goal.id}
           onClose={() => setSheet(null)}
-          onTweak={() => { setSheet(null); onTweak(); }}
+          onTweak={stepId => { setSheet(null); onTweak(stepId); }}
         />
       ) : null}
     </FadeInUp>
@@ -625,7 +630,8 @@ export default function GoalsScreen() {
               m={sel}
               onBack={() => setSelId(null)}
               onDrop={() => { dropGoal(sel.goal.id); setSelId(null); }}
-              onTweak={() => navigation.navigate('AdjustPlan', { goalId: sel.goal.id })}
+              onTweak={stepId => navigation.navigate('AdjustPlan', { goalId: sel.goal.id, ...(stepId ? { stepId } : {}) })}
+              onRegenerate={() => navigation.navigate('NewGoal', { prefill: sel.goal.statement, replaceGoalId: sel.goal.id })}
               shareUrl={sel.goal.shareToken ? witnessUrl(sel.goal.shareToken) : null}
               onShare={() => shareGoalById(sel.goal.id)}
               onStopSharing={() => unshareGoalById(sel.goal.id)}

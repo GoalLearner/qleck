@@ -4,8 +4,8 @@
 // is where a person actually DOES the rep, so "what am I meant to do?" gets
 // asked there, in front of an unchecked circle at 7am. Goals is where you go
 // to read the plan. Both need it, so it lives here.
-import React, { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { kindLook } from './protocolViews';
 import type { ProtocolStep } from '../api/coachTypes';
 import { fetchGoalProvenance } from '../api/goals';
@@ -167,7 +167,9 @@ function StepProvenance({ step, answers }: {
  * plans people already have, not only the ones written after it.
  */
 export function RepSheet({ step, phaseLabel, goalId, onClose, onTweak }: {
-  step: ProtocolStep; phaseLabel: string; goalId: string; onClose: () => void; onTweak: () => void;
+  step: ProtocolStep; phaseLabel: string; goalId: string; onClose: () => void;
+  /** Fires AFTER the sheet has finished dismissing, with the rep it was open on. */
+  onTweak: (stepId: string) => void;
 }) {
   const look = kindLook(step.kind);
   const how = step.how_to;
@@ -179,8 +181,28 @@ export function RepSheet({ step, phaseLabel, goalId, onClose, onTweak }: {
     void fetchGoalProvenance(goalId).then(a => { if (alive) setAnswers(a); });
     return () => { alive = false; };
   }, [goalId]);
+  // Tweak used to close the sheet and push the Adjust screen in the same
+  // tick. This is an RN <Modal> — a UIViewController presentation — and
+  // AdjustPlan is a native-stack modal, another one. Dismissing one while
+  // presenting the next is the iOS "presentation in progress" swallow:
+  // nothing appears, no error. Reported from the device as "nothing happens
+  // when you click adjust". So on iOS the sheet hides itself first and the
+  // navigation waits for onDismiss, which fires when the dismissal has
+  // actually finished. Elsewhere there is no such race and onDismiss never
+  // fires, so the action runs at once.
+  const [open, setOpen] = useState(true);
+  const pending = useRef<(() => void) | null>(null);
+  const tweak = () => {
+    const go = () => onTweak(step.id);
+    if (Platform.OS === 'ios') { pending.current = go; setOpen(false); } else go();
+  };
+  const afterDismiss = () => {
+    const go = pending.current;
+    pending.current = null;
+    go?.();
+  };
   return (
-    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+    <Modal transparent animationType="slide" visible={open} onRequestClose={onClose} onDismiss={afterDismiss}>
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable
           onPress={onClose}
@@ -253,7 +275,7 @@ export function RepSheet({ step, phaseLabel, goalId, onClose, onTweak }: {
                 <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, color: colors.bg }}>Got it</Text>
               </Pressable>
               <Pressable
-                onPress={onTweak}
+                onPress={tweak}
                 style={{ paddingVertical: 15, paddingHorizontal: 18, borderRadius: 999, borderWidth: 1, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}
               >
                 <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.muted }}>Tweak</Text>

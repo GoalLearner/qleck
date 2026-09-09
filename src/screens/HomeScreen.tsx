@@ -1126,7 +1126,7 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
               phaseLabel={sheet.phaseLabel}
               goalId={sheet.goalId}
               onClose={() => setSheet(null)}
-              onTweak={() => { setSheet(null); navigation.navigate('AdjustPlan', { goalId: sheet.goalId }); }}
+              onTweak={stepId => { setSheet(null); navigation.navigate('AdjustPlan', { goalId: sheet.goalId, stepId }); }}
             />
           ) : null}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
@@ -1322,7 +1322,7 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
               phaseLabel={sheet.phaseLabel}
               goalId={sheet.goalId}
               onClose={() => setSheet(null)}
-              onTweak={() => { setSheet(null); navigation.navigate('AdjustPlan', { goalId: sheet.goalId }); }}
+              onTweak={stepId => { setSheet(null); navigation.navigate('AdjustPlan', { goalId: sheet.goalId, stepId }); }}
             />
           ) : null}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}

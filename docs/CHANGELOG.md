@@ -298,6 +298,30 @@ every claim here was checked against its stored payloads rather than guessed.
   sheet's `preventNativeDismiss`, where `gestureEnabled: false` governs the
   interactive pop gesture on PUSHED screens and leaves a modal's drag alone.
 
+### Unreleased · 9 Sep — the cousin's list, step 0
+
+The owner and his cousin produced nine notes. Two were bugs hit by accident;
+they go first, one commit each. The rest is a plan (`~/.claude/plans/`),
+sequenced and checked against the code before a line was written.
+
+- **"Nothing happens when you click adjust."** Three causes, all real:
+  - The button the tester met was a stub. On the plan reveal, "Adjust
+    something" did nothing but show a toast at the TOP of the screen —
+    *"Adjusting mid-plan lands after launch"* — while the finger was at the
+    bottom. A placeholder labelled like a feature. Deleted, along with the
+    toast machinery that existed only to say so; editing lands in that slot
+    when it is real.
+  - **Regenerate with the new engine** (Goals, old-shape goals) reached for
+    `navigation` inside a component that has none. TypeScript let it through
+    because `lib.dom` declares a global `navigation`; iOS threw on press.
+    Now a prop from the parent, like Tweak already was.
+  - **Tweak from a rep** closed the RN `<Modal>` and pushed the Adjust screen
+    in the same tick — two UIViewController presentations crossing, the iOS
+    "presentation in progress" swallow. The sheet now hides itself and the
+    navigation waits for `onDismiss`. On iOS only; elsewhere there is no race
+    and `onDismiss` never fires. Tweak also passes the rep it was open on,
+    which the per-rep drop (step 3) will need.
+
 ---
 
 ## Not shipped

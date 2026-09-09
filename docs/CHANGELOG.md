@@ -345,6 +345,34 @@ sequenced and checked against the code before a line was written.
     modal would never close.
   - Not changed: Drop and Delete on a goal are arm-then-tap with a 3–4s
     window — a confirmation, if a thin one.
+- **"I have 5 weeks — price that" has somewhere to go.** The cousin's note:
+  *"give more flexibility to the user even if not ideal/optimal."* The v29
+  name-your-own-weeks picker already did exactly that, with no floor — and
+  rendered only on FEASIBLE verdicts. Three gates switched it off on a
+  counter-offer, which is precisely the verdict where the coach has just
+  overruled the user's timeline. That page was strictly binary: the coach's
+  weeks, or the coach's read of the original.
+
+  The picker is on the counter-offer page now, its stepper already reading
+  the runway the user asked for. Pricing it adds a third pill (**Yours · 5wk
+  · 26%**), flips the dial to the priced number, and the button becomes
+  **Build my plan — 5 weeks**; below the 20% floor the number is still shown,
+  with the reason it will not build, and only the deal builds. The ladder a
+  counter clamps against is its own rung — the one price that verifiably
+  exists. The original ask is deliberately not a rung: on a scope-changed
+  counter it prices a different statement, and the two cannot be told apart.
+
+  Two latent bugs the picker would have exposed, fixed on the way:
+  - The generator chose its pacing sentence by pace KEY — "time-crunch" only
+    for sprint, "no-rush" for everything else — so a custom runway shorter
+    than the verdict's would have been described as "more air than your
+    recommended pace". It is chosen by direction now.
+  - **The 20% floor did not cover custom paces.** A 10% runway was buildable
+    on any feasible verdict. It is uniform now: the picker prices anything
+    (a brutal runway gets its honest number), the build does not.
+
+  `npm run check:pace` — 22 bars, no model calls. No prompt text changed;
+  the ladder the model is shown is data, and its template is untouched.
 
 ---
 

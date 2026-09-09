@@ -26,6 +26,13 @@ import {
 import { verifyAppleToken } from './apple';
 import { classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import { claimDraft, releaseDraft, waitForDraft } from './draftClaim';
+
+/** The attempt floor (owner call): the coach will not put its name on a plan
+ *  it prices below this — the user's ORIGINAL ask on a counter-offer, or a
+ *  runway they named themselves. Enforced here because the client is never
+ *  the thing holding the line; the client only states it. Mirrored at
+ *  src/api/coachTypes.ts. */
+const ATTEMPT_FLOOR = 20;
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, getGoalProvenance, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
@@ -163,6 +170,23 @@ async function driveDraft(
     // claim carries its own expiry rather than trusting a release.
     if (claim !== null) await releaseDraft(env.DB, sessionId, claim);
   }
+}
+
+/** A user-named runway is buildable only at the attempt floor or better —
+ *  the picker prices anything (a brutal runway gets its honest number), the
+ *  build does not. Before this the floor covered only the ORIGINAL variant,
+ *  so a 10% custom pace was buildable on any feasible verdict. Uniform now:
+ *  it is the stated principle, and a counter-offer's picker would otherwise
+ *  have been a way around it. Null when there is nothing to refuse. */
+function customPaceFloor(verdict: Verdict, pace: PaceKey | undefined):
+  { error: 'no_custom_pace' } | { error: 'below_attempt_floor'; floor: number; priced: number; pace: 'custom' } | null {
+  if (pace !== 'custom') return null;
+  const custom = verdict.pace_options?.find(o => o.key === 'custom');
+  if (!custom) return { error: 'no_custom_pace' };
+  if (custom.success_probability < ATTEMPT_FLOOR) {
+    return { error: 'below_attempt_floor', floor: ATTEMPT_FLOOR, priced: custom.success_probability, pace: 'custom' };
+  }
+  return null;
 }
 
 async function loadSession(env: Env, id: string, deviceId: string): Promise<SessionRow | null> {
@@ -1015,10 +1039,12 @@ export default {
         const variant = body.variant === 'original' ? 'original' as const : null;
         if (variant) {
           const orig = verdict.decision === 'counter_offer' ? verdict.original_probability : undefined;
-          if (typeof orig !== 'number' || orig < 20) {
-            return json({ error: 'below_attempt_floor', floor: 20, original: orig ?? null }, 403, cors);
+          if (typeof orig !== 'number' || orig < ATTEMPT_FLOOR) {
+            return json({ error: 'below_attempt_floor', floor: ATTEMPT_FLOOR, original: orig ?? null }, 403, cors);
           }
         }
+        const customFloor = customPaceFloor(verdict, pace);
+        if (customFloor) return json(customFloor, customFloor.error === 'no_custom_pace' ? 400 : 403, cors);
         await env.DB
           .prepare(`UPDATE coach_sessions SET draft_protocol = NULL, simulation = NULL WHERE id = ?`)
           .bind(session.id)
@@ -1099,9 +1125,8 @@ export default {
         // The attempt floor (owner call): the user may insist on the ORIGINAL
         // ask of a counter-offer, but only when the coach prices it at 20% or
         // better — below that the coach will not put its name on a plan, and
-        // the client states the floor rather than hiding the option. Enforced
-        // HERE because the client is never the thing holding the line.
-        const ATTEMPT_FLOOR = 20;
+        // the client states the floor rather than hiding the option. The same
+        // floor now covers a runway the user named (ATTEMPT_FLOOR, above).
         const variant = body.variant === 'original' ? 'original' as const : undefined;
         // The user's own call on their odds, taken before the verdict was
         // shown to them. Validated here for the same reason the attempt floor
@@ -1116,6 +1141,8 @@ export default {
             return json({ error: 'below_attempt_floor', floor: ATTEMPT_FLOOR, original: orig ?? null }, 403, cors);
           }
         }
+        const customFloor = customPaceFloor(verdict, pace);
+        if (customFloor) return json(customFloor, customFloor.error === 'no_custom_pace' ? 400 : 403, cors);
         // A draft is very likely already being written: the verdict kicks one
         // the moment it is issued, and it takes about as long as the user
         // spends reading the verdict. Tapping "Build my plan" while it runs

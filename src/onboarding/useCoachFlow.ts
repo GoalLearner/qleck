@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { answerCoachQuestion, generateProtocol, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, startCoachSession } from '../api/coach';
 import type { PaceKey, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
 import {
-  CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
+  ATTEMPT_FLOOR, CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
   type CoachTurnResponse, type Protocol, type Verdict,
 } from '../api/coachTypes';
 
@@ -145,15 +145,26 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
   // the user's ORIGINAL ask (the 20%+ attempt the owner granted them).
   const [variant, setVariant] = useState<'offer' | 'original'>('offer');
 
-  const buildPlan = useCallback(() => {
+  const buildPlan = useCallback((paceOverride?: PaceKey) => {
     const id = sessionId.current;
     if (!id) return;
+    // A counter-offer's buttons name the pace they build — "Build my plan —
+    // 5 weeks" or "Take the deal" — because on that page the pill and the
+    // button can disagree, and the button is what the user meant. Validated
+    // rather than trusted: PrimaryButton hands its press event to onPress, so
+    // a bare `onPress={onBuild}` arrives here with an event where a pace
+    // would be.
+    const use: PaceKey =
+      paceOverride === 'sprint' || paceOverride === 'steady' || paceOverride === 'relaxed' || paceOverride === 'custom'
+        ? paceOverride
+        : pace;
+    setPace(use);
     setVariant('offer');
     setPickedOdds(null);
     setPhase('building');
-    generateProtocol(id, pace, undefined, estimate).then(
+    generateProtocol(id, use, undefined, estimate).then(
       res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
-      err => fail(err, buildPlan),
+      err => fail(err, () => buildPlan(use)),
     );
   }, [fail, pace, estimate]);
 
@@ -291,6 +302,10 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
         setVerdict(v => v
           ? { ...v, pace_options: [...(v.pace_options ?? []).filter(o => o.key !== 'custom'), res.pace] }
           : v);
+        // Below the floor the number is shown but never built: selecting it
+        // would fire a prepare the server refuses, and the poll loop's
+        // self-heal would keep re-firing it. The pills stay where they were.
+        if (res.pace.success_probability < ATTEMPT_FLOOR) return true;
         setPace('custom');
         setPrevSim(null); setEditedKey(null); setSim(null);
         healTries.current = 0;

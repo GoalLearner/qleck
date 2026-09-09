@@ -12,6 +12,12 @@ import type { Protocol } from '../../backend/src/protocolSchema';
 
 export type PaceKey = 'sprint' | 'steady' | 'relaxed' | 'custom';
 
+/** The attempt floor, mirrored from the server (backend/src/index.ts). Qoach
+ *  will not build a plan it prices below this — the original ask on a
+ *  counter-offer, or a runway the user named. The server enforces it; the
+ *  client only states it, and never fires a build it knows will be refused. */
+export const ATTEMPT_FLOOR = 20;
+
 export interface PaceOption {
   key: PaceKey;
   duration_weeks: number;

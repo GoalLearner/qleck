@@ -7,6 +7,7 @@ import {
   REFUSAL_COPY, REVISION_SYSTEM, SAFETY_SYSTEM, SAFETY_TOOL, VERDICT_TOOL, protocolTool,
 } from './prompts';
 import { emissionFingerprint, planNextAttempt } from './retryPolicy';
+import { clampToLadder, ladderFor, ladderLine, pacingDirection } from './pace';
 import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
@@ -768,7 +769,8 @@ export async function generateProtocol(
   variant?: 'original',
 ): Promise<{ protocol?: Protocol; errors?: string[] }> {
   // The chosen pace re-times the plan: same goal, same facts, different
-  // runway. Steady IS the verdict, so only sprint/relaxed change anything.
+  // runway. Steady IS the verdict, so only sprint/relaxed/custom change
+  // anything.
   const paceOpt = pace && pace !== 'steady' ? verdict.pace_options?.find(o => o.key === pace) : undefined;
   const paceWeeks = paceOpt?.duration_weeks ?? verdict.duration_weeks;
   // The attempt: the user heard the counter and chose their ORIGINAL ask
@@ -806,10 +808,16 @@ export async function generateProtocol(
         (attempting
           ? ` The user heard your counter-offer and chose to attempt their ORIGINAL ask anyway, eyes open, at your honest ${verdict.original_probability ?? '<50'}% odds. Respect the choice: build the strongest possible protocol for the ORIGINAL ask on its own timeline, designed to push those odds as high as they can honestly go. coach_notes honors the boldness and names what has to go right — never scold, never re-litigate the counter.`
           : '') +
+        // Chosen by DIRECTION, not by pace key. Keyed on 'sprint' this told
+        // the generator a custom runway shorter than the verdict's was "more
+        // air than your recommended pace" — the opposite of the truth, and
+        // on a counter-offer a custom runway is almost always shorter.
         (paceOpt
-          ? paceOpt.key === 'sprint'
+          ? pacingDirection(paceWeeks, verdict.duration_weeks) === 'tighter'
             ? ` The user chose the time-crunch pacing (${paceWeeks} weeks at ${paceOpt.success_probability}% odds) — tighter than your recommended pace. Week one still starts almost too easy; the later phases carry the compression, and the plan should say out loud where the discipline has to hold.`
-            : ` The user chose the no-rush pacing (${paceWeeks} weeks at ${paceOpt.success_probability}% odds) — more air than your recommended pace. Keep a firm weekly rhythm so the extra room never becomes drift.`
+            : pacingDirection(paceWeeks, verdict.duration_weeks) === 'looser'
+              ? ` The user chose the no-rush pacing (${paceWeeks} weeks at ${paceOpt.success_probability}% odds) — more air than your recommended pace. Keep a firm weekly rhythm so the extra room never becomes drift.`
+              : ''
           : '') +
         (session.own_plan
           ? ` This is an OWN-PLAN REVIEW: build the protocol FROM the commitments inside <own_plan_text> (see OWN-PLAN REVIEW in your instructions). Every step carries source — 'user' for a step realizing one of their commitments, 'qoach' only where a non-negotiable forces an addition, with the reason opening its details.`
@@ -1397,9 +1405,15 @@ export async function retryCarve(
 
 /**
  * v29 "Your pace": price the SAME goal at a user-named runway. The result is
- * clamped into the existing ladder's ordering (a shorter runway can never
- * out-price a longer one) and stored as pace_options[key='custom'], so every
- * downstream pace lookup — generation, prepare, accept — just works.
+ * clamped into the ladder's ordering (a shorter runway can never out-price a
+ * longer one) and stored as pace_options[key='custom'], so every downstream
+ * pace lookup — generation, prepare, accept — just works.
+ *
+ * It used to refuse counter-offers outright ("no_paces"), which switched the
+ * picker off on exactly the verdict where the user's timeline had just been
+ * overruled. A counter now ladders on its own rung — see pace.ts for what
+ * that clamp may and may not do. Naming the counter's own weeks returns its
+ * own number without a model call, as before.
  */
 export async function priceCustomPace(
   env: Env,
@@ -1409,11 +1423,12 @@ export async function priceCustomPace(
 ): Promise<{ pace: PaceOption } | { error: string }> {
   const verdict = JSON.parse(session.verdict!) as Verdict;
   const existing = (verdict.pace_options ?? []).filter(o => o.key !== 'custom');
-  if (verdict.decision !== 'feasible' || existing.length < 2) return { error: 'no_paces' };
-  const same = existing.find(o => o.duration_weeks === weeks);
+  if (verdict.decision === 'declined') return { error: 'no_paces' };
+  const ladder = ladderFor(verdict);
+  if (ladder.length === 0) return { error: 'no_paces' };
+  const same = ladder.find(o => o.duration_weeks === weeks);
   if (same) return { pace: { ...same, key: 'custom' } }; // known runway — no model call
   const structure = sessionStructure(session);
-  const ladder = existing.map(o => `${o.key}: ${o.duration_weeks}wk = ${o.success_probability}%`).join(' · ');
   const result = await callModel(env, { ...meta, kind: 'verdict_turn' }, {
     model: modelsFor(env).coach,
     system: COACH_SYSTEM,
@@ -1422,7 +1437,7 @@ export async function priceCustomPace(
       content:
         `A verdict was already issued for this goal:\n${verdict.goal_statement}\n\n` +
         `Collected answers: ${JSON.stringify(structure.answers)}\n` +
-        `Priced pace ladder: ${ladder}\n\n` +
+        `Priced pace ladder: ${ladderLine(verdict, ladder)}\n\n` +
         `The user names their OWN runway: EXACTLY ${weeks} weeks. Price it with the SUCCESS PROBABILITY procedure, calibrated against the ladder — no greenlight floor, the honest number.`,
     }],
     tools: [PRICE_TOOL],
@@ -1435,11 +1450,7 @@ export async function priceCustomPace(
   let p = input ? Math.round(Number(input.success_probability)) : NaN;
   if (!Number.isFinite(p)) return { error: 'price_failed' };
   // The ladder is law: clamp into [best shorter pace, worst longer pace].
-  const shorter = existing.filter(o => o.duration_weeks < weeks).map(o => o.success_probability);
-  const longer = existing.filter(o => o.duration_weeks > weeks).map(o => o.success_probability);
-  const lo = shorter.length ? Math.max(...shorter) : 1;
-  const hi = longer.length ? Math.min(...longer) : 97;
-  p = Math.max(1, Math.min(97, Math.max(lo, Math.min(hi, p))));
+  p = clampToLadder(p, weeks, ladder);
   const pace: PaceOption = {
     key: 'custom', duration_weeks: weeks, success_probability: p,
     note: String(input?.note ?? '').trim().slice(0, 220),

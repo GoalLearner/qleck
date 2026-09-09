@@ -21,6 +21,7 @@ import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow
 import PredictScreen, { bandFor } from './PredictScreen';
 import { suggestionLook, suggestionsFor } from '../goalSuggestions';
 import { useRally } from '../../state/RallyContext';
+import { ATTEMPT_FLOOR } from '../../api/coachTypes';
 import type { PaceKey, Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
 import Confetti, { type ConfettiHandle } from '../../components/Confetti';
 import { celebratePlan } from '../../lib/celebrate';
@@ -564,6 +565,47 @@ function GuessGap({ estimate, v }: { estimate?: number | null; v: Verdict }) {
 }
 
 /** Canvas 5a/5c — feasible verdict with the odds dial, at 2-3 paces. */
+/**
+ * v29 "Your pace": the weeks stepper under the pace pills. Once priced, the
+ * custom entry joins pace_options and renders as its own pill. Lifted out of
+ * FeasibleVerdict so the counter-offer page can render the same control —
+ * the page where a user's own timeline has just been overruled, and the one
+ * where "I have 5 weeks, price that" had nowhere to go.
+ */
+function NameItRow({ base, onPrice }: { base: number; onPrice: (weeks: number) => Promise<boolean> }) {
+  const [customWeeks, setCustomWeeks] = useState<number | null>(null);
+  const [pricing, setPricing] = useState(false);
+  const stepWeeks = (d: number) => setCustomWeeks(w => Math.max(1, Math.min(52, (w ?? base) + d)));
+  const priceIt = () => {
+    if (pricing || customWeeks == null) return;
+    setPricing(true);
+    onPrice(customWeeks).finally(() => setPricing(false));
+  };
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 9 }}>
+      <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.8, color: night.textGhost }}>OR NAME IT</Text>
+      <Pressable onPress={() => stepWeeks(-1)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>−</Text>
+      </Pressable>
+      <Text style={{ fontFamily: nightFonts.display, fontSize: 12.5, color: night.text, minWidth: 44, textAlign: 'center' }}>
+        {customWeeks ?? base} wk
+      </Text>
+      <Pressable onPress={() => stepWeeks(1)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>+</Text>
+      </Pressable>
+      <Pressable
+        onPress={priceIt}
+        disabled={pricing || customWeeks == null}
+        style={{ paddingHorizontal: 11, height: 28, borderRadius: 14, backgroundColor: customWeeks == null || pricing ? night.hairline : night.accent, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.8, fontWeight: '700', color: customWeeks == null || pricing ? night.textMuted : night.accentInk }}>
+          {pricing ? 'PRICING…' : 'PRICE IT'}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function FeasibleVerdict({
   v, pace, onPace, onBuild, onReset, missingRequired,
   sim, prevSim, editedKey, answers, quickPicks, onEditInput, onPriceCustom, ownPlanMode, estimate,
@@ -592,16 +634,6 @@ function FeasibleVerdict({
   // skeleton strip for ~1s on every verdict while SIMULATIONS is off
   // (the first poll then reported the sim disabled and yanked it).
   const simActive = !!onEditInput && !!sim && sim.status !== 'failed' && sim.config.pace === pace;
-  // v29 "Your pace": the weeks stepper under the pills. Once priced, the
-  // custom entry joins pace_options and renders as its own pill.
-  const [customWeeks, setCustomWeeks] = useState<number | null>(null);
-  const [pricing, setPricing] = useState(false);
-  const stepWeeks = (d: number) => setCustomWeeks(w => Math.max(1, Math.min(52, (w ?? chosen?.duration_weeks ?? v.duration_weeks) + d)));
-  const priceIt = () => {
-    if (!onPriceCustom || pricing || customWeeks == null) return;
-    setPricing(true);
-    onPriceCustom(customWeeks).finally(() => setPricing(false));
-  };
   const { width } = useWindowDimensions();
   const wide = width >= 820;
   const [driver, setDriver] = useState(-1);
@@ -691,29 +723,7 @@ function FeasibleVerdict({
           })}
         </View>
       ) : null}
-      {paces && onPriceCustom ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 9 }}>
-          <Text style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: 0.8, color: night.textGhost }}>OR NAME IT</Text>
-          <Pressable onPress={() => stepWeeks(-1)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>−</Text>
-          </Pressable>
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 12.5, color: night.text, minWidth: 44, textAlign: 'center' }}>
-            {customWeeks ?? chosen?.duration_weeks ?? v.duration_weeks} wk
-          </Text>
-          <Pressable onPress={() => stepWeeks(1)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.text }}>+</Text>
-          </Pressable>
-          <Pressable
-            onPress={priceIt}
-            disabled={pricing || customWeeks == null}
-            style={{ paddingHorizontal: 11, height: 28, borderRadius: 14, backgroundColor: customWeeks == null || pricing ? night.hairline : night.accent, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Text style={{ fontFamily: MONO, fontSize: 9, letterSpacing: 0.8, fontWeight: '700', color: customWeeks == null || pricing ? night.textMuted : night.accentInk }}>
-              {pricing ? 'PRICING…' : 'PRICE IT'}
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
+      {paces && onPriceCustom ? <NameItRow base={chosen?.duration_weeks ?? v.duration_weeks} onPrice={onPriceCustom} /> : null}
       <View style={{ marginTop: 8 }}>
         {/* The dial is NEVER gated on the futures (owner call): it lights up
             with Qoach's number the moment the verdict lands. `odds` already
@@ -886,25 +896,31 @@ function FeasibleVerdict({
   );
 }
 
-/** Canvas 5b — the counter-offer as a negotiation: one dial, two pills. */
-const ATTEMPT_FLOOR = 20;
-
+/** Canvas 5b — the counter-offer as a negotiation: one dial, two pills —
+ *  three, once the user has named a runway of their own. */
 function CounterVerdict({
-  v, goalText, onBuild, onBuildOriginal, onReset, ownPlanMode, estimate,
+  v, goalText, pace, onPace, onBuild, onBuildOriginal, onReset, onPriceCustom, ownPlanMode, estimate,
 }: {
   v: Verdict;
   /** The user's own guess, when they were asked for one. */
   estimate?: number | null;
   goalText: string;
-  onBuild: () => void;
+  pace: PaceKey;
+  onPace: (p: PaceKey) => void;
+  /** Builds the NAMED pace — the deal ('steady') or the user's own runway
+   *  ('custom'). Named, because on this page the pill and the button can
+   *  disagree, and the button is what the user meant. */
+  onBuild: (p: PaceKey) => void;
   onBuildOriginal: () => void;
   onReset: () => void;
+  /** v29: price a user-named runway; resolves false when pricing failed. */
+  onPriceCustom?: (weeks: number) => Promise<boolean>;
   /** Tier-2: the countered thing is the user's own plan, not just a goal. */
   ownPlanMode?: boolean;
 }) {
   const { width } = useWindowDimensions();
   const wide = width >= 880;
-  const [view, setView] = useState<'asked' | 'offer'>('offer');
+  const [view, setView] = useState<'asked' | 'offer' | 'custom'>('offer');
   const succ = v.success_probability;
   const orig = v.original_probability;
   const hasPair = succ !== undefined && orig !== undefined;
@@ -912,8 +928,36 @@ function CounterVerdict({
   // open; below it the coach will not build the plan and the UI says the
   // floor out loud instead of hiding the option.
   const canAttempt = hasPair && (orig as number) >= ATTEMPT_FLOOR;
+  // v29 on a counter-offer: the user's own runway, priced by the coach. This
+  // page used to be strictly binary — the coach's weeks, or the coach's read
+  // of the original — on exactly the verdict where the user's timeline had
+  // just been overruled. The picker is the release valve. The same floor
+  // applies: shown at any number, built only at 20% or better.
+  const custom = v.pace_options?.find(o => o.key === 'custom');
+  const customOk = !!custom && custom.success_probability >= ATTEMPT_FLOOR;
+  // A freshly priced runway takes the view, whether or not it clears the
+  // floor: below it, the point is to SHOW the number and say why it will not
+  // build. `view` is local (the original is a variant, not a pace), so the
+  // hook's setPace('custom') alone would leave the page on Qoach's number.
+  const customKey = custom ? `${custom.duration_weeks}:${custom.success_probability}` : '';
+  useEffect(() => { if (customKey) setView('custom'); }, [customKey]);
   const asked = hasPair && view === 'asked';
-  const dialColor = asked ? night.warn : night.accent;
+  const yours = !!custom && view === 'custom';
+  const dialColor = asked || yours ? night.warn : night.accent;
+  // A pill that can be built pre-generates its draft, as on the feasible
+  // page. The original is a variant, not a pace, and a custom below the
+  // floor is shown but never built — neither fires a prepare.
+  const pick = (key: 'asked' | 'offer' | 'custom') => {
+    setView(key);
+    if (key === 'offer') onPace('steady');
+    else if (key === 'custom' && customOk) onPace('custom');
+  };
+  const pills = [
+    ...(hasPair ? [{ key: 'asked' as const, label: 'As you asked', pct: `${orig}%`, tint: '#e8b467' }] : []),
+    { key: 'offer' as const, label: "Qoach's version", pct: `${succ}%`, tint: '#8fd3ab' },
+    ...(custom ? [{ key: 'custom' as const, label: PACE_LABELS.custom, pct: `${custom.duration_weeks}wk · ${custom.success_probability}%`, tint: '#e8b467' }] : []),
+  ];
+  const pillsOn = pills.length > 1;
 
   const goalCards = (
     <View style={{ gap: 10 }}>
@@ -921,12 +965,13 @@ function CounterVerdict({
         { key: 'asked' as const, label: ownPlanMode ? 'YOUR PLAN AS WRITTEN' : 'AS YOU ASKED', text: v.original_request ?? goalText, ac: night.warn },
         { key: 'offer' as const, label: ownPlanMode ? "QOACH'S AMENDMENTS" : "QOACH'S VERSION", text: v.goal_statement, ac: night.accent },
       ].map(g => {
-        const on = hasPair ? view === g.key : g.key === 'offer';
+        // A custom runway prices Qoach's version, so that card stays lit.
+        const on = hasPair ? (view === g.key || (view === 'custom' && g.key === 'offer')) : g.key === 'offer';
         return (
           <Pressable
             key={g.key}
             disabled={!hasPair}
-            onPress={() => setView(g.key)}
+            onPress={() => pick(g.key)}
             style={{
               backgroundColor: on ? night.surface : 'transparent',
               borderWidth: 1, borderColor: on ? `${g.ac}80` : night.hairline,
@@ -959,27 +1004,27 @@ function CounterVerdict({
         borderRadius: 24, paddingHorizontal: 20, paddingVertical: 16,
       }}
     >
-      {hasPair ? (
+      {pillsOn ? (
         <View style={{ flexDirection: 'row', gap: 5, backgroundColor: night.hairline, borderRadius: 999, padding: 5 }}>
-          {[
-            { key: 'asked' as const, label: 'As you asked', pct: `${orig}%` },
-            { key: 'offer' as const, label: "Qoach's version", pct: `${succ}%` },
-          ].map(pl => {
+          {pills.map(pl => {
             const on = view === pl.key;
             return (
+              // Label over number, as on the feasible page. Side by side,
+              // three pills at 393pt wrapped "Qoach's version" into its own
+              // percentage.
               <Pressable
                 key={pl.key}
-                onPress={() => setView(pl.key)}
+                onPress={() => pick(pl.key)}
                 style={{
-                  flex: 1, height: 36, borderRadius: 999, flexDirection: 'row', gap: 7,
+                  flex: 1, height: 40, borderRadius: 999,
                   alignItems: 'center', justifyContent: 'center',
                   backgroundColor: on ? night.text : 'transparent',
                 }}
               >
-                <Text style={{ fontFamily: nightFonts.display, fontSize: 12, color: on ? night.bg : night.textMuted }}>
+                <Text numberOfLines={1} style={{ fontFamily: nightFonts.display, fontSize: 11.5, color: on ? night.bg : night.textMuted }}>
                   {pl.label}
                 </Text>
-                <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', color: on ? (pl.key === 'asked' ? '#e8b467' : '#8fd3ab') : night.textGhost }}>
+                <Text numberOfLines={1} style={{ fontFamily: MONO, fontSize: 9, fontWeight: '700', color: on ? pl.tint : night.textGhost }}>
                   {pl.pct}
                 </Text>
               </Pressable>
@@ -987,11 +1032,15 @@ function CounterVerdict({
           })}
         </View>
       ) : null}
+      {/* Base: the runway the user actually asked for, when the coach kept
+          it; otherwise the counter's. Naming roughly their original lands the
+          stepper one tap from "price that". */}
+      {onPriceCustom ? <NameItRow base={custom?.duration_weeks ?? v.original_duration_weeks ?? v.duration_weeks} onPrice={onPriceCustom} /> : null}
       <View style={{ marginTop: 12 }}>
         <OddsDial
-          value={asked ? (orig as number) : succ}
+          value={asked ? (orig as number) : yours && custom ? custom.success_probability : succ}
           color={dialColor}
-          condLabel={asked ? 'EVEN ALL-IN' : 'IF YOU SHOW UP'}
+          condLabel={asked ? 'EVEN ALL-IN' : yours ? 'IF YOU GO ALL-IN' : 'IF YOU SHOW UP'}
           size={wide ? 300 : Math.min(width - 100, 300)}
           mark={estimate}
         />
@@ -1003,16 +1052,42 @@ function CounterVerdict({
             ? canAttempt
               ? `Qoach's honest read on your original — it still recommends the ${succ}% version, but at ${orig}% the choice is yours.`
               : `Qoach only builds plans it can price at ${ATTEMPT_FLOOR}% or better — as asked, this is ${orig}%. The deal below builds its ${succ}% version instead.`
-            : 'Rebuilt so the odds are on your side.'}
+            : yours && custom
+              ? customOk
+                ? `Your runway, priced straight: ${custom.duration_weeks} weeks at ${custom.success_probability}%. Qoach still recommends ${succ}% at ${v.duration_weeks} weeks — but at ${custom.success_probability}% the choice is yours.`
+                : `Qoach only builds plans it can price at ${ATTEMPT_FLOOR}% or better — at ${custom.duration_weeks} weeks this is ${custom.success_probability}%. Name a longer runway, or take the deal at ${succ}%.`
+              : yours && custom ? '' : 'Rebuilt so the odds are on your side.'}
         </Text>
       </View>
-      {hasPair ? (
+      {pillsOn ? (
         <Text style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9, letterSpacing: 0.5, color: night.textGhost, paddingTop: 8 }}>
-          {canAttempt ? 'PICK A SIDE — THE BUTTON BUILDS THE ONE YOU CHOSE' : `PILLS COMPARE THE TWO — BELOW ${ATTEMPT_FLOOR}% QOACH ONLY BUILDS ITS VERSION`}
+          {yours
+            ? customOk ? 'YOUR RUNWAY — THE BUTTON BUILDS IT' : `BELOW ${ATTEMPT_FLOOR}% QOACH ONLY BUILDS ITS VERSION`
+            : canAttempt ? 'PICK A SIDE — THE BUTTON BUILDS THE ONE YOU CHOSE' : `PILLS COMPARE THE TWO — BELOW ${ATTEMPT_FLOOR}% QOACH ONLY BUILDS ITS VERSION`}
         </Text>
       ) : null}
     </View>
   ) : null;
+
+  // Built once, used in both layouts — the narrow one used to carry a
+  // hand-copied duplicate of this block.
+  const actions = yours && custom
+    ? customOk
+      ? (
+        <>
+          <PrimaryButton label={`Build my plan — ${custom.duration_weeks} weeks`} onPress={() => onBuild('custom')} />
+          <TextButton label={`Take the deal instead — ${succ}%`} onPress={() => onBuild('steady')} height={44} />
+        </>
+      )
+      : <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={() => onBuild('steady')} />
+    : canAttempt && view === 'asked'
+      ? (
+        <>
+          <PrimaryButton label={`Attempt my original — ${orig}% odds`} onPress={onBuildOriginal} />
+          <TextButton label={`Take the deal instead — ${succ}%`} onPress={() => onBuild('steady')} height={44} />
+        </>
+      )
+      : <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={() => onBuild('steady')} />;
 
   const leftCol = (
     <View style={{ flex: wide ? 1 : undefined, gap: 14 }}>
@@ -1022,14 +1097,7 @@ function CounterVerdict({
         "{v.assessment}"
       </Text>
       <View style={{ marginTop: 6 }}>
-        {canAttempt && view === 'asked' ? (
-          <>
-            <PrimaryButton label={`Attempt my original — ${orig}% odds`} onPress={onBuildOriginal} />
-            <TextButton label={`Take the deal instead — ${succ}%`} onPress={onBuild} height={44} />
-          </>
-        ) : (
-          <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={onBuild} />
-        )}
+        {actions}
         <TextButton label="Change my goal" onPress={onReset} height={46} />
       </View>
       <CoachFooter surface="verdict" />
@@ -1039,7 +1107,11 @@ function CounterVerdict({
   return (
     <Screen>
       <View style={{ width: '100%', maxWidth: 960, alignSelf: 'center' }}>
-        <VerdictChips label={'⇄ COUNTER-OFFER'} labelColor={night.warn} weeks={`${v.duration_weeks} WEEKS OFFERED`} />
+        <VerdictChips
+          label={'⇄ COUNTER-OFFER'}
+          labelColor={night.warn}
+          weeks={yours && custom ? `${custom.duration_weeks} WEEKS — YOURS` : `${v.duration_weeks} WEEKS OFFERED`}
+        />
         <View style={{ flexDirection: wide ? 'row' : 'column', gap: wide ? 26 : 18, marginTop: 20 }}>
           {wide ? (
             <>
@@ -1055,14 +1127,7 @@ function CounterVerdict({
                 "{v.assessment}"
               </Text>
               <View>
-                {canAttempt && view === 'asked' ? (
-          <>
-            <PrimaryButton label={`Attempt my original — ${orig}% odds`} onPress={onBuildOriginal} />
-            <TextButton label={`Take the deal instead — ${succ}%`} onPress={onBuild} height={44} />
-          </>
-        ) : (
-          <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={onBuild} />
-        )}
+                {actions}
                 <TextButton label="Change my goal" onPress={onReset} height={46} />
               </View>
             </>
@@ -2343,9 +2408,12 @@ export default function FirstGoalScreen({
       <CounterVerdict
         v={coach.verdict}
         goalText={coach.goalText}
+        pace={coach.pace}
+        onPace={coach.switchPace}
         onBuild={coach.buildPlan}
         onBuildOriginal={coach.buildOriginal}
         onReset={coach.reset}
+        onPriceCustom={coach.priceCustom}
         ownPlanMode={coach.ownPlanMode}
         estimate={coach.estimate}
       />

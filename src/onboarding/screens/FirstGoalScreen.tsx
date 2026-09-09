@@ -9,6 +9,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Keyboard, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
 import { NightInput, Pop, PrimaryButton, Pulse, Screen, Shake, Spacer, Spin, TextButton, Title } from '../ui';
@@ -1138,6 +1139,8 @@ function ProtocolReveal({
   const [fixingKey, setFixingKey] = useState<string | null>(null);
   const [fixValue, setFixValue] = useState('');
   const [locked, setLocked] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const insets = useSafeAreaInsets();
   const confettiRef = useRef<ConfettiHandle>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -1315,7 +1318,9 @@ function ProtocolReveal({
       {/* The commitment stays reachable without scrolling back down. */}
       <View
         style={{
-          paddingHorizontal: 28, paddingTop: 12, paddingBottom: 18,
+          // The home-indicator strip on a notch phone is 34pt; with 18 of
+          // padding "Start over" sat inside it, where an upward swipe lands.
+          paddingHorizontal: 28, paddingTop: 12, paddingBottom: Math.max(insets.bottom, 18),
           borderTopWidth: 1, borderTopColor: night.hairline, backgroundColor: night.bg,
         }}
       >
@@ -1350,7 +1355,7 @@ function ProtocolReveal({
                   not built. A tester reported it as "nothing happens", which
                   was accurate. Editing lands in this slot when it is real. */}
               <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 4 }}>
-                <TextButton label="Start over" height={40} onPress={onRestart} />
+                <TextButton label="Start over" height={40} onPress={() => setLeaveOpen(true)} />
               </View>
             </>
           )}
@@ -1358,8 +1363,97 @@ function ProtocolReveal({
         <CoachFooter surface="protocol" />
       </View>
 
+      {leaveOpen ? (
+        <LeaveSheet
+          title="Start over?"
+          body="This plan and the interview behind it are thrown away. Coming back starts again from the goal, and the questions come again too."
+          keepLabel="Keep this plan"
+          leaveLabel="Start over"
+          onKeep={() => setLeaveOpen(false)}
+          onLeave={() => { setLeaveOpen(false); onRestart(); }}
+        />
+      ) : null}
+
       <Confetti ref={confettiRef} />
     </View>
+  );
+}
+
+/* ── the door ───────────────────────────────────────────────────────────── */
+
+/**
+ * The one sheet that stands between a person and losing coach state.
+ *
+ * Nothing about a coach session is written down until a plan is locked —
+ * the session id lives in a ref, there is no GET for a session — so every
+ * way out before that point throws away the goal, the interview and the
+ * verdict at once. Two callers: the wait screen (leaving mid-generation) and
+ * the plan reveal ("Start over", which used to be a bare button four points
+ * under "Lock it in" with no confirmation — a tester's finger drifted and
+ * the plan was gone). One sheet, so the cost is stated the same way in both.
+ */
+function LeaveSheet({
+  eyebrow, title, body, keepLabel, leaveLabel, footnote, onKeep, onLeave,
+}: {
+  eyebrow?: string; title: string; body: string;
+  keepLabel: string; leaveLabel: string; footnote?: string;
+  onKeep: () => void; onLeave: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onKeep}
+      style={{
+        position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+        backgroundColor: night.scrim, justifyContent: 'flex-end',
+      }}
+    >
+      <Pop duration={300}>
+        {/* Stops a tap on the body from reaching the scrim — the body is
+            where people read, and reading must not dismiss. */}
+        <Pressable
+          onPress={() => {}}
+          style={{
+            backgroundColor: night.surface, borderTopWidth: 1, borderTopColor: night.border,
+            borderTopLeftRadius: 28, borderTopRightRadius: 28,
+            paddingTop: 20, paddingHorizontal: 24, paddingBottom: 34,
+          }}
+        >
+          {eyebrow ? (
+            <Text style={{ fontFamily: MONO, fontSize: 11, lineHeight: 14, fontWeight: '500', letterSpacing: 0.6, color: night.textGhost }}>
+              {eyebrow}
+            </Text>
+          ) : null}
+          <Text style={{ marginTop: eyebrow ? 14 : 0, fontFamily: nightFonts.display, fontSize: 23, lineHeight: 28, color: night.text }}>
+            {title}
+          </Text>
+          <Text style={{ marginTop: 10, fontFamily: nightFonts.body, fontSize: 14, lineHeight: 21, color: night.textMuted }}>
+            {body}
+          </Text>
+          <View style={{ marginTop: 22, gap: 10 }}>
+            <Pressable
+              onPress={onKeep}
+              style={{ height: 52, borderRadius: 26, backgroundColor: night.accent, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: night.accentInk }}>{keepLabel}</Text>
+            </Pressable>
+            <Pressable
+              onPress={onLeave}
+              style={{
+                height: 48, borderRadius: 24, borderWidth: 1.5, borderColor: night.borderDashed,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 14.5, color: night.text }}>{leaveLabel}</Text>
+            </Pressable>
+          </View>
+          {footnote ? (
+            <Text style={{ marginTop: 16, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 16, color: night.textGhost, textAlign: 'center' }}>
+              {footnote}
+            </Text>
+          ) : null}
+        </Pressable>
+      </Pop>
+    </Pressable>
   );
 }
 
@@ -1758,61 +1852,24 @@ function ThinkingView({
       </Screen>
 
       {sheet ? (
-        <Pressable
-          onPress={() => setSheet(false)}
-          style={{
-            position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
-            backgroundColor: night.scrim, justifyContent: 'flex-end',
-          }}
-        >
-          <Pop duration={300}>
-            <View
-              style={{
-                backgroundColor: night.surface, borderTopWidth: 1, borderTopColor: night.border,
-                borderTopLeftRadius: 28, borderTopRightRadius: 28,
-                paddingTop: 20, paddingHorizontal: 24, paddingBottom: 34,
-              }}
-            >
-              <Text style={{ fontFamily: MONO, fontSize: 11, lineHeight: 14, fontWeight: '500', letterSpacing: 0.6, color: night.textGhost }}>
-                {clock} · {building ? 'STILL WRITING BEHIND THIS' : 'STILL THINKING BEHIND THIS'}
-              </Text>
-              <Text style={{ marginTop: 14, fontFamily: nightFonts.display, fontSize: 23, lineHeight: 28, color: night.text }}>
-                {building ? 'Stop writing this plan?' : 'Stop and start over?'}
-              </Text>
-              {/* The canvas said "your answers are saved". They are not: the
-                  coach session id lives in a ref, there is no GET for a
-                  session, and nothing is written down until a plan is locked.
-                  Saying so is the whole point of this screen. */}
-              <Text style={{ marginTop: 10, fontFamily: nightFonts.body, fontSize: 14, lineHeight: 21, color: night.textMuted }}>
-                {answers.length
-                  ? 'Leaving throws away more than the wait. Your goal, your answers and Qoach’s verdict are only held while this is open — coming back starts again from the goal, and the questions come again too.'
-                  : 'Leaving throws away more than the wait. Your goal is only held while this is open — coming back means typing it again.'}
-              </Text>
-              <View style={{ marginTop: 22, gap: 10 }}>
-                <Pressable
-                  onPress={() => setSheet(false)}
-                  style={{ height: 52, borderRadius: 26, backgroundColor: night.accent, alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: night.accentInk }}>Keep waiting</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => { setSheet(false); onDismiss(); }}
-                  style={{
-                    height: 48, borderRadius: 24, borderWidth: 1.5, borderColor: night.borderDashed,
-                    alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ fontFamily: nightFonts.display, fontSize: 14.5, color: night.text }}>Leave and start over</Text>
-                </Pressable>
-              </View>
-              {/* True by construction: the plan landing unmounts this whole
-                  screen, sheet included. */}
-              <Text style={{ marginTop: 16, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 16, color: night.textGhost, textAlign: 'center' }}>
-                If it finishes while this is open, it opens instead.
-              </Text>
-            </View>
-          </Pop>
-        </Pressable>
+        <LeaveSheet
+          eyebrow={`${clock} · ${building ? 'STILL WRITING BEHIND THIS' : 'STILL THINKING BEHIND THIS'}`}
+          title={building ? 'Stop writing this plan?' : 'Stop and start over?'}
+          // The canvas said "your answers are saved". They are not: the coach
+          // session id lives in a ref, there is no GET for a session, and
+          // nothing is written down until a plan is locked. Saying so is the
+          // whole point of this sheet.
+          body={answers.length
+            ? 'Leaving throws away more than the wait. Your goal, your answers and Qoach’s verdict are only held while this is open — coming back starts again from the goal, and the questions come again too.'
+            : 'Leaving throws away more than the wait. Your goal is only held while this is open — coming back means typing it again.'}
+          keepLabel="Keep waiting"
+          leaveLabel="Leave and start over"
+          // True by construction: the plan landing unmounts this whole
+          // screen, sheet included.
+          footnote="If it finishes while this is open, it opens instead."
+          onKeep={() => setSheet(false)}
+          onLeave={() => { setSheet(false); onDismiss(); }}
+        />
       ) : null}
     </View>
   );
@@ -2032,7 +2089,7 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
 // in-app "+" modal (dismiss = cancel). The Qoach surfaces keep Electric Night
 // in both — the coach is its own sub-brand.
 export default function FirstGoalScreen({
-  onLocked, onDismiss, dismissLabel = 'Skip for now', demoHints = true, initialGoal, onBusy,
+  onLocked, onDismiss, dismissLabel = 'Skip for now', demoHints = true, initialGoal, onUnsaved,
 }: {
   onLocked: (plan: AcceptedPlan) => void;
   onDismiss: () => void;
@@ -2040,11 +2097,14 @@ export default function FirstGoalScreen({
   demoHints?: boolean;
   /** Prefill for the intake box — the regenerate-old-goal path. */
   initialGoal?: string;
-  /** True while an AI call is in flight and there is nothing to come back to.
+  /** True while there is coach state that is not written down anywhere —
+   *  a call in flight, a question on screen, a verdict, an unlocked plan.
    *  The host uses it to take away the swipe-to-dismiss gesture: the coach
-   *  session lives in memory, so a stray swipe during a 60-second generation
-   *  throws away the goal, the interview and the verdict silently. */
-  onBusy?: (busy: boolean) => void;
+   *  session lives in memory, so a stray swipe throws away the goal, the
+   *  interview and the verdict silently. It used to cover only calls in
+   *  flight, which left the plan itself — the most expensive state of all —
+   *  one swipe from gone. */
+  onUnsaved?: (unsaved: boolean) => void;
 }) {
   // Ask on EVERY plan, not just the first (owner call, 2026-09-02). The gap
   // is novel once, but CALIBRATION is not: with the guess stored beside
@@ -2054,13 +2114,14 @@ export default function FirstGoalScreen({
   // would have been a curiosity; one per plan is a dataset.
   const { goals } = useRally();
   const coach = useCoachFlow({ askEstimate: true });
-  // An AI call is in flight and nothing about this session is written down
-  // yet, so leaving now loses the goal, the interview and the verdict. The
-  // host takes the swipe gesture away for exactly these phases — deliberate
-  // exits (the door on the wait screen, Cancel) still work.
-  const busy = coach.phase === 'thinking' || coach.phase === 'building' || coach.phase === 'rebuilding';
-  useEffect(() => { onBusy?.(busy); }, [busy, onBusy]);
-  useEffect(() => () => { onBusy?.(false); }, [onBusy]);
+  // Nothing about a coach session is written down until a plan is locked,
+  // so every phase past intake is state a stray swipe would throw away. The
+  // host takes the gesture away while that is true — deliberate exits (the
+  // door on the wait screen, Start over, Cancel) still work. Error and
+  // refusal are excluded: their screens are the way out.
+  const unsaved = coach.phase !== 'intake' && coach.phase !== 'error' && coach.phase !== 'refused';
+  useEffect(() => { onUnsaved?.(unsaved); }, [unsaved, onUnsaved]);
+  useEffect(() => () => { onUnsaved?.(false); }, [onUnsaved]);
   // Recomputed only when the active goal set changes — locking a goal here
   // retires its whole domain (smoking ⊃ vaping ⊃ cigarettes) next time.
   const suggestions = React.useMemo(

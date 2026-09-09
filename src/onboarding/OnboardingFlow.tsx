@@ -34,6 +34,7 @@ import SignupScreen from './screens/SignupScreen';
 import VerifyScreen from './screens/VerifyScreen';
 import WelcomeScreen from './screens/WelcomeScreen';
 
+import type { AcceptedPlan } from './useCoachFlow';
 // Where the on-screen back affordance goes, mirrored for Android's back gesture.
 const BACK_TARGET: Partial<Record<OnbScreen, OnbScreen>> = {
   auth: 'welcome',
@@ -69,6 +70,7 @@ function Toast({ message }: { message: string }) {
 
 export default function OnboardingFlow({
   onAuthenticated,
+  onPlanLocked,
   startScreen = 'welcome',
   // P3: auth is REAL — demo hints (mock social doors, the phone path, the
   // Face ID tap-through) are off by default and exist only for canvas-parity
@@ -76,6 +78,11 @@ export default function OnboardingFlow({
   demoHints = false,
 }: {
   onAuthenticated: (result: OnboardingResult) => void;
+  /** Fires the moment a plan is locked, with the plan. Before this existed
+   *  the plan sat in funnel state until the LAST onboarding step and was
+   *  handed over only then — three screens during which backgrounding the
+   *  app could lose it, with nothing written anywhere. */
+  onPlanLocked?: (plan: AcceptedPlan) => void;
   startScreen?: OnbScreen;
   demoHints?: boolean;
 }) {
@@ -107,7 +114,7 @@ export default function OnboardingFlow({
       {screen === 'goal' && (
         <FirstGoalScreen
           demoHints={demoHints}
-          onLocked={plan => { flow.setPlan(plan); flow.nav('invite'); }}
+          onLocked={plan => { flow.setPlan(plan); onPlanLocked?.(plan); flow.nav('invite'); }}
           onDismiss={() => flow.nav('invite')}
         />
       )}

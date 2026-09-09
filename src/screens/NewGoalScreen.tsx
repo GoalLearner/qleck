@@ -27,20 +27,22 @@ export default function NewGoalScreen() {
   // in memory only — nothing about it is written down until a plan is locked.
   // One accidental downward swipe during a 60-second generation therefore threw
   // away the goal, the whole interview and the verdict, silently, with nothing
-  // to come back to. Reported from the field more than once.
+  // to come back to. Reported from the field more than once. The latch first
+  // covered only calls in flight; it now covers every phase past intake, the
+  // unlocked plan included — which is the most expensive thing to lose.
   //
   // usePreventRemove is the mechanism that actually stops it: on iOS it sets
   // the sheet's `preventNativeDismiss`, where `gestureEnabled: false` only
   // governs the interactive pop gesture on PUSHED screens, not a modal's drag.
-  const [busy, setBusy] = useState(false);
+  const [unsaved, setUnsaved] = useState(false);
   // It blocks navigation.goBack() too, so a deliberate exit has to lower the
   // latch first — otherwise the wait screen's own door would be dead while it
   // is the one thing on screen offering a way out.
   const [leaving, setLeaving] = useState(false);
-  usePreventRemove(busy && !leaving, () => {});
+  usePreventRemove(unsaved && !leaving, () => {});
   useEffect(() => { if (leaving) navigation.goBack(); }, [leaving, navigation]);
 
-  const onBusy = useCallback((v: boolean) => setBusy(v), []);
+  const onUnsaved = useCallback((v: boolean) => setUnsaved(v), []);
 
   return (
     <View style={{ flex: 1, backgroundColor: night.bg }}>
@@ -48,12 +50,15 @@ export default function NewGoalScreen() {
       <FirstGoalScreen
         dismissLabel="Cancel"
         initialGoal={prefill}
-        onBusy={onBusy}
+        onUnsaved={onUnsaved}
         onDismiss={() => setLeaving(true)}
         onLocked={plan => {
           setGoalPlan(plan);
           if (replaceGoalId) dropGoal(replaceGoalId);
-          navigation.goBack();
+          // Through the latch, not around it: the phase is still 'protocol'
+          // here, so a direct goBack() would be the exact removal the latch
+          // exists to block.
+          setLeaving(true);
           // P4: protocol acceptance IS the notification-permission moment —
           // the plan they just locked is the reason the nudges exist.
           void ensureNudgePermission();

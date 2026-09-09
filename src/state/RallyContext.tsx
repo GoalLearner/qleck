@@ -263,15 +263,13 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     if (result.name.trim() || result.username.trim()) {
       saveMe(result.name.trim(), result.username.trim()).catch(() => {});
     }
-    if (result.protocol && result.goal) {
-      addGoal({
-        goalText: result.goal,
-        statement: result.goal,
-        durationWeeks: parseInt(result.period ?? '', 10) || result.protocol.duration_weeks,
-        protocol: result.protocol,
-      });
-    }
-  }, [addGoal]);
+    // The funnel's plan is no longer added here. It used to be rebuilt from
+    // result.goal / period / protocol at the end of onboarding — three
+    // screens after "Lock it in", dropping odds and coachSessionId on the way,
+    // and lost outright if the app was backgrounded in between. It is now
+    // queued at lock time through setGoalPlan (OnboardingFlow.onPlanLocked),
+    // the same path the in-app "+" has always used.
+  }, []);
 
   const setGoalPlan = useCallback((plan: AcceptedPlan) => {
     addGoal(plan);

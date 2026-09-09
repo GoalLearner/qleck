@@ -321,6 +321,30 @@ sequenced and checked against the code before a line was written.
     navigation waits for `onDismiss`. On iOS only; elsewhere there is no race
     and `onDismiss` never fires. Tweak also passes the rep it was open on,
     which the per-rep drop (step 3) will need.
+- **"Moved my finger up and it got rid of my plan completely."** There is no
+  swipe handler anywhere in the app; four things could do this, and each one
+  now needs a decision:
+  - **"Start over" sat four points under "Lock it in" with no confirmation**,
+    inside the home-indicator strip on a notch phone, and a finger that lands
+    on it and drifts up still fires on release. The tester's own words are
+    the label. It opens a sheet now — the same one the wait screen has,
+    lifted into a shared `LeaveSheet` — that says what starting over costs.
+    The bottom bar also clears the safe area.
+  - **A plan locked in onboarding was memory-only until the last onboarding
+    step.** Three screens later it was rebuilt from the funnel's result,
+    dropping the odds and the coach session id on the way — and if iOS
+    reclaimed the app in between, it had never existed. It is now queued the
+    moment it is locked (`onPlanLocked` → `setGoalPlan`), the exact path the
+    in-app "+" has always used. `syncAccount` flushes that queue before it
+    refreshes, so the end-of-funnel sync is safe on a fresh sign-up too.
+  - **The swipe latch covered only calls in flight.** With the plan on screen
+    and not yet locked — the most expensive state there is — the "+" modal
+    was swipe-dismissible again. The latch now covers every phase past
+    intake; error and refusal are excluded because their screens are the way
+    out. Locking leaves through the latch (`leaving`), not around it, or the
+    modal would never close.
+  - Not changed: Drop and Delete on a goal are arm-then-tap with a 3–4s
+    window — a confirmation, if a thin one.
 
 ---
 

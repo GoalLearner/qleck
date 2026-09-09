@@ -373,6 +373,27 @@ sequenced and checked against the code before a line was written.
 
   `npm run check:pace` — 22 bars, no model calls. No prompt text changed;
   the ladder the model is shown is data, and its template is untouched.
+- **"By when?" on intake.** The cousin's other duration note: *"users should
+  be asked how long it takes to achieve the goal."* The interview asks that
+  in two of twelve domains and never for strength or physique — and the
+  intake screen said the opposite policy out loud: *"Qoach sets the timeline,
+  that's the point."*
+
+  A `+ BY WHEN?` toggle now sits beside the plan toggle; open, it is a
+  `− 8 wk +` stepper. At submit the value is folded into the goal text as
+  *"… — in 8 weeks."* — the exact phrasing the decision rule already
+  extracts a timeline from, so the coach reads it as a stated fact and prices
+  it as `original_*` before deciding whether to counter. No backend change, no
+  prompt change. Weeks rather than a date because the coach thinks in whole
+  weeks and a date picker is a native dependency; a real date can still be
+  typed. The goal box is capped so the fold can never exceed the server's 600
+  characters. Sub-headline now: *"Got a date in mind? Name it — Qoach prices
+  it straight."*
+
+  A runway the coach judges too tight WILL be countered — that is the rule
+  working — and the helper line under the stepper says so, which is only true
+  because the counter-offer picker shipped first. `npm run check:timeline`,
+  16 fixtures.
 
 ---
 

@@ -25,6 +25,7 @@ import { ATTEMPT_FLOOR } from '../../api/coachTypes';
 import type { PaceKey, Protocol, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
 import Confetti, { type ConfettiHandle } from '../../components/Confetti';
 import { celebratePlan } from '../../lib/celebrate';
+import { DEFAULT_WEEKS, GOAL_INPUT_MAX, clampWeeks, foldTimeline } from '../../lib/goalTimeline';
 
 
 const MONO = nightFonts.mono;
@@ -2201,6 +2202,10 @@ export default function FirstGoalScreen({
   // reviews it instead of authoring one. Open = the plan box is showing;
   // an open-but-empty box still takes the coached lane.
   const [planOpen, setPlanOpen] = useState(false);
+  // "By when?" — an optional runway, folded into the goal text at submit so
+  // the coach reads it the way it reads any stated timeline (goalTimeline.ts).
+  // Null = no deadline named.
+  const [byWeeks, setByWeeks] = useState<number | null>(null);
   // The stage is centred in a flex:1 box. When the keyboard takes half the
   // screen that box shrinks, and centred content that no longer fits overflows
   // in BOTH directions — so the title climbs up under the status bar and the
@@ -2223,7 +2228,7 @@ export default function FirstGoalScreen({
   if (coach.phase === 'intake') {
     const reviewing = planOpen && !!planDraft.trim();
     const ask = () => {
-      if (draft.trim()) coach.submitGoal(draft, planOpen ? planDraft : undefined);
+      if (draft.trim()) coach.submitGoal(foldTimeline(draft, byWeeks), planOpen ? planDraft : undefined);
       else setShakeCount(c => c + 1);
     };
     return (
@@ -2246,7 +2251,7 @@ export default function FirstGoalScreen({
             What do you want to <Text style={{ color: night.accent }}>pull off?</Text>
           </Text>
           <Text style={{ fontFamily: nightFonts.body, fontSize: 15.5, lineHeight: 23, color: night.textMuted, textAlign: 'center', marginBottom: 26 }}>
-            Say it plain — like you'd text a friend. Qoach sets the timeline, that's the point.
+            Say it plain — like you'd text a friend. Got a date in mind? Name it — Qoach prices it straight.
           </Text>
 
           <Shake trigger={shakeCount}>
@@ -2267,6 +2272,7 @@ export default function FirstGoalScreen({
                 onFocus={() => setBoxFocused(true)}
                 onBlur={() => setBoxFocused(false)}
                 multiline
+                maxLength={GOAL_INPUT_MAX}
                 placeholder=""
                 style={{
                   height: 88, color: night.text, fontFamily: nightFonts.bodyMedium, fontSize: 16,
@@ -2289,11 +2295,39 @@ export default function FirstGoalScreen({
             </View>
           </Shake>
 
-          <Pressable onPress={() => setPlanOpen(o => !o)} hitSlop={8} style={{ marginTop: 13, alignSelf: 'center' }}>
-            <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, color: planOpen ? night.violetText : night.textGhost, textAlign: 'center' }}>
-              {planOpen ? '— NEVER MIND, COACH ME' : '+ I ALREADY HAVE A PLAN'}
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 22, marginTop: 13 }}>
+            <Pressable onPress={() => setByWeeks(w => (w == null ? DEFAULT_WEEKS : null))} hitSlop={8}>
+              <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, color: byWeeks != null ? night.accentText : night.textGhost, textAlign: 'center' }}>
+                {byWeeks != null ? '— NO DEADLINE' : '+ BY WHEN?'}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setPlanOpen(o => !o)} hitSlop={8}>
+              <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, color: planOpen ? night.violetText : night.textGhost, textAlign: 'center' }}>
+                {planOpen ? '— NEVER MIND, COACH ME' : '+ I ALREADY HAVE A PLAN'}
+              </Text>
+            </Pressable>
+          </View>
+          {byWeeks != null ? (
+            <View style={{ marginTop: 10, alignItems: 'center', gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Pressable onPress={() => setByWeeks(w => clampWeeks((w ?? DEFAULT_WEEKS) - 1))} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 14, color: night.text }}>−</Text>
+                </Pressable>
+                <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: night.text, minWidth: 64, textAlign: 'center' }}>
+                  {byWeeks} wk
+                </Text>
+                <Pressable onPress={() => setByWeeks(w => clampWeeks((w ?? DEFAULT_WEEKS) + 1))} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 14, color: night.text }}>+</Text>
+                </Pressable>
+              </View>
+              {/* True because the counter-offer picker shipped first: a runway
+                  the coach judges too tight is countered, and "price MY weeks"
+                  is one tap on that page. */}
+              <Text style={{ fontFamily: nightFonts.body, fontSize: 11, lineHeight: 15.5, color: night.textGhost, textAlign: 'center', maxWidth: 320 }}>
+                Qoach prices your date as asked. Too tight and it says so — then you can name any runway on the verdict page.
+              </Text>
+            </View>
+          ) : null}
           {planOpen ? (
             <View
               style={{

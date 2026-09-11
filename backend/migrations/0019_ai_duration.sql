@@ -1,0 +1,14 @@
+-- Migration 0019 — how long each model call actually took.
+--
+-- Every latency number the coach speed plan (11 Sep) rests on is a proxy:
+-- ai_requests.created_at is written AFTER the provider returns, so the only
+-- measurement available was the gap between consecutive rows in a session —
+-- second resolution, completion-to-completion, and blind to a call that was
+-- killed mid-flight (no row at all). The wait screen's "26s mean, a third
+-- over 40s" was calibrated on validator-retry gaps, not first builds.
+--
+-- duration_ms is the provider round trip, measured in callModel from just
+-- before the request to just after the response, and written on BOTH ledger
+-- paths — success and the provider-failure row — so a death is a number too.
+-- NULL on every row written before this column existed.
+ALTER TABLE ai_requests ADD COLUMN duration_ms INTEGER;

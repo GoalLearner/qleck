@@ -299,6 +299,11 @@ async function callAnthropic(env: Env, params: CallParams): Promise<RawResult> {
 
 export async function callModel(env: Env, meta: CallMeta, params: CallParams): Promise<ModelCallResult> {
   let raw: RawResult;
+  // The provider round trip, wall clock, written on BOTH ledger paths. Until
+  // 0019 every latency figure was a gap between consecutive created_at rows
+  // (second resolution, completion-to-completion) and a call killed mid-flight
+  // left no row at all; the speed plan (11 Sep) is measured against this.
+  const t0 = Date.now();
   try {
     raw = provider(env) === 'deepseek'
       ? await callDeepseek(env, params)
@@ -321,12 +326,14 @@ export async function callModel(env: Env, meta: CallMeta, params: CallParams): P
       costUsd: 0,
       verdictClass: `error: ${reason.slice(0, 180)}`,
       synthetic: meta.synthetic ? 1 : 0,
+      durationMs: Date.now() - t0,
       prompt: '',
       response: reason.slice(0, 2000),
     }).catch(() => {});
     throw err;
   }
 
+  const durationMs = Date.now() - t0;
   const requestId = crypto.randomUUID();
   const transportRetries = (raw as { transportRetries?: number }).transportRetries ?? 0;
   await logAiRequest(env.DB, {
@@ -344,6 +351,7 @@ export async function callModel(env: Env, meta: CallMeta, params: CallParams): P
     costUsd: costUsd(raw.model, raw.inputTokens, raw.outputTokens),
     verdictClass: raw.refused ? 'api_refusal' : raw.toolName,
     synthetic: meta.synthetic ? 1 : 0,
+    durationMs,
     prompt: JSON.stringify({ v: 1, system: params.system.slice(0, 400), messages: params.messages }),
     response: raw.responseJson,
   });
@@ -366,6 +374,8 @@ interface LedgerRow {
   cacheHitTokens?: number;
   attempt?: number;
   retryKind?: string | null;
+  /** Provider round trip in ms (migration 0019). */
+  durationMs?: number;
   prompt: string;
   response: string;
 }
@@ -374,10 +384,10 @@ async function logAiRequest(db: D1Database, row: LedgerRow): Promise<void> {
   await db.batch([
     db
       .prepare(
-        `INSERT INTO ai_requests (id, session_id, device_id, ip, kind, model, input_tokens, output_tokens, cost_usd, verdict_class, synthetic, cache_hit_tokens, attempt, retry_kind)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ai_requests (id, session_id, device_id, ip, kind, model, input_tokens, output_tokens, cost_usd, verdict_class, synthetic, cache_hit_tokens, attempt, retry_kind, duration_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(row.id, row.sessionId, row.deviceId, row.ip, row.kind, row.model, row.inputTokens, row.outputTokens, row.costUsd, row.verdictClass, row.synthetic, row.cacheHitTokens ?? 0, row.attempt ?? 0, row.retryKind ?? null),
+      .bind(row.id, row.sessionId, row.deviceId, row.ip, row.kind, row.model, row.inputTokens, row.outputTokens, row.costUsd, row.verdictClass, row.synthetic, row.cacheHitTokens ?? 0, row.attempt ?? 0, row.retryKind ?? null, row.durationMs ?? null),
     db
       .prepare(`INSERT INTO ai_request_payloads (request_id, prompt, response) VALUES (?, ?, ?)`)
       .bind(row.id, row.prompt, row.response),

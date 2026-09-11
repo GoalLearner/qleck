@@ -56,6 +56,12 @@
       "port": 8099
     },
     {
+      "name": "qleck-api-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:\\Users\\richm\\OneDrive\\Desktop\\habit-tracker\\backend", "run", "dev:watch"],
+      "port": 8787
+    },
+    {
       "name": "rally-web",
       "runtimeExecutable": "powershell",
       "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location 'C:\\Users\\richm\\OneDrive\\Desktop\\habit-tracker'; npx expo start --web --port 8090"],

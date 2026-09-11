@@ -468,6 +468,67 @@ sequenced and checked against the code before a line was written.
 
 ---
 
+### Backend · 11 Sep — measurement before speed (speed plan, step 0)
+
+No build. The owner asked for a faster coach without thinner plans; the
+research (two agent workflows, 11 Sep) found that every latency number the
+app had ever quoted was inferred from gaps between ledger rows, and that the
+wait screen's "26s mean, a third over 40s" was calibrated on validator
+retries rather than first builds. So the first step is a ruler.
+
+- **Every model call now records how long it took.** Migration 0019 adds
+  `ai_requests.duration_ms`, written in `callModel` on the success path AND
+  on the provider-failure row, so a call that dies is a number rather than a
+  missing row. Applied locally and to production; the worker that writes it
+  is deployed.
+- **`npm run latency`** (from `backend/`, read-only, `--local` /
+  `--synthetic` / `--days N`) prints the five numbers the speed plan is judged
+  by, before and after every step: per-kind duration percentiles (with the
+  old gap proxy beside them, labelled), first-attempt validation rate, the
+  fast-path rate (the accepted plan IS the background draft), verdict-to-
+  accept time, and what the validators rejected — bucketed on the
+  validators' own templates with every quoted string masked, so no step
+  title, id or user text is ever printed.
+- **The production baseline, last 21 days.** Fast path **5 of 38** saves
+  (13%). First attempts **52% invalid** (163 calls); attempt 1 62% invalid,
+  attempt 2 72%. Gap-proxy protocol p50 15s / p90 75s; verdict p50 8s / max
+  10s; verdict-to-accept p50 68s. Of **443 rejected lines, 385 (87%) are one
+  mechanical category**: a step's days or per-week disagreeing with the
+  session it is attached to ("per_week N exceeds its session's N days" ×192,
+  "days (…) must equal its session's days (…)" ×194). Conditional steps
+  without a session are next at 26. Everything else is single digits. That is
+  step 4b's target, named by data rather than by guess.
+- **The first measured durations** (two harness runs, 102 protocol calls):
+  protocol **p50 28.8s / p90 59.5s / max 76.4s**; verdict_turn **p50 5.8s /
+  p90 11.0s**; every interview-side call (safety, classify, extract, coach
+  turn, audit) p50 1.0–1.8s. First attempts 43% invalid in the harness. The
+  wait screen's "usually about half a minute" survives; "longest measured: 75
+  seconds" turns out to be right by accident (76.4s). The 40-second line does
+  not: p90 is 60s, and the common case is one call of ~29s.
+- **The harness bar the 9 Sep band change had broken is reconciled.** The
+  own-plan bar demanded 1–2 questions while `interviewBand` deliberately gives
+  a thin plan 2–4; the bar now reads `interviewBand` itself, and the two
+  own-plan fixtures (both three-line plans) expect 2–4. Both runs: PASS.
+- **Two baseline runs archived** under `backend/harness/baselines/` (console +
+  report committed; the 400KB protocol dumps stay local like
+  `last-protocols.json`). Ledger cost **$0.87 + $0.89 = $1.76**, an upper
+  bound: the ledger prices at flat rates while 81–86% of input tokens were
+  cache hits. Cumulative research spend so far: $1.76 (cap $20 before asking).
+- **The noise floor, now known.** Neither run was fully green. Run 1 failed
+  two bars, run 2 a third, each on ONE fixture, none repeated:
+  `lose-10-lbs-range` phrased its deficit past the "energy" regex,
+  `inj-sysprompt` reached a feasible verdict without a full pace ladder,
+  `benchpress-2x` asked one question with under two chips. Run 2 also lost
+  one revision fixture to a 502 when `wrangler dev` recycled (excluded from
+  scoring by the harness's own rule). Every later paid gate is read against
+  this: one flaky bar per run is HEAD's normal; the same bar failing on the
+  same fixture twice is a regression.
+- Dev-only: the local D1 migration journal had stopped at 0013 while the
+  tables from 0014–0016 existed, and 0017–0018 had never been applied
+  locally. Journal repaired, 0017–0019 applied; `npm run migrate:local` is
+  clean again. A `qleck-api-dev` entry in `.claude/launch.json` runs the
+  supervised dev worker for harness runs.
+
 ## Not shipped
 
 ### Not started, deliberately
@@ -509,11 +570,6 @@ sequenced and checked against the code before a line was written.
   another ~26s. The fix is either an explicit longer timeout on the protocol
   request or the detached-work-plus-poll pattern the simulation already uses.
   Named here rather than bundled into the loading-screen change.
-- **`ai_requests` has no duration column.** Every figure in the entry above was
-  inferred from the gaps between consecutive attempts in one session, which is
-  only possible when a call was retried. A `duration_ms` column — one migration,
-  one INSERT — would make the copy calibratable from real data and would show
-  whether the retry fixes actually moved the number.
 - **Leaving a wait loses the interview.** The design for the wait screen's
   exit assumed the goal, answers and verdict survive it. They do not: the coach
   session id is client-side only and there is no route to re-read a session,

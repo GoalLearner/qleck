@@ -18,6 +18,7 @@
     "check:pace": "node harness/pace.check.mjs",
     "check:band": "node harness/band.check.mjs",
     "check:edit": "node harness/edit.check.mjs",
+    "latency": "node harness/latency.mjs",
     "judge": "node harness/judge.mjs",
     "dev:watch": "node dev-supervisor.mjs",
     "calibrate": "node harness/calibration.mjs",

@@ -43,3 +43,6 @@ yarn-error.*
 /ios
 /android
 backend/harness/last-protocols.json
+
+# Baseline archives keep the 400KB protocol dumps local, like last-protocols.json
+backend/harness/baselines/*/last-protocols.json

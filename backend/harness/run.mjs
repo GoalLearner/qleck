@@ -8,6 +8,8 @@
 //         QLECK_API=https://... HARNESS_SECRET=... node harness/run.mjs
 import { writeFileSync } from 'node:fs';
 import { GOAL_FIXTURES, REVISION_FIXTURES, LEAK_CANARIES } from './fixtures.mjs';
+import { interviewBand } from '../src/interviewBand.ts';
+import { ownPlanLineCount } from '../src/protocolSchema.ts';
 
 const BASE = process.env.QLECK_API ?? 'http://127.0.0.1:8787';
 const SECRET = process.env.HARNESS_SECRET ?? 'local-dev-harness';
@@ -420,6 +422,7 @@ async function runGoalFixture(f) {
     // Underscored: kept in last-report.json, hidden from the console table.
     _asked: askedTexts, _dupPairs: dupPairs, _sent: sentAnswers,
     _sessionId: sessionId, _protocol: protocol,
+    _ownPlanLines: f.ownPlan ? ownPlanLineCount(f.ownPlan) : null,
   };
 }
 
@@ -484,7 +487,7 @@ for (const rf of REVISION_FIXTURES) revisionResults.push(await runRevisionFixtur
 
 /* ── score ──────────────────────────────────────────────────────────────── */
 
-console.table(goalResults.map(({ _sessionId, _protocol, _asked, _dupPairs, _sent, ...r }) => r));
+console.table(goalResults.map(({ _sessionId, _protocol, _asked, _dupPairs, _sent, _ownPlanLines, ...r }) => r));
 console.table(revisionResults);
 
 // Every DELIVERED repeat, named. A tolerated one-stat re-ask still prints —
@@ -534,13 +537,19 @@ const bars = {
   // 'refused:<category>', never a bare 'refused').
   [`coached goals ask ${MIN_Q}-${MAX_Q} questions`]:
     completed.every(r => r.outcome.startsWith('refused') || r.ownPlan || (r.questions >= MIN_Q && r.questions <= MAX_Q)),
-  // v30: the review lane's whole promise — a 1-2 question check, and a
-  // protocol that is still the user's plan (provenance held end to end).
-  'own-plan reviews ask 1-2 questions and keep the user\'s steps':
-    completed.every(r =>
-      !r.ownPlan ||
-      ((r.outcome.startsWith('refused') || (r.questions >= 1 && r.questions <= 2)) &&
-        (r.ownPlanOk === null || r.ownPlanOk === true))),
+  // v30 promised a 1-2 question review. Since 9 Sep (interviewBand) the band
+  // scales with how much the plan says — a three-line plan earns 2-4 — so the
+  // bar reads the function the server enforces instead of a constant. The
+  // other half of the promise is unchanged: the protocol is still the user's
+  // plan (provenance held end to end).
+  'own-plan reviews ask the band\'s questions and keep the user\'s steps':
+    completed.every(r => {
+      if (!r.ownPlan) return true;
+      const lo = interviewBand(r._ownPlanLines, false).minTurns;
+      const hi = interviewBand(r._ownPlanLines, true).ceiling;
+      return (r.outcome.startsWith('refused') || (r.questions >= lo && r.questions <= hi)) &&
+        (r.ownPlanOk === null || r.ownPlanOk === true);
+    }),
   'verdicts carry a calibrated probability':
     completed.every(r => r.probOk),
   'feasible verdicts offer 2-3 ordered paces':

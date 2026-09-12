@@ -468,6 +468,37 @@ sequenced and checked against the code before a line was written.
 
 ---
 
+### Backend · 11 Sep — the pro model, measured and declined (speed plan, step 6i)
+
+No build. The last of step 6's questions: would `deepseek-v4-pro` on the
+coach role pass the validators more often than flash? Same 20 paired
+sessions, same v34 prompt, only the model changed (`GEN_MODEL` on the dev
+worker; `thinking: {type: 'disabled'}` now sent on every DeepSeek call,
+because both models refuse a forced tool call while thinking is on).
+
+- **Pro:** first attempt valid 14 of 20 (70%, one more than flash's 13);
+  but only 18 of 20 built (two three-strikes, where flash built all 20);
+  mean attempts 1.4, the same; median call **48s against 26s**, p90 87s
+  against 55s; and the plans were **half the length** — 3,814 output
+  tokens against 7,107 — which on this plan's rules is thinner how-to
+  sheets, not better ones. **$0.50 for 27 calls** at honest pro rates,
+  about three times flash per plan.
+- **Verdict: stay on flash.** The remaining first-attempt misses are the
+  same two content rules on either model (a missing protein or bedtime
+  step, a warm-up as its own step). The lever is not the model.
+- **The ledger prices honestly now.** Per-model rates with the cache-hit
+  discount (DeepSeek bills a hit at about 1/50 of a miss, and 81–92% of this
+  pipeline's input tokens are hits). Rows written before this evening were
+  priced flat and read 1.6–3.2× high; `npm run latency` and the changelog's
+  spend figures before this entry carry that overstatement.
+- **Not started, by design:** a judge-measured compactness pass (the how-to
+  is ~46% of a 7,100-token emission; the owner's call is that content stays
+  as designed); the legacy synchronous branch comes out after both phones
+  have run build 33 for a week.
+- **Paid:** pro arm $0.50 plus a $0.02 false start on flash. **Day's total
+  on the ledger: about $7.50 of the $20 ask-first cap** (the pre-evening
+  rows being an upper bound).
+
 ### Backend · 11 Sep — v34, a 16k ceiling, and the first turn in parallel (speed plan, step 6i/ii/iv)
 
 No build. The second pass on the first-attempt rate, plus two levers that

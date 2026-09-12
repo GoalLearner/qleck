@@ -1,0 +1,28 @@
+
+replay v4pro → http://127.0.0.1:8787 · 20 sessions paired with replay-v32-baseline.json
+
+  ok    0 attempts=2 first=invalid 72s  Do 30 push-ups in a row within 8 weeks. I can do about 8 rig
+  ok    1 attempts=1 first=valid 108s  Read a lot more this year — I keep buying books and not read
+  ok    2 attempts=2 first=invalid 119s  Lose 10 lbs
+  ok    3 attempts=1 first=valid 135s  I want to gain 5 lbs of lean muscle.
+  ok    4 attempts=1 first=valid 84s  Get to bed by 11pm on weeknights for a month. I usually drif
+  ok    6 attempts=1 first=valid 144s  Walk 10,000 steps a day consistently. I currently average ab
+  ok    5 attempts=2 first=invalid 301s  Hold a basic 5-minute conversation in Spanish within 3 month
+  ok    7 attempts=1 first=valid 179s  I want to be able to run a 4k in six weeks. I basically neve
+  ok    8 attempts=1 first=valid 114s  Learn to bake a proper layered birthday cake from scratch in
+  ok    9 attempts=1 first=valid 66s  Read 10 minutes before bed every night for the next month.
+  ok   10 attempts=1 first=valid 89s  Quit smoking over the next three months. I smoke about 10 a 
+  ok   11 attempts=1 first=valid 155s  Walk 10,000 steps a day consistently. I currently average ab
+  ok   12 attempts=1 first=valid 110s  Read a lot more this year — I keep buying books and not read
+  MISS 13 attempts=3 first=invalid 212s  Lose 10 lbs
+  ok   14 attempts=1 first=valid 235s  I want to lose 8 kg steadily over the next 4 months.
+  ok   15 attempts=1 first=valid 79s  Get to bed by 11pm on weeknights for a month. I usually drif
+  MISS 16 attempts=3 first=invalid 178s  Do 30 push-ups in a row within 8 weeks. I can do about 8 rig
+  ok   17 attempts=1 first=valid 208s  Hold a basic 5-minute conversation in Spanish within 3 month
+  ok   18 attempts=2 first=invalid 114s  Walk 10,000 steps a day consistently. I currently average ab
+  ok   19 attempts=1 first=valid 89s  I want to be able to run a 4k in six weeks. I basically neve
+
+RESULT {"label":"v4pro","base":"http://127.0.0.1:8787","n":20,"built":18,"first_valid":14,"first_valid_rate":0.7,"mean_attempts":1.4,"call_p50_s":48.1,"call_p90_s":86.9,"out_tokens_mean":3814}
+
+written harness/replay-v4pro.json
+exit 0

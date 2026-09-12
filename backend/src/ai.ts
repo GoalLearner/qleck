@@ -88,20 +88,31 @@ export function modelsFor(env: Env): { classifier: string; coach: string } {
 
 // $ per MTok — for the cost ledger only (approximate is fine; ledger trends
 // matter more than cent precision).
-const PRICES: Record<string, { input: number; output: number }> = {
+// USD per 1M tokens. `cached` is the cache-HIT input rate: DeepSeek bills a
+// hit at ~1/50 of a miss, and 81–92% of this pipeline's input tokens are hits
+// (the system prompts). Until 11 Sep every deepseek row was priced flat at
+// the old chat rate, which overstated spend 1.6–3.2× (speed plan, step 0);
+// ledger rows before then carry that overstatement, rows after do not.
+// DeepSeek's peak rates (api-docs.deepseek.com/quick_start/pricing, 11 Sep):
+// flash miss 0.30 / hit 0.006 / out 1.2; v4-pro miss 1.32 / hit 0.044 / out 3.96.
+const PRICES: Record<string, { input: number; output: number; cached?: number }> = {
   'claude-opus-5': { input: 5, output: 25 },
   'claude-opus-4-8': { input: 5, output: 25 }, // anthropic refusal-fallback target
   'claude-haiku-4-5': { input: 1, output: 5 },
-  'deepseek-reasoner': { input: 0.55, output: 2.19 },
-  // Generic prefix LAST-resort for deepseek-*: the API may serve an aliased
-  // model id (e.g. deepseek-chat -> deepseek-v4-flash); price at chat rates.
-  'deepseek': { input: 0.27, output: 1.1 },
+  'deepseek-v4-pro': { input: 1.32, output: 3.96, cached: 0.044 },
+  'deepseek-reasoner': { input: 1.32, output: 3.96, cached: 0.044 }, // the pro thinking alias
+  'deepseek-flash': { input: 0.3, output: 1.2, cached: 0.006 },
+  // Generic prefix LAST-resort for deepseek-*: the API serves aliased model
+  // ids (deepseek-chat -> deepseek-flash); price at flash rates.
+  'deepseek': { input: 0.3, output: 1.2, cached: 0.006 },
 };
 
-function costUsd(model: string, inputTokens: number, outputTokens: number): number {
+function costUsd(model: string, inputTokens: number, outputTokens: number, cacheHitTokens = 0): number {
   const key = Object.keys(PRICES).find(k => model.startsWith(k));
   const p = key ? PRICES[key] : { input: 5, output: 25 };
-  return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
+  const hits = Math.min(Math.max(0, cacheHitTokens), Math.max(0, inputTokens));
+  const misses = Math.max(0, inputTokens) - hits;
+  return (misses * p.input + hits * (p.cached ?? p.input) + outputTokens * p.output) / 1_000_000;
 }
 
 export interface CallMeta {
@@ -182,6 +193,12 @@ async function deepseekOnce(env: Env, params: CallParams): Promise<RawResult> {
       // Lower than DeepSeek's default: structured tool output gets noticeably
       // less malformed (unquoted values, dropped brackets) at reduced temp.
       temperature: params.temperature ?? 0.7,
+      // V4 models think by default, and thinking mode refuses a FORCED tool
+      // choice ("Thinking mode does not support this tool_choice", probed
+      // 11 Sep on both flash and pro). deepseek-chat is the non-thinking
+      // alias so it never mattered; saying it explicitly makes any GEN_MODEL
+      // (the A/B lever) work the same way.
+      thinking: { type: 'disabled' },
     }),
     signal: params.signal,
   });
@@ -365,7 +382,7 @@ export async function callModel(env: Env, meta: CallMeta, params: CallParams): P
     cacheHitTokens: raw.cacheHitTokens ?? 0,
     attempt: meta.attempt ?? 0,
     retryKind: meta.retryKind ?? (transportRetries > 0 ? 'transport' : null),
-    costUsd: costUsd(raw.model, raw.inputTokens, raw.outputTokens),
+    costUsd: costUsd(raw.model, raw.inputTokens, raw.outputTokens, raw.cacheHitTokens ?? 0),
     verdictClass: raw.refused ? 'api_refusal' : raw.toolName,
     synthetic: meta.synthetic ? 1 : 0,
     durationMs,

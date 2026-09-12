@@ -1,0 +1,5 @@
+
+draft job smoke → http://127.0.0.1:8787 · fixture 10k-steps
+
+  no verdict to build from (502) — nothing to smoke
+exit 2

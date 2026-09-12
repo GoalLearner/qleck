@@ -2,7 +2,7 @@
 import { Platform } from 'react-native';
 import { apiBase, getIdentity } from './device';
 import {
-  CoachApiError, type CoachTurnResponse, type ProtocolResponse, type SimulationPoll,
+  CoachApiError, type BuildingResponse, type CoachTurnResponse, type ProtocolJobPoll, type ProtocolResponse, type SimulationPoll,
 } from './coachTypes';
 
 // One host rule for every client in the app: apiBase() sends the localhost
@@ -96,9 +96,14 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   if (res.ok) return json as T;
 
   if (res.status === 429) {
+    // retry_cap: three failed builds on one goal (build 33). Not a quota,
+    // but the same door — nothing more will be spent on this goal today.
+    const retryCap = (json as { error?: string }).error === 'retry_cap';
     throw new CoachApiError({
       kind: 'quota', retryable: false,
-      message: 'Daily coach limit reached — back tomorrow.',
+      message: retryCap
+        ? 'Qoach wrote three plans for this goal and none passed its checks. Change the goal, or try again tomorrow.'
+        : 'Daily coach limit reached — back tomorrow.',
     });
   }
   if (res.status >= 500) {
@@ -134,6 +139,12 @@ export function postAnswer(sessionId: string, key: string, value: string): Promi
  *  NSURLCache serving a stale snapshot froze the lanes on build 5. */
 export function getSimulation(sessionId: string): Promise<SimulationPoll> {
   return get<SimulationPoll>(`/coach/sessions/${sessionId}/simulation?t=${Date.now()}`);
+}
+
+/** Build 33: the durable draft job for the session's current config. GET,
+ *  quota-exempt, self-healing on the server; never carries model work. */
+export function getProtocolJob(sessionId: string): Promise<ProtocolJobPoll> {
+  return get<ProtocolJobPoll>(`/coach/sessions/${sessionId}/protocol/job?t=${Date.now()}`);
 }
 
 /** Rebuild + resimulate a config (pace switch, attempt, or an input edit). */
@@ -181,10 +192,17 @@ export function editProtocol(sessionId: string, op: import('./coachTypes').Proto
   return post(`/coach/sessions/${sessionId}/protocol/edit`, op);
 }
 
+/** Build 33: ASYNC. The server answers the plan when the background draft
+ *  for this config is ready (the fast path — zero model calls), or
+ *  202 {building, job} when it is still being written; it never generates
+ *  inside this request. `retry` starts a fresh job after a failed one. */
 export function generateProtocol(
   sessionId: string, pace?: string, variant?: 'original', userEstimate?: number | null,
-): Promise<ProtocolResponse> {
-  return post<ProtocolResponse>(`/coach/sessions/${sessionId}/protocol`, {
+  opts?: { retry?: boolean },
+): Promise<ProtocolResponse | BuildingResponse> {
+  return post<ProtocolResponse | BuildingResponse>(`/coach/sessions/${sessionId}/protocol`, {
+    async: true,
+    ...(opts?.retry ? { retry: true } : {}),
     ...(pace ? { pace } : {}),
     ...(variant ? { variant } : {}),
     // Their own call on the odds, so goal_outcomes can hold all three numbers:

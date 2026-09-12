@@ -119,6 +119,9 @@ export async function purgeAccount(env: Env, userId: string, deviceId: string | 
       // forever, still joinable back to the person through session_id.
       env.DB.prepare(`DELETE FROM goal_outcomes WHERE session_id IN (${q})`).bind(...chunk),
       env.DB.prepare(`DELETE FROM factor_guard_failopens WHERE session_id IN (${q})`).bind(...chunk),
+      // The draft job's record carries the device id and ip the build was
+      // billed to (migration 0020) — deleted with the session, not left behind.
+      env.DB.prepare(`DELETE FROM protocol_jobs WHERE session_id IN (${q})`).bind(...chunk),
       env.DB.prepare(`DELETE FROM coach_sessions WHERE id IN (${q})`).bind(...chunk),
     );
   }

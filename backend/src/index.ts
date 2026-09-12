@@ -25,7 +25,8 @@ import {
 } from './emailAuth';
 import { verifyAppleToken } from './apple';
 import { editProtocolStep, classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
-import { claimDraft, releaseDraft, waitForDraft } from './draftClaim';
+import { claimDraft, DRAFT_CLAIM_MS, releaseDraft, renewDraft, waitForDraft } from './draftClaim';
+import { claimOrWait, failedJobCount, healJob, jobView, loadJob, runDraftJob, startDraftJob, JOB_CALL_BUDGET_MS, JOB_DELIVERIES, JOB_LEASE_MS, JOB_RETRY_DELAY_S, USER_RETRY_CAP, type DraftJobMessage, type JobDeps, type JobRow, type JobView } from './draftJob';
 import type { EditOp } from './protocolEdit';
 
 /** The attempt floor (owner call): the coach will not put its name on a plan
@@ -131,46 +132,154 @@ async function driveSim(
   }
 }
 
-/** SIMULATIONS="off" companion: generate ONLY the draft in the background so
- *  accepting a plan stays instant, with no lanes and no verdict rewrite —
- *  the rubric number the verdict shipped with is the number, full stop.
- *  Epoch-guarded like every engine write, so a pace switch mid-generation
- *  discards the stale draft instead of attaching it to the new config. */
-async function driveDraft(
+/** How long the legacy synchronous build (build ≤32 clients, the harness)
+ *  waits for a consumer's draft when the consumer holds the claim. Long
+ *  enough for a three-attempt job: the wait itself is a D1 poll and ends
+ *  the moment the draft lands or the holder's lease lapses, so a live
+ *  consumer is followed to its end and a dead one is noticed inside a
+ *  minute. A build-≤32 phone times its fetch out at ~60s regardless and
+ *  retries into the fast path; the harness has no timeout and therefore
+ *  measures exactly one generation per fixture, as before. */
+const LEGACY_WAIT_MS = 240_000;
+
+/** The consumer's dependencies: the shared draft claim (with its own, longer
+ *  TTL) and generateProtocol, untouched. Injected so draftJob.ts stays
+ *  import-free for job.check.mjs. The ledger identity for the consumer's
+ *  calls is the one stored on the job row at kick time, so quotas and the
+ *  synthetic flag mean the same thing they meant for the request. */
+function jobDeps(env: Env): JobDeps {
+  return {
+    claim: (sessionId, now) => claimDraft(env.DB, sessionId, now, JOB_LEASE_MS),
+    renew: (sessionId, claim, now) => renewDraft(env.DB, sessionId, claim, now, JOB_LEASE_MS),
+    release: (sessionId, claim) => releaseDraft(env.DB, sessionId, claim),
+    generate: (session, job, ctl) => {
+      const verdict = JSON.parse(session.verdict!) as Verdict;
+      const pace = job.pace as PaceKey;
+      const variant = job.variant === 'original' ? 'original' as const : undefined;
+      return generateProtocol(
+        env,
+        { sessionId: session.id, deviceId: job.device_id ?? '', ip: job.ip ?? 'queue', synthetic: job.synthetic === 1 },
+        session as SessionRow,
+        verdict,
+        pace,
+        variant,
+        {
+          // A fresh signal per model call: the lease's abort OR the per-call
+          // budget, so a hung socket ends in two minutes instead of pinning
+          // the claim until the heal gives up on it.
+          signal: () => AbortSignal.any([ctl.signal, AbortSignal.timeout(JOB_CALL_BUDGET_MS)]),
+          stillWanted: ctl.stillWanted,
+        },
+      );
+    },
+  };
+}
+
+/** Kick a durable job for the session's CURRENT simulation epoch: one row,
+ *  one message — two D1 writes and a queue send, milliseconds, awaited before
+ *  the response so nothing can be lost to the post-response grace that used
+ *  to kill drafts mid-generation. */
+async function kickDraftJob(
   env: Env,
   meta: { deviceId: string; ip: string; synthetic?: boolean },
-  sessionId: string,
-  deviceId: string,
-): Promise<void> {
-  let claim: number | null = null;
-  try {
-    const session = await loadSession(env, sessionId, deviceId);
-    if (!session || session.draft_protocol || !session.verdict || !session.simulation) return;
-    // `draft_protocol IS NULL` above is a READ, not a claim: the verdict kicks
-    // one of these and every prepare kicks another, and two that arrive
-    // seconds apart both see null and both spend ~26s and a paid call on the
-    // same plan. The claim is the thing that makes only one of them work.
-    claim = await claimDraft(env.DB, sessionId);
-    if (claim === null) return;                       // someone else has it
-    const sim = JSON.parse(session.simulation) as SimulationState;
-    const epoch = sim.epoch ?? 0;
-    const verdict = JSON.parse(session.verdict) as Verdict;
-    const pace = (sim.config?.pace as PaceKey) ?? 'steady';
-    const variant = sim.config?.variant === 'original' ? 'original' : undefined;
-    const gen = await generateProtocol(env, { ...meta, sessionId }, session, verdict, pace, variant);
-    if (gen.protocol) {
-      await env.DB
-        .prepare(`UPDATE coach_sessions SET draft_protocol = ? WHERE id = ? AND simulation IS NOT NULL AND COALESCE(json_extract(simulation, '$.epoch'), 0) = ?`)
-        .bind(JSON.stringify(gen.protocol), sessionId, epoch)
-        .run();
-    }
-  } catch { /* accept falls back to in-request generation */ }
-  finally {
-    // Best effort only. The usual way a draft ends is not this line — it is
-    // the isolate being torn down when waitUntil runs out, which is why the
-    // claim carries its own expiry rather than trusting a release.
-    if (claim !== null) await releaseDraft(env.DB, sessionId, claim);
+  session: SessionRow,
+  config: SimConfig,
+): Promise<JobRow | null> {
+  const sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : null;
+  const epoch = sim?.epoch ?? 0;
+  await startDraftJob(env.DB, env.DRAFT_JOBS, {
+    sessionId: session.id, epoch, pace: config.pace, variant: config.variant,
+    deviceId: meta.deviceId, ip: meta.ip, synthetic: !!meta.synthetic,
+  });
+  return loadJob(env.DB, session.id, epoch);
+}
+
+/** The job for the session's current epoch, healed if it looks stuck. */
+async function currentJobView(env: Env, session: SessionRow, now: number): Promise<JobView | null> {
+  const sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : null;
+  if (!sim) return null;
+  const epoch = sim.epoch ?? 0;
+  let job = await loadJob(env.DB, session.id, epoch);
+  if (!job) return null;
+  const healed = await healJob(env.DB, env.DRAFT_JOBS, job, now);
+  if (healed !== 'fine') job = (await loadJob(env.DB, session.id, epoch)) ?? job;
+  return jobView(env.DB, job, session, now);
+}
+
+/** `async: true` on POST /protocol: make sure a durable job exists for this
+ *  config, never generating in-request. A live job is returned as it is
+ *  (healed if stuck); a failed one is returned as it is unless the client
+ *  asked to retry, which starts a new epoch — capped per session so a
+ *  three-strike plan cannot burn quota forever. */
+async function ensureDraftJob(
+  env: Env,
+  meta: { deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  config: SimConfig,
+  retry: boolean,
+  now = Date.now(),
+): Promise<{ job: JobView } | { error: 'retry_cap'; cap: number }> {
+  const sim = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : null;
+  const matches = !!sim && sim.config.pace === config.pace && sim.config.variant === config.variant;
+  let job = matches ? await loadJob(env.DB, session.id, sim!.epoch ?? 0) : null;
+  if (job && (job.status === 'queued' || job.status === 'running')) {
+    const healed = await healJob(env.DB, env.DRAFT_JOBS, job, now);
+    if (healed !== 'fine') job = (await loadJob(env.DB, session.id, job.epoch)) ?? job;
+    if (job.status === 'queued' || job.status === 'running') return { job: await jobView(env.DB, job, session, now) };
   }
+  if (job && job.status === 'failed' && !retry) return { job: await jobView(env.DB, job, session, now) };
+  if (retry && (await failedJobCount(env.DB, session.id)) >= USER_RETRY_CAP) {
+    return { error: 'retry_cap', cap: USER_RETRY_CAP };
+  }
+  // (Re)start under a fresh epoch — the draft, the claim and the sim go
+  // together, exactly as /prepare clears them — then init and enqueue.
+  await env.DB
+    .prepare(`UPDATE coach_sessions SET draft_protocol = NULL, simulation = NULL, draft_working_until = NULL WHERE id = ?`)
+    .bind(session.id)
+    .run();
+  session.draft_protocol = null;
+  session.simulation = null;
+  await initSimulation(env, session, config);
+  const started = await kickDraftJob(env, meta, session, config);
+  if (!started) throw new Error('draft job did not start');
+  return { job: await jobView(env.DB, started, session, now) };
+}
+
+/** 2c's calibration dataset row, written at every protocol save. ON
+ *  CONFLICT rather than INSERT OR REPLACE: the replace deleted the row
+ *  first, so a fix-assumption rebuild wiped the user's own estimate and the
+ *  goal_id link the client writes later. Now the estimate survives a
+ *  rebuild (COALESCE) and the link is never touched. */
+async function writeOutcome(
+  env: Env,
+  session: SessionRow,
+  verdict: Verdict,
+  simState: SimulationState | null,
+  userEstimate: number | null,
+): Promise<void> {
+  const st = sessionStructure(session);
+  await env.DB
+    .prepare(
+      `INSERT INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot, verdict_fallback, odds_rubric, odds_pass_rate, user_estimate)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         domain = excluded.domain, odds_at_verdict = excluded.odds_at_verdict, factors = excluded.factors,
+         answers_snapshot = excluded.answers_snapshot, verdict_fallback = excluded.verdict_fallback,
+         odds_rubric = excluded.odds_rubric, odds_pass_rate = excluded.odds_pass_rate,
+         user_estimate = COALESCE(excluded.user_estimate, goal_outcomes.user_estimate)`,
+    )
+    .bind(
+      session.id, session.domain,
+      typeof verdict.success_probability === 'number' ? Math.round(verdict.success_probability) : null,
+      JSON.stringify(verdict.factors ?? []),
+      JSON.stringify(st.answers),
+      verdict.verdict_fallback ? 1 : 0,
+      simState?.odds?.rubric ?? null,
+      simState?.odds?.pass_rate ?? null,
+      userEstimate,
+    )
+    .run()
+    .catch(err => console.error('goal_outcomes write failed', err));
 }
 
 /** A user-named runway is buildable only at the attempt floor or better —
@@ -832,10 +941,11 @@ export default {
     }
 
     // Everything below is the coach surface: guard rails first. GET is
-    // legal only for the 2c simulation poll; everything else stays POST.
+    // legal only for the two polls — the 2c simulation and the draft job;
+    // everything else stays POST.
     if (!url.pathname.startsWith('/coach/')) return json({ error: 'not_found' }, 404, cors);
-    const isSimPoll = request.method === 'GET' && /\/simulation$/.test(url.pathname);
-    if (request.method !== 'POST' && !isSimPoll) return json({ error: 'method_not_allowed' }, 405, cors);
+    const isPoll = request.method === 'GET' && (/\/simulation$/.test(url.pathname) || /\/protocol\/job$/.test(url.pathname));
+    if (request.method !== 'POST' && !isPoll) return json({ error: 'method_not_allowed' }, 405, cors);
 
     if (env.AI_ENABLED !== 'true') return json({ error: 'ai_disabled' }, 503, cors); // kill-switch
     if (!providerReady(env)) return json({ error: 'ai_unconfigured', provider: provider(env) }, 503, cors);
@@ -853,7 +963,7 @@ export default {
     // freeze an in-flight verdict's lanes at the daily cap — the poll IS the
     // engine, so blocking it strands the session mid-simulation. The work it
     // kicks is bounded (one draft with a 3-attempt fuse + one lane set).
-    if (!isHarness && !isSimPoll) {
+    if (!isHarness && !isPoll) {
       // P3 quota switch: a signed-in caller is metered by ACCOUNT, not by the
       // spoofable device header. Anonymous callers keep the device key.
       const coachBearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
@@ -867,7 +977,7 @@ export default {
       body = (await request.json()) as Record<string, unknown>;
     } catch {
       // GETs (the simulation poll) legitimately carry no body.
-      if (!isSimPoll) return json({ error: 'invalid_json' }, 400, cors);
+      if (!isPoll) return json({ error: 'invalid_json' }, 400, cors);
     }
     const meta = { deviceId, ip, synthetic: isHarness };
 
@@ -985,7 +1095,7 @@ export default {
         const backToVerdict = session.status === 'protocol';
         await env.DB
           .prepare(
-            `UPDATE coach_sessions SET answers = ?, protocol = NULL, draft_protocol = NULL, simulation = NULL,
+            `UPDATE coach_sessions SET answers = ?, protocol = NULL, draft_protocol = NULL, simulation = NULL, draft_working_until = NULL,
              status = CASE WHEN status = 'protocol' THEN 'verdict' ELSE status END,
              updated_at = datetime('now') WHERE id = ?`,
           )
@@ -1034,7 +1144,23 @@ export default {
           simulation: sim,
           draft_ready: !!session.draft_protocol,
           current_odds: verdict?.success_probability ?? null,
+          draft: await currentJobView(env, session, Date.now()),
         }, 200, cors);
+      }
+
+      /* GET /coach/sessions/:id/protocol/job — the durable draft job for the
+       * session's current config: status, kicks, rejections so far, whether
+       * the draft is ready. Quota-exempt like the simulation poll (it
+       * finishes work the quota already admitted) and self-healing: a job
+       * that looks stuck is re-kicked here under a kick cap, and past the cap
+       * it is failed as 'lost' so the client shows the retry door, not a
+       * spinner. Never carries model work. */
+      const jobMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol\/job$/);
+      if (jobMatch && request.method === 'GET') {
+        const session = await loadSession(env, jobMatch[1], deviceId);
+        if (!session) return json({ error: 'session_not_found' }, 404, cors);
+        const job = await currentJobView(env, session, Date.now());
+        return json({ sessionId: session.id, status: session.status, draft_ready: !!session.draft_protocol, job }, 200, cors);
       }
 
       /* POST /coach/sessions/:id/prepare {pace?, variant?} — owner decision
@@ -1058,22 +1184,33 @@ export default {
         }
         const customFloor = customPaceFloor(verdict, pace);
         if (customFloor) return json(customFloor, customFloor.error === 'no_custom_pace' ? 400 : 403, cors);
+        // The claim is cleared WITH the draft, on purpose: a consumer still
+        // working the previous epoch would otherwise hold the new job off
+        // for its whole TTL — and its own write is epoch-guarded, so it
+        // lands nowhere either way.
         await env.DB
-          .prepare(`UPDATE coach_sessions SET draft_protocol = NULL, simulation = NULL WHERE id = ?`)
+          .prepare(`UPDATE coach_sessions SET draft_protocol = NULL, simulation = NULL, draft_working_until = NULL WHERE id = ?`)
           .bind(session.id)
           .run();
         session.draft_protocol = null;
         session.simulation = null;
         const config: SimConfig = { pace, variant };
-        // Init, then a head start — the new pace's draft begins ~2-4s before
-        // the first poll would have kicked it. Both branches claim before
-        // working, so this and the polls' drivers can never double the work.
-        // (driveDraft's claim is new: the comment used to credit driveSim's
-        // lock on a branch that never reaches driveSim.)
+        if (env.SIMULATIONS === 'off') {
+          // Durable (speed plan, step 2): the new config's draft is a queued
+          // job before this responds.
+          await initSimulation(env, session, config);
+          const job = await kickDraftJob(env, meta, session, config)
+            .catch(err => { console.error('draft job kick failed', err); return null; });
+          return json({
+            sessionId: session.id, ok: true, preparing: config,
+            job: job ? await jobView(env.DB, job, session, Date.now()) : null,
+          }, 202, cors);
+        }
+        // Lanes on: init, then a head start — the sim engine's own lock keeps
+        // this and the polls' drivers from doubling the work.
         ctx.waitUntil((async () => {
           await initSimulation(env, session, config);
-          if (env.SIMULATIONS === 'off') await driveDraft(env, meta, session.id, deviceId);
-          else await driveSim(env, meta, session.id, deviceId);
+          await driveSim(env, meta, session.id, deviceId);
         })());
         return json({ sessionId: session.id, ok: true, preparing: config }, 202, cors);
       }
@@ -1143,10 +1280,21 @@ export default {
         return json({ sessionId: session.id, ...out }, 200, cors);
       }
 
-      /* POST /coach/sessions/:id/protocol — generate for a verdict session. */
+      /* POST /coach/sessions/:id/protocol — accept the draft, or build.
+       *
+       * Three ways out, in order:
+       *   1. the fast path — the background draft exists for exactly this
+       *      config: copy it, zero model calls, ~300ms;
+       *   2. `async: true` (build 33+) — never generate in-request: make sure
+       *      a durable job exists for this config and answer 202 {building,
+       *      job}; the client polls GET …/protocol/job and calls back;
+       *   3. the legacy synchronous build (build ≤32, the harness) — claim
+       *      the draft FIRST so a consumer mid-job and this request can never
+       *      run the same generation side by side; if a consumer holds the
+       *      claim, wait for its draft instead of duplicating it. */
       const protoMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol$/);
       if (protoMatch) {
-        let session = await loadSession(env, protoMatch[1], deviceId);
+        const session = await loadSession(env, protoMatch[1], deviceId);
         if (!session) return json({ error: 'session_not_found' }, 404, cors);
         if (session.status === 'protocol' && session.protocol) {
           const cached = JSON.parse(session.protocol) as Protocol;
@@ -1179,104 +1327,99 @@ export default {
         }
         const customFloor = customPaceFloor(verdict, pace);
         if (customFloor) return json(customFloor, customFloor.error === 'no_custom_pace' ? 400 : 403, cors);
-        // A draft is very likely already being written: the verdict kicks one
-        // the moment it is issued, and it takes about as long as the user
-        // spends reading the verdict. Tapping "Build my plan" while it runs
-        // used to start a SECOND full generation beside the first — two paid
-        // calls for one plan (production, 7 Sep 06:26).
-        //
-        // So wait for it, briefly, and take the fast path below when it lands.
-        // The wait is bounded well under a generation and gives up the moment
-        // the claim lapses, because the common ending for a draft is its
-        // isolate being torn down, not a return. Nothing is lost by falling
-        // through: the synchronous path is exactly what used to happen.
-        if (!session.draft_protocol) {
-          const waited = await waitForDraft(env.DB, session.id);
-          if (waited) {
-            const fresh = await loadSession(env, session.id, deviceId);
-            if (fresh?.draft_protocol) session = fresh;
-          }
-        }
-        // 2c fast path (owner decision 1): "Build my plan" accepts the
-        // draft the simulation already built for this exact config —
-        // instant. A config mismatch (different pace / the attempt without
-        // a prepare) falls through to the synchronous path unchanged.
-        const simState = session.simulation ? (JSON.parse(session.simulation) as SimulationState) : null;
-        const wantPace: string = pace ?? 'steady';
+        const wantPace: PaceKey = pace ?? 'steady';
         const wantVariant = variant ?? null;
-        if (
-          session.draft_protocol && simState &&
-          // 'failed' included deliberately: with SIMULATIONS off every draft
-          // belongs to a born-failed sim, and a lanes-failed sim's draft is
-          // still the validated plan for this exact config (epoch-guarded
-          // writes make a stale draft impossible).
-          (simState.status === 'done' || simState.status === 'simulating' || simState.status === 'failed') &&
-          simState.config.pace === wantPace && simState.config.variant === wantVariant
-        ) {
-          const draft = JSON.parse(session.draft_protocol) as Protocol;
-          const chosen = chosenOddsFor(verdict, wantPace as PaceKey, wantVariant ?? undefined);
+        const config: SimConfig = { pace: wantPace, variant: wantVariant };
+
+        // 2c fast path (owner decision 1): "Build my plan" accepts the draft
+        // the background job already built for this exact config — instant.
+        // 'failed' included deliberately: with SIMULATIONS off every draft
+        // belongs to a born-failed sim, and a lanes-failed sim's draft is
+        // still the validated plan for this exact config (epoch-guarded
+        // writes make a stale draft impossible). A config mismatch (a
+        // different pace / the attempt without a prepare) is not a fast path.
+        const acceptDraft = async (s: SessionRow): Promise<Response | null> => {
+          const simState = s.simulation ? (JSON.parse(s.simulation) as SimulationState) : null;
+          if (!s.draft_protocol || !simState) return null;
+          if (simState.status !== 'done' && simState.status !== 'simulating' && simState.status !== 'failed') return null;
+          if (simState.config.pace !== wantPace || simState.config.variant !== wantVariant) return null;
+          const draft = JSON.parse(s.draft_protocol) as Protocol;
+          const chosen = chosenOddsFor(verdict, wantPace, wantVariant ?? undefined);
           await env.DB
             .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, base_protocol = ?, plan_odds = ?, odds_ceiling = ?, updated_at = datetime('now') WHERE id = ?`)
-            .bind(JSON.stringify(draft), JSON.stringify(draft), chosen, chosen, session.id)
+            .bind(JSON.stringify(draft), JSON.stringify(draft), chosen, chosen, s.id)
             .run();
-          {
-            const st = sessionStructure(session);
-            await env.DB
-              .prepare(
-                `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot, verdict_fallback, odds_rubric, odds_pass_rate, user_estimate)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              )
-              .bind(
-                session.id, session.domain,
-                typeof verdict.success_probability === 'number' ? Math.round(verdict.success_probability) : null,
-                JSON.stringify(verdict.factors ?? []),
-                JSON.stringify(st.answers),
-                verdict.verdict_fallback ? 1 : 0,
-                simState.odds?.rubric ?? null,
-                simState.odds?.pass_rate ?? null,
-                userEstimate,
-              )
-              .run()
-              .catch(err => console.error('goal_outcomes write failed', err));
-          }
+          await writeOutcome(env, s, verdict, simState, userEstimate);
           return json({
-            sessionId: session.id, type: 'protocol', protocol: draft,
+            sessionId: s.id, type: 'protocol', protocol: draft,
             simulation: simState,
-            ...assumptionPayload(session, draft),
+            ...assumptionPayload(s, draft),
           }, 200, cors);
-        }
-        const result = await generateProtocol(env, { ...meta, sessionId: session.id }, session, verdict, pace, variant);
-        if (!result.protocol) {
-          return json({ error: 'protocol_generation_failed', details: result.errors }, 502, cors);
-        }
-        {
-          const chosen = chosenOddsFor(verdict, pace ?? 'steady', variant);
+        };
+        // The synchronous build, unchanged in what it does — only in when it
+        // is allowed to run (see the gate below).
+        const buildInRequest = async (s: SessionRow): Promise<Response> => {
+          const result = await generateProtocol(env, { ...meta, sessionId: s.id }, s, verdict, pace, variant);
+          if (!result.protocol) {
+            return json({ error: 'protocol_generation_failed', details: result.errors }, 502, cors);
+          }
+          const chosen = chosenOddsFor(verdict, wantPace, variant);
           await env.DB
             .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, base_protocol = ?, plan_odds = ?, odds_ceiling = ?, updated_at = datetime('now') WHERE id = ?`)
-            .bind(JSON.stringify(result.protocol), JSON.stringify(result.protocol), chosen, chosen, session.id)
+            .bind(JSON.stringify(result.protocol), JSON.stringify(result.protocol), chosen, chosen, s.id)
             .run();
+          // 2c's calibration dataset starts here (owner spec): the verdict
+          // row is written at protocol save, outcome left null until known.
+          await writeOutcome(env, s, verdict, null, userEstimate);
+          return json({ sessionId: s.id, type: 'protocol', protocol: result.protocol, ...assumptionPayload(s, result.protocol) }, 200, cors);
+        };
+
+        const fast = await acceptDraft(session);
+        if (fast) return fast;
+
+        // The durable path exists only where the draft is a job: with the
+        // lanes ON (SIMULATIONS != "off", dormant) the sim engine builds the
+        // draft under its own lock, and restarting it from here would clear
+        // a live simulation. Those clients fall through to the synchronous
+        // build, as every client did before build 33.
+        if (body.async === true && env.SIMULATIONS === 'off') {
+          const out = await ensureDraftJob(env, meta, session, config, body.retry === true);
+          if ('error' in out) return json(out, 429, cors);
+          return json({ sessionId: session.id, type: 'building', job: out.job }, 202, cors);
         }
-        // 2c's calibration dataset starts here (owner spec): the verdict row
-        // is written at protocol save, outcome left null until known.
-        {
-          const st = sessionStructure(session);
-          await env.DB
-            .prepare(
-              `INSERT OR REPLACE INTO goal_outcomes (session_id, domain, odds_at_verdict, factors, answers_snapshot, verdict_fallback, odds_rubric, odds_pass_rate, user_estimate)
-               VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
-            )
-            .bind(
-              session.id, session.domain,
-              typeof verdict.success_probability === 'number' ? Math.round(verdict.success_probability) : null,
-              JSON.stringify(verdict.factors ?? []),
-              JSON.stringify(st.answers),
-              verdict.verdict_fallback ? 1 : 0,
-              userEstimate,
-            )
-            .run()
-            .catch(err => console.error('goal_outcomes write failed', err));
+
+        if (session.draft_protocol) {
+          // A draft exists, but for a different config than asked (the client
+          // skipped /prepare). Claims need a null draft, so nobody can be
+          // generating: build in-request, as before.
+          return await buildInRequest(session);
         }
-        return json({ sessionId: session.id, type: 'protocol', protocol: result.protocol, ...assumptionPayload(session, result.protocol) }, 200, cors);
+        // Claim FIRST; wait only when refused. Before this the branch waited
+        // ten seconds and then generated regardless of who was already
+        // generating — with a consumer that can hold a claim for minutes,
+        // that would have been the 7 Sep double generation on every tap that
+        // landed mid-job. The wait gives up under iOS's fetch default.
+        const gate = await claimOrWait({
+          claim: () => claimDraft(env.DB, session.id, Date.now(), DRAFT_CLAIM_MS),
+          wait: ms => waitForDraft(env.DB, session.id, { waitMs: ms }),
+        }, LEGACY_WAIT_MS);
+        if (gate.kind === 'landed') {
+          const fresh = await loadSession(env, session.id, deviceId);
+          const accepted = fresh ? await acceptDraft(fresh) : null;
+          if (accepted) return accepted;
+          return await buildInRequest(fresh ?? session);
+        }
+        if (gate.kind === 'busy') {
+          return json({
+            error: 'draft_in_progress', retry_after_s: 15,
+            message: 'Your plan is still being written — try again in a moment.',
+          }, 503, cors);
+        }
+        try {
+          return await buildInRequest(session);
+        } finally {
+          await releaseDraft(env.DB, session.id, gate.claim);
+        }
       }
 
       /* POST /coach/sessions/:id/revise — "Adjust my plan" on a protocol session. */
@@ -1330,6 +1473,34 @@ export default {
       ),
       env.DB.prepare(`DELETE FROM client_errors WHERE created_at < datetime('now', '-30 days')`),
     ]);
+  },
+
+  /* Durable draft jobs (speed plan, step 2): one message is one job id. A
+   * consumer invocation has no response to be cut off from, so the
+   * three-attempt generation runs to completion here. 'retry' means someone
+   * else holds the draft claim or the provider failed; the queue redelivers
+   * after a delay, three deliveries in all (draftJob.ts owns the rules). */
+  async queue(batch: MessageBatch<DraftJobMessage>, env: Env): Promise<void> {
+    for (const msg of batch.messages) {
+      const jobId = typeof msg.body?.jobId === 'string' ? msg.body.jobId : '';
+      if (env.AI_ENABLED !== 'true' || !providerReady(env)) {
+        // The kill-switch covers the consumer too — "stop all AI spend
+        // instantly" has to include the queue's backlog. The row stays
+        // queued; a poll's heal re-kicks it once the switch is back on.
+        console.warn('draft job', jobId, 'skipped: AI disabled');
+        msg.ack();
+        continue;
+      }
+      let outcome: 'ack' | 'retry' = 'ack';
+      try {
+        outcome = jobId ? await runDraftJob(env.DB, jobId, jobDeps(env), msg.attempts) : 'ack';
+      } catch (err) {
+        console.error('draft job', jobId, 'delivery', msg.attempts, 'threw', err);
+        outcome = msg.attempts >= JOB_DELIVERIES ? 'ack' : 'retry';
+      }
+      if (outcome === 'retry') msg.retry({ delaySeconds: JOB_RETRY_DELAY_S });
+      else msg.ack();
+    }
   },
 };
 
@@ -1584,14 +1755,24 @@ async function runCoachTurn(
     if (result.verdict.decision === 'feasible' || result.verdict.decision === 'counter_offer') {
       session.transcript = JSON.stringify(transcript);
       const simSession = { ...session, status: 'verdict', verdict: JSON.stringify(result.verdict) };
-      // Init, then a head start on the draft while the user reads the
-      // verdict text. Both branches claim before working, so this and the
-      // polls' drivers can never double the work.
-      ctx.waitUntil((async () => {
+      if (env.SIMULATIONS === 'off') {
+        // Durable draft (speed plan, step 2): init + enqueue are two D1
+        // writes and one queue send, awaited before the response —
+        // milliseconds, so nothing here can be lost to the post-response
+        // grace that used to kill drafts mid-generation. The consumer (the
+        // `queue` handler below) does the ~30s of work with no response to
+        // be cut off from, all three attempts if it needs them.
         await initSimulation(env, simSession, { pace: 'steady', variant: null });
-        if (env.SIMULATIONS === 'off') await driveDraft(env, meta, session.id, meta.deviceId);
-        else await driveSim(env, meta, session.id, meta.deviceId);
-      })());
+        await kickDraftJob(env, meta, simSession, { pace: 'steady', variant: null })
+          .catch(err => console.error('draft job kick failed', err));
+      } else {
+        // Lanes on: init, then a head start while the user reads — the sim
+        // engine's own lock keeps this and the polls' drivers apart.
+        ctx.waitUntil((async () => {
+          await initSimulation(env, simSession, { pace: 'steady', variant: null });
+          await driveSim(env, meta, session.id, meta.deviceId);
+        })());
+      }
     }
     const structureOut = sessionStructure(session);
     return json({

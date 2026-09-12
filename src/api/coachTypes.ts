@@ -146,6 +146,44 @@ export interface SimulationPoll {
   simulation: SimulationState | null;
   draft_ready: boolean;
   current_odds: number | null;
+  /** Build 33: the durable draft job for the session's current config. */
+  draft?: JobView | null;
+}
+
+/* ── durable draft jobs (mirrors backend/src/draftJob.ts) ──────────────── */
+
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'superseded';
+
+/** What the server says about the background plan build. Every field is a
+ *  stored fact, so the wait copy built from it is never a guess: "in line"
+ *  is `queued`, "writing" is `running` with no rejections, "didn't pass the
+ *  checks, writing another" is `running` with `attempts_logged` ≥ 1. */
+export interface JobView {
+  id: string;
+  status: JobStatus;
+  /** validators | transport | lost | epoch_moved | accepted | session_gone */
+  reason: string | null;
+  kicks: number;
+  /** Drafts the validators sent back so far, for this job. */
+  attempts_logged: number;
+  config: { pace: string; variant: string | null };
+  draft_ready: boolean;
+  age_s: number;
+}
+
+/** 202 from POST /protocol {async:true}: the plan is being written. */
+export interface BuildingResponse {
+  sessionId: string;
+  type: 'building';
+  job: JobView;
+}
+
+/** GET /coach/sessions/:id/protocol/job */
+export interface ProtocolJobPoll {
+  sessionId: string;
+  status: string;
+  draft_ready: boolean;
+  job: JobView | null;
 }
 
 export interface StepAssumption {

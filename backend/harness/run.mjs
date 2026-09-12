@@ -15,7 +15,51 @@ const BASE = process.env.QLECK_API ?? 'http://127.0.0.1:8787';
 const SECRET = process.env.HARNESS_SECRET ?? 'local-dev-harness';
 const DEVICE = 'aaaaaaaa-aaaa-4aaa-8aaa-000000000001';
 const CONCURRENCY = 4; // owner spec fix 1: capped so the transport backoff, not the pool, absorbs provider pressure
+// ONLY=id1,id2 re-runs a few goal fixtures (no revisions, no exit code that
+// means anything) — for reading a single miss against the noise floor
+// without paying for the suite.
+const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',').map(s => s.trim()).filter(Boolean)) : null;
+// How long the durable job is followed before the fixture is scored as a
+// miss. Production jobs finish inside 240s; under wrangler dev the consumer
+// shares one process with four fixtures' worth of requests and a physique
+// plan's three attempts can run past five minutes.
+const JOB_FOLLOW_MS = 420_000;
 const GENERIC_ANSWER = 'Whatever you think is realistic — I have a normal schedule and average fitness.';
+
+/** GET with the harness headers — the job poll. */
+async function apiGet(path) {
+  const res = await fetch(BASE + path, { headers: { 'X-Qleck-Device': DEVICE, 'X-Qleck-Harness': SECRET } });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+/** Build 33's path, which is what the harness measures now: ask for the plan
+ *  asynchronously, follow the durable job to its end, then accept. One job —
+ *  three attempts at most — per fixture, exactly what the in-request build
+ *  was. The legacy branch would otherwise let the harness re-claim after a
+ *  failed job and score six attempts as one valid plan (review, 11 Sep). */
+async function buildViaJob(sessionId) {
+  const first = await api(`/coach/sessions/${sessionId}/protocol`, { async: true });
+  if (first.status !== 202) return { status: first.status, body: first.body, job: first.body?.job ?? null };
+  let job = first.body.job ?? null;
+  const t0 = Date.now();
+  while (Date.now() - t0 < JOB_FOLLOW_MS) {
+    await new Promise(r => setTimeout(r, 2000));
+    const poll = await apiGet(`/coach/sessions/${sessionId}/protocol/job`);
+    if (poll.status !== 200) continue;
+    job = poll.body.job ?? job;
+    const settled = poll.body.status === 'protocol' || poll.body.draft_ready || !poll.body.job
+      || job?.status === 'done' || job?.status === 'superseded';
+    if (settled) {
+      const acc = await api(`/coach/sessions/${sessionId}/protocol`, { async: true });
+      if (acc.status === 202) { job = acc.body.job ?? job; continue; } // restarted — keep following
+      return { status: acc.status, body: acc.body, job };
+    }
+    if (job?.status === 'failed') {
+      return { status: 502, body: { error: 'protocol_generation_failed', reason: job.reason, attempts: job.attempts_logged }, job };
+    }
+  }
+  return { status: 504, body: { error: 'job_timeout' }, job };
+}
 
 async function api(path, body) {
   // Exponential backoff on dropped connections and 5xx (fix 1 discipline,
@@ -334,10 +378,14 @@ async function runGoalFixture(f) {
   let protocolOk = null;
   let howToOk = null;
   let protocol = null;
+  let jobStatus = null;
+  let jobAttempts = null;
   if (f.protocol && (outcome === 'feasible' || outcome === 'counter_offer')) {
-    const p = await api(`/coach/sessions/${sessionId}/protocol`, {});
+    const p = await buildViaJob(sessionId);
     protocolOk = p.status === 200;
     if (protocolOk) protocol = p.body.protocol;
+    jobStatus = p.job?.status ?? null;
+    jobAttempts = p.job?.attempts_logged ?? null;
     // v31 how-to: phase one is what a new user actually reads, so every rep in
     // it must carry a structured how_to rather than a paragraph the row has to
     // truncate. The server's howToErrors enforces the shape during generation;
@@ -423,6 +471,7 @@ async function runGoalFixture(f) {
     _asked: askedTexts, _dupPairs: dupPairs, _sent: sentAnswers,
     _sessionId: sessionId, _protocol: protocol,
     _ownPlanLines: f.ownPlan ? ownPlanLineCount(f.ownPlan) : null,
+    _jobStatus: jobStatus, _jobAttempts: jobAttempts,
   };
 }
 
@@ -477,17 +526,18 @@ if (!health?.ai) {
   process.exit(1);
 }
 console.log(`harness → ${BASE} (provider: ${health.provider})`);
-console.log(`${GOAL_FIXTURES.length} goal fixtures + ${REVISION_FIXTURES.length} revision fixtures\n`);
+const GOALS = ONLY ? GOAL_FIXTURES.filter(f => ONLY.has(f.id)) : GOAL_FIXTURES;
+console.log(`${GOALS.length} goal fixtures + ${ONLY ? 0 : REVISION_FIXTURES.length} revision fixtures${ONLY ? ' (ONLY)' : ''}\n`);
 
 const started = Date.now();
-const goalResults = await pool(GOAL_FIXTURES, runGoalFixture, CONCURRENCY);
+const goalResults = await pool(GOALS, runGoalFixture, CONCURRENCY);
 // Revisions run sequentially: rev-stacked deliberately builds on rev-too-hard.
 const revisionResults = [];
-for (const rf of REVISION_FIXTURES) revisionResults.push(await runRevisionFixture(rf, goalResults));
+if (!ONLY) for (const rf of REVISION_FIXTURES) revisionResults.push(await runRevisionFixture(rf, goalResults));
 
 /* ── score ──────────────────────────────────────────────────────────────── */
 
-console.table(goalResults.map(({ _sessionId, _protocol, _asked, _dupPairs, _sent, _ownPlanLines, ...r }) => r));
+console.table(goalResults.map(({ _sessionId, _protocol, _asked, _dupPairs, _sent, _ownPlanLines, _jobStatus, _jobAttempts, ...r }) => r));
 console.table(revisionResults);
 
 // Every DELIVERED repeat, named. A tolerated one-stat re-ask still prints —

@@ -16,6 +16,22 @@ binding = "DB"
 database_name = "qleck"
 database_id = "6dc260dc-f302-4951-815c-c25328578877"
 
+# Durable draft jobs (speed plan, step 2). The verdict enqueues the plan
+# build; the `queue` handler in src/index.ts consumes it with no response to
+# be cut off from — ctx.waitUntil was cancelling drafts ~30s in. The queue
+# itself is created once, by the owner:  npx wrangler queues create qleck-draft-jobs
+[[queues.producers]]
+queue = "qleck-draft-jobs"
+binding = "DRAFT_JOBS"
+
+[[queues.consumers]]
+queue = "qleck-draft-jobs"
+max_batch_size = 1        # one job per invocation — a build is ~30s of one call
+max_batch_timeout = 0     # deliver the moment a message lands
+max_retries = 2           # three deliveries in all (draftJob.ts JOB_DELIVERIES)
+retry_delay = 20          # seconds; matches JOB_RETRY_DELAY_S
+max_concurrency = 5       # a sixth simultaneous plan waits, and the screen says so
+
 [vars]
 # "deepseek" (default, cheap) or "anthropic" (Claude — quality tier, path kept warm).
 AI_PROVIDER = "deepseek"

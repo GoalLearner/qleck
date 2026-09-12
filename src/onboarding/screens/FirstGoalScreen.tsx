@@ -815,7 +815,7 @@ function NameItRow({ base, onPrice }: { base: number; onPrice: (weeks: number) =
 
 function FeasibleVerdict({
   v, pace, onPace, onBuild, onReset, missingRequired,
-  sim, prevSim, editedKey, answers, quickPicks, onEditInput, onPriceCustom, ownPlanMode, estimate,
+  sim, prevSim, editedKey, answers, quickPicks, onEditInput, onPriceCustom, ownPlanMode, estimate, draftReady,
 }: {
   v: Verdict;
   /** The user's own guess, when they were asked for one. */
@@ -823,6 +823,8 @@ function FeasibleVerdict({
   pace: PaceKey;
   onPace: (p: PaceKey) => void;
   onBuild: () => void;
+  /** Build 33: the background draft for THIS pace is written. */
+  draftReady?: boolean;
   onReset: () => void;
   missingRequired?: string[];
   sim?: SimulationState | null;
@@ -1095,6 +1097,7 @@ function FeasibleVerdict({
             onPress={onBuild}
             style={wide ? { width: 440, alignSelf: 'center' } : undefined}
           />
+          {draftReady ? <ReadyLine /> : null}
           <TextButton label="Change my goal" onPress={onReset} height={46} />
         </View>
         <CoachFooter surface="verdict" />
@@ -1106,7 +1109,7 @@ function FeasibleVerdict({
 /** Canvas 5b — the counter-offer as a negotiation: one dial, two pills —
  *  three, once the user has named a runway of their own. */
 function CounterVerdict({
-  v, goalText, pace, onPace, onBuild, onBuildOriginal, onReset, onPriceCustom, ownPlanMode, estimate,
+  v, goalText, pace, onPace, onBuild, onBuildOriginal, onReset, onPriceCustom, ownPlanMode, estimate, draftReady,
 }: {
   v: Verdict;
   /** The user's own guess, when they were asked for one. */
@@ -1120,6 +1123,8 @@ function CounterVerdict({
   onBuild: (p: PaceKey) => void;
   onBuildOriginal: () => void;
   onReset: () => void;
+  /** Build 33: the background draft for the pace on screen is written. */
+  draftReady?: boolean;
   /** v29: price a user-named runway; resolves false when pricing failed. */
   onPriceCustom?: (weeks: number) => Promise<boolean>;
   /** Tier-2: the countered thing is the user's own plan, not just a goal. */
@@ -1278,7 +1283,7 @@ function CounterVerdict({
 
   // Built once, used in both layouts — the narrow one used to carry a
   // hand-copied duplicate of this block.
-  const actions = yours && custom
+  const actionsInner = yours && custom
     ? customOk
       ? (
         <>
@@ -1295,6 +1300,12 @@ function CounterVerdict({
         </>
       )
       : <PrimaryButton label={"Take the deal — Qoach’s version"} onPress={() => onBuild('steady')} />;
+  // The verdict kicked the deal's draft (steady, Qoach's version); a priced
+  // custom runway kicks its own. The line names whichever is the one ready.
+  const readyLine = draftReady
+    ? <ReadyLine text={pace === 'custom' ? 'YOUR PLAN IS WRITTEN — OPENS INSTANTLY' : 'THE DEAL IS WRITTEN — OPENS INSTANTLY'} />
+    : null;
+  const actions = <>{actionsInner}{readyLine}</>;
 
   const leftCol = (
     <View style={{ flex: wide ? 1 : undefined, gap: 14 }}>
@@ -1827,18 +1838,31 @@ function LeaveSheet({
 // Every line is backed by the same 33-call sample. Nothing here says "almost
 // done" — that is the one thing the client cannot know.
 const WAIT_COPY = {
-  building: [
-    { after: 0, head: 'Writing your plan.', sub: 'Usually about half a minute.' },
-    { after: 30, head: 'Taking longer than usual.', sub: 'A third of plans run past 40 seconds.' },
-    { after: 45, head: 'Still writing. It hasn’t stalled.', sub: 'Longest measured: 75 seconds.' },
-    { after: 60, head: 'Past a minute. Still writing.', sub: 'You can stop, but the goal starts over.' },
-  ],
   thinking: [
     { after: 0, head: 'Reading what you wrote.', sub: 'Your first question is on its way.' },
     { after: 30, head: 'Taking longer than usual.', sub: 'Qoach is thinking, not stuck.' },
     { after: 60, head: 'Past a minute. Still thinking.', sub: 'You can stop, but the goal starts over.' },
   ],
 } as const;
+
+/** The building line reads the JOB, not the clock (build 33): every head
+ *  maps to a stored fact — in line, writing, how many drafts the checks sent
+ *  back. The clock stays as the one thing that claims anything about time.
+ *  The old "40 seconds" / "75 seconds" lines are gone: they described the
+ *  retired in-request build, calibrated on validator retries; one measured
+ *  call is 29s at the median and 60s at p90 (11 Sep). */
+function buildingStage(job: CoachFlow['job'], secs: number): { head: string; sub: string } {
+  const late = secs >= 90 ? 'You can stop, but the goal starts over.' : null;
+  const writing = { head: 'Writing your plan.', sub: late ?? (secs < 45 ? 'Usually about half a minute.' : 'Long plans take a minute. It hasn’t stalled.') };
+  if (!job) return writing;
+  if (job.status === 'queued') {
+    return { head: 'Your plan is in line to be written.', sub: late ?? (secs < 30 ? 'A few seconds, usually.' : 'Slower than usual to be picked up. Still in line.') };
+  }
+  if (job.status === 'done') return { head: 'Written. Opening it.', sub: 'One moment.' };
+  if (job.attempts_logged >= 2) return { head: 'Two drafts didn’t pass Qoach’s checks. One more try.', sub: late ?? 'Every plan is checked before you see it.' };
+  if (job.attempts_logged === 1) return { head: 'The first draft didn’t pass Qoach’s checks. Writing another.', sub: late ?? 'Every plan is checked before you see it.' };
+  return writing;
+}
 
 /** The canvas' default card cadence, exposed there as a tweak. */
 const CARD_SECONDS = 7;
@@ -1866,6 +1890,17 @@ function waitCards(v: Verdict | null): WaitCard[] {
     line,
     detail: v.success_factor_notes?.[i] ?? '',
   }));
+}
+
+/** "Your plan is written — opens instantly": shown only when the draft job
+ *  for exactly the config the button would build reports done (build 33).
+ *  Never a guess — the server's own fact, polled. */
+function ReadyLine({ text = 'YOUR PLAN IS WRITTEN — OPENS INSTANTLY' }: { text?: string }) {
+  return (
+    <Text style={{ marginTop: 10, textAlign: 'center', fontFamily: MONO, fontSize: 11, letterSpacing: 1.2, color: night.accentText }}>
+      {text}
+    </Text>
+  );
 }
 
 function WaitEyebrow({ text, color }: { text: string; color?: string }) {
@@ -1911,8 +1946,9 @@ function ThinkingView({
     return () => clearInterval(iv);
   }, []);
 
-  const stages = building ? WAIT_COPY.building : WAIT_COPY.thinking;
-  const stage = stages.reduce((best, s) => (secs >= s.after ? s : best), stages[0]);
+  const stage = building
+    ? buildingStage(coach.job, secs)
+    : WAIT_COPY.thinking.reduce((best, s) => (secs >= s.after ? s : best), WAIT_COPY.thinking[0]);
   const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
   const loud = secs >= DOOR_LOUD_AT;
 
@@ -2715,6 +2751,7 @@ export default function FirstGoalScreen({
         onPriceCustom={coach.priceCustom}
         ownPlanMode={coach.ownPlanMode}
         estimate={coach.estimate}
+        draftReady={coach.draftReady}
       />
     );
   }
@@ -2733,6 +2770,7 @@ export default function FirstGoalScreen({
         onPriceCustom={coach.priceCustom}
         ownPlanMode={coach.ownPlanMode}
         estimate={coach.estimate}
+        draftReady={coach.draftReady}
       />
     );
   }

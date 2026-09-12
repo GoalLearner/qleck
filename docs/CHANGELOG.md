@@ -468,6 +468,91 @@ sequenced and checked against the code before a line was written.
 
 ---
 
+### Build 33 · 11 Sep — the plan is written before you ask for it (speed plan, steps 2–5)
+
+The measurement (step 0, above) put the problem in one number: only 5 of 38
+saved plans had taken the instant path. The draft the coach writes in the
+background after the verdict was running inside `ctx.waitUntil`, which
+Cloudflare cancels about thirty seconds after the response — and a plan call
+is 29s at the median, 60s at p90. Most drafts died mid-sentence, invisibly,
+and any draft that needed a validator retry could never land. Then "Build my
+plan" started a fresh 25–100s generation inside a request the phone times out
+at 60s.
+
+- **The draft is a durable job now.** The verdict enqueues it on a Cloudflare
+  Queue (`qleck-draft-jobs`, created by the owner; migration 0020
+  `protocol_jobs`) and a consumer with no response to be cut off from runs
+  the unchanged three-attempt generation to completion. One job per
+  (session, epoch); a pace switch mints a new epoch and the old job's result
+  lands nowhere (the same compare-and-swap the old draft used). The draft
+  CLAIM from build 31 is honoured everywhere, so a consumer and an
+  in-request build can never write the same plan side by side. The consumer
+  holds a 60-second lease renewed every 10 seconds; a consumer that is
+  killed frees its claim inside a minute, a lost lease aborts the model
+  call, a D1 hiccup on a renewal does NOT (it keeps going until the lease
+  would genuinely have lapsed), each call has a 120-second budget, and
+  between attempts it asks whether anyone still wants this plan. The
+  AI kill-switch covers the queue's backlog. Account erasure deletes the
+  job with the session, and a consumer whose account vanished mid-generation
+  de-identifies the ledger rows it wrote afterwards.
+- **The app asks asynchronously (build 33).** "Build my plan" answers with
+  the plan when the draft is ready — zero model calls, ~15ms measured — or
+  with *building* and a job the app polls every 2.2 seconds (GET, quota-
+  exempt, self-healing on the server under a kick cap). The wait screen
+  reads the JOB, not the clock: *"Your plan is in line to be written"*,
+  *"Writing your plan"*, *"The first draft didn't pass Qoach's checks.
+  Writing another."* — every line a stored fact. The "40 seconds" and "75
+  seconds" lines are gone; they described the retired in-request build. On
+  the verdict page the poll keeps going after a born-failed sim and, only
+  for exactly the pace on screen, shows **YOUR PLAN IS WRITTEN — OPENS
+  INSTANTLY** (or **THE DEAL IS WRITTEN…** on a counter-offer). A job that
+  fails three drafts shows the reason and **Retry**, which starts a fresh
+  job — at most three failed jobs per goal, then the daily-limit copy.
+  Fixing an assumption now rebuilds the pace and side that were built (it
+  used to fall back to steady), and the attempt build no longer sends a
+  stale null for your own guess. A build-32 install against this server
+  still builds: it waits for the job's draft and accepts it, and re-claims
+  the build for itself only if the consumer died or gave up.
+- **The correction prompt tells the truth (step 4a).** On a retry the model
+  used to be shown its emission AFTER the repairs — with a malformed how-to
+  already deleted — and then told the step "needs a how_to". It now sees
+  exactly what it wrote, and the phase-1 how-to rule it broke by name
+  ("gist is 140 chars, must be under 100"). Prompt version 29 → 32 (v30 and
+  v31 had shipped unbumped); the cold open was re-captured: 2% as asked,
+  82% for the counter-offer.
+- **Days win (step 4b).** A step that names mon/wed/fri and says `per_week:
+  2` is corrected rather than rejected — the one mechanical rejection left
+  after the 6 Sep session repair (nine in one harness day). The big
+  "step-vs-session" category in step 0's 21-day readout turned out to be
+  pre-6-Sep; since then the top rejection is provenance — a number with no
+  citation — which no repair can honestly fix. That is step 6's prompt
+  experiment.
+- **The harness measures the durable path now.** `run.mjs` builds with
+  `async:true`, follows the job, then accepts — one job of at most three
+  attempts per fixture, exactly what the in-request build was. The legacy
+  branch had let it re-claim after a failed job and score six attempts as
+  one valid plan. `npm run smoke:job` drives one goal through the real
+  queue against a live worker.
+- **The adversarial review** (28 agents, 4 lenses, 2 refuters per finding)
+  confirmed four defects and one already-fixed one; all four are fixed
+  above (the D1-error-is-not-a-lost-lease case, the kill-switch, the lanes-
+  on guard on the async branch, the erased-mid-job ledger rows).
+- **Paid runs, ledger (an upper bound — 81–86% of input tokens are cache
+  hits):** step-2 regression $0.60; step-3+4 chain (smoke, recapture,
+  harness, calibration) $1.09; smokes ~$0.05; final regression $1.21 (with the four-fixture re-run).
+  With the two baselines ($1.76): **$4.68 of the $20 ask-first cap.**
+  Bars: step-2 run lost `protocol valid` to the legacy branch's 45-second
+  wait (fixed); step-3+4 run lost it to one physique fixture on the six-
+  attempt legacy scoring (the runner no longer takes that path); final run
+  10 of 12 protocol fixtures on the first pass, plus the two known-flaky bars on the same two fixtures as the baselines. The four behind those bars re-run alone: chips and pillars clean, `pushups-30` done after two rejections, `lose-weight-moderate` a genuine three-strike (the sleep pillar and a conditional step, three times — the model, on the same attempt budget the in-request build had), and `lose-10-lbs-range` a job the local queue simulator never delivered while three other builds ran, which the heal then wrote off as "lost" — so the unpicked window is three minutes now and a late delivery for a "lost" job still builds it. Production queues deliver concurrently; the local simulator does not. Calibration on the marathon-3w arm: 82 / 82 / 82 (sd 0)
+  where the worker answered; final arm 80 / 82 / 82 / 84 (mean 82, sd 1.6) on the four runs that reached the worker — the other two hit the supervisor recycling it after the long run.
+- **Deployed** (worker d0bdd144, migration 0020 applied, queue bound 1 producer /
+  1 consumer). Production smoke after the deploy: the live consumer wrote the
+  draft 38.7s after the verdict; the accept took 301ms with no generation.
+- Not done, on purpose: the lanes simulation is still off; the legacy
+  synchronous branch stays until the ledger shows a week without build-≤32
+  traffic (step 6 vi); no prompt text changed.
+
 ### Backend · 11 Sep — measurement before speed (speed plan, step 0)
 
 No build. The owner asked for a faster coach without thinner plans; the

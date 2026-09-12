@@ -10,7 +10,7 @@ import { emissionFingerprint, planNextAttempt } from './retryPolicy';
 import { clampToLadder, ladderFor, ladderLine, pacingDirection } from './pace';
 import { interviewBand } from './interviewBand';
 import { applyProtocolOp, type EditOp } from './protocolEdit';
-import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, ownPlanLineCount, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
+import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, ownPlanLineCount, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, reconcileFrequency, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
   SCENARIO_CONCURRENCY, granularityFor, runScenario, summarizeRuns, templatesFor,
@@ -770,6 +770,12 @@ export async function generateProtocol(
   verdict: Verdict,
   pace?: PaceKey,
   variant?: 'original',
+  /** Speed plan, step 3 — the queue consumer's controls: a fresh signal per
+   *  model call (per-call budget + the lease), and a check between attempts
+   *  that the plan is still wanted (the epoch moved → stop, return
+   *  errors: ['epoch_moved'], no further model calls). Absent for the
+   *  in-request build, whose behaviour is unchanged. */
+  ctl?: { signal?: () => AbortSignal | undefined; stillWanted?: () => Promise<boolean> },
 ): Promise<{ protocol?: Protocol; errors?: string[] }> {
   // The chosen pace re-times the plan: same goal, same facts, different
   // runway. Steady IS the verdict, so only sprint/relaxed/custom change
@@ -839,6 +845,10 @@ export async function generateProtocol(
   // two-strike failures into a delivered plan instead of a user-facing 502.
   const LAST_GEN_ATTEMPT = 2;
   for (let attempt = 0; attempt <= LAST_GEN_ATTEMPT; attempt++) {
+    // Between attempts, ask whether anyone still wants this plan: a pace
+    // switch mid-generation moves the epoch, and the next ~30s call would
+    // be spent on a draft that lands nowhere.
+    if (attempt > 0 && ctl?.stillWanted && !(await ctl.stillWanted())) return { errors: ['epoch_moved'] };
     // A retry only earns the correction prompt when there is something to
     // correct AND the correction is still worth sending. Both exceptions are
     // the same mistake — asking again for something already answered — and
@@ -867,6 +877,7 @@ export async function generateProtocol(
       toolChoice: { type: 'tool', name: 'emit_protocol' },
       maxTokens: 8192,
       temperature,
+      signal: ctl?.signal?.(),
     });
     if (result.refused) return { errors: ['api_refusal'] };
     // Taken before the repairs below mutate it: this is what the MODEL said,
@@ -874,10 +885,17 @@ export async function generateProtocol(
     const fingerprint = emissionFingerprint(result.toolInput);
     repeatedLast = fingerprint !== null && fingerprint === lastFingerprint;
     lastFingerprint = fingerprint;
+    // What the MODEL wrote, before any repair touches it (step 4a). The
+    // correction prompt used to show `lastOutput` after the repairs — with a
+    // stripped how-to deleted from it — and then ask for the how-to back.
+    const rawEmission: unknown = (() => { try { return structuredClone(result.toolInput); } catch { return result.toolInput; } })();
     // Phase weeks first: an overlap is a blocking validateProtocol error, and
     // failing there skips the whole repair layer below — including the
     // session/day fixes — so one arithmetic slip used to cost the plan.
     retilePhaseWeeks(result.toolInput);
+    // Days win over the count (step 4b): a step that names mon/wed/fri and
+    // says per_week 2 is corrected, not rejected.
+    reconcileFrequency(result.toolInput);
     const repaired = reconcileDuration(result.toolInput);
     const errors = validateProtocol(repaired);
     const advisory: string[] = [];
@@ -930,6 +948,13 @@ export async function generateProtocol(
       errors.push(...sessionErrors(repaired as Protocol));
       errors.push(...milestoneProvenanceErrors(repaired as Protocol, structure.answers, assumableKeys, session.domain));
       errors.push(...ownPlanErrors(repaired as Protocol, session.own_plan ?? null));
+      // Phase-1 how-to problems, captured BEFORE the strip below removes the
+      // how-to (step 4a): the correction then names the rule that was broken
+      // — "gist is 140 chars, must be under 100" — instead of the generic
+      // "needs a how_to" that the stripped object would produce. Later
+      // phases are not captured on purpose: there the strip is what PREVENTS
+      // a retry, and a missing how-to past phase 1 is legal.
+      const howToBefore = howToErrors(repaired as Protocol, { firstPhaseOnly: true });
       // A malformed how_to is dropped, not fatal — the sheet falls back to
       // `details`, which is what every pre-how_to goal already shows.
       stripBrokenHowTos(repaired as Protocol);
@@ -943,7 +968,13 @@ export async function generateProtocol(
       // So they buy retries while retries are left, and on the final attempt
       // they yield. The blocking set stays strictly for things that would break
       // the APP — schema shape, session references, uncited numbers.
-      advisory.push(...howToErrors(repaired as Protocol));
+      advisory.push(...howToBefore);
+      for (const e of howToErrors(repaired as Protocol)) {
+        // The generic line for a phase-1 step whose how-to was just stripped
+        // is replaced by its specific one above; anything else is new.
+        if (howToBefore.length && e.includes('is in the first phase and needs a how_to')) continue;
+        if (!howToBefore.includes(e)) advisory.push(e);
+      }
       advisory.push(...sequencingErrors(repaired as Protocol));
       advisory.push(...fabricationErrors(repaired as Protocol, structure.answers, session.goal_text));
     }
@@ -957,7 +988,7 @@ export async function generateProtocol(
       return { protocol: repaired as Protocol };
     }
     lastErrors = [...errors, ...advisory];
-    lastOutput = result.toolInput;
+    lastOutput = rawEmission;
   }
   return { errors: lastErrors };
 }

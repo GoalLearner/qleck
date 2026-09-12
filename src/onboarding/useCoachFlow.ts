@@ -6,8 +6,8 @@
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { answerCoachQuestion, editProtocol, generateProtocol, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, startCoachSession } from '../api/coach';
-import type { PaceKey, ProtocolEditOp, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
+import { answerCoachQuestion, editProtocol, generateProtocol, getProtocolJob, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, startCoachSession } from '../api/coach';
+import type { BuildingResponse, JobView, PaceKey, ProtocolEditOp, ProtocolJobPoll, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
 import {
   ATTEMPT_FLOOR, CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
   type CoachTurnResponse, type Protocol, type Verdict,
@@ -72,6 +72,13 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
   const [editedKey, setEditedKey] = useState<string | null>(null);
   const pollNonce = useRef(0);
   const [pollTick, setPollTick] = useState(0);
+  // Build 33: the durable draft job. `job` is what the wait screen reads
+  // while a build is in flight; `draftJob` / `draftReady` are the verdict
+  // page's view of the background draft for the pace on screen.
+  const [job, setJob] = useState<JobView | null>(null);
+  const jobNonce = useRef(0);
+  const [draftJob, setDraftJob] = useState<JobView | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
 
   const captureAssumptions = (res: ProtocolResponse) => {
     setAssumptions(res.assumptions ?? []);
@@ -144,8 +151,75 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
   // Which side of a counter-offer got built: Qoach's version (default) or
   // the user's ORIGINAL ask (the 20%+ attempt the owner granted them).
   const [variant, setVariant] = useState<'offer' | 'original'>('offer');
+  const paceRef = useRef(pace);
+  paceRef.current = pace;
+  const variantRef = useRef(variant);
+  variantRef.current = variant;
 
-  const buildPlan = useCallback((paceOverride?: PaceKey) => {
+  // Build 33: the build is asynchronous. POST /protocol answers either the
+  // plan (the fast path — the background draft was ready) or 202 {building,
+  // job}; then GET …/protocol/job is polled until the job lands, and the
+  // accept is asked for again, which is then the fast path. Nothing here
+  // holds model work inside a request the client could time out — the ~60s
+  // iOS default used to turn a slow build into "hit a snag" while the server
+  // finished anyway.
+  const JOB_POLL_MS = 2200;
+  const JOB_CEILING_MS = 6 * 60_000;
+  const jobFailure = (j: JobView): CoachError => ({
+    kind: 'unavailable', retryable: true,
+    message:
+      j.reason === 'validators'
+        ? 'Qoach wrote three drafts and none passed its own checks. It happens on unusual goals — try once more, or change the goal.'
+        : j.reason === 'transport'
+          ? 'Qoach couldn’t reach its model. Try again in a moment.'
+          : 'The build got lost on the way. Try again.',
+  });
+  const settle = useCallback((
+    res: ProtocolResponse | BuildingResponse,
+    again: () => Promise<ProtocolResponse | BuildingResponse>,
+    retry: () => void,
+  ) => {
+    if (res.type === 'protocol') {
+      setJob(null);
+      setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol');
+      return;
+    }
+    setJob(res.job);
+    if (res.job.status === 'failed') { fail(jobFailure(res.job), retry); return; }
+    const id = res.sessionId;
+    const nonce = ++jobNonce.current;
+    const started = Date.now();
+    const tick = async () => {
+      if (jobNonce.current !== nonce) return;
+      await new Promise(r => setTimeout(r, JOB_POLL_MS));
+      if (jobNonce.current !== nonce) return;
+      let p: ProtocolJobPoll | null = null;
+      try { p = await getProtocolJob(id); } catch { /* a blip — poll again */ }
+      if (jobNonce.current !== nonce) return;
+      if (p) {
+        setJob(p.job);
+        if (p.status === 'protocol' || p.draft_ready || !p.job || p.job.status === 'done' || p.job.status === 'superseded') {
+          // Ask for the accept again: the fast path now — or, with no job on
+          // file for this config (or one the server set aside), the server
+          // starts a fresh one and we land back here.
+          again().then(
+            r => { if (jobNonce.current === nonce) settle(r, again, retry); },
+            err => { if (jobNonce.current === nonce) fail(err, retry); },
+          );
+          return;
+        }
+        if (p.job.status === 'failed') { fail(jobFailure(p.job), retry); return; }
+      }
+      if (Date.now() - started > JOB_CEILING_MS) {
+        fail({ kind: 'unavailable', retryable: true, message: 'The build is taking far longer than it should. Try again.' }, retry);
+        return;
+      }
+      void tick();
+    };
+    void tick();
+  }, [fail]);
+
+  const buildPlan = useCallback((paceOverride?: PaceKey, opts?: { retry?: boolean }) => {
     const id = sessionId.current;
     if (!id) return;
     // A counter-offer's buttons name the pace they build — "Build my plan —
@@ -163,11 +237,13 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setPickedOdds(null);
     setOddsStale(false);
     setPhase('building');
-    generateProtocol(id, use, undefined, estimate).then(
-      res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
+    setJob(null);
+    const again = () => generateProtocol(id, use, undefined, estimate);
+    generateProtocol(id, use, undefined, estimate, { retry: !!opts?.retry }).then(
+      res => settle(res, again, () => buildPlan(use, { retry: true })),
       err => fail(err, () => buildPlan(use)),
     );
-  }, [fail, pace, estimate]);
+  }, [fail, pace, estimate, settle]);
 
   // Tier-1B: the commitment picker's repriced odds — dropping commitments
   // before locking can only lower the number, and this is where the lowered
@@ -216,18 +292,22 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
 
   /** The attempt: build the ORIGINAL ask, eyes open. Server enforces the
    *  20% floor; this only exists on counter-offers that clear it. */
-  const buildOriginal = useCallback(() => {
+  const buildOriginal = useCallback((opts?: { retry?: boolean }) => {
     const id = sessionId.current;
     if (!id) return;
     setVariant('original');
     setPickedOdds(null);
     setOddsStale(false);
     setPhase('building');
-    generateProtocol(id, undefined, 'original', estimate).then(
-      res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
-      err => fail(err, buildOriginal),
+    setJob(null);
+    // `estimate` is in the deps now: the closure used to be created once
+    // with a null guess and sent that null on every attempt build.
+    const again = () => generateProtocol(id, undefined, 'original', estimate);
+    generateProtocol(id, undefined, 'original', estimate, { retry: !!opts?.retry }).then(
+      res => settle(res, again, () => buildOriginal({ retry: true })),
+      err => fail(err, () => buildOriginal()),
     );
-  }, [fail]);
+  }, [fail, estimate, settle]);
 
   /** "Assumed ~170 lb — fix": supply the real value, rebuild the protocol.
    *  The server clears the stored plan, so the regeneration derives every
@@ -237,13 +317,19 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     if (!id || !value.trim()) return;
     setPhase('rebuilding');
     setPickedOdds(null);
+    setJob(null);
+    // The rebuild keeps the pace and the side that were built. It used to
+    // fall back to steady / the offer, so a corrected number came back on a
+    // plan the user had not chosen.
+    const v = variantRef.current === 'original' ? 'original' as const : undefined;
+    const again = () => generateProtocol(id, paceRef.current, v, estimate);
     postAnswer(id, key, value.trim())
-      .then(() => generateProtocol(id))
+      .then(again)
       .then(
-        res => { setProtocol(res.protocol); captureAssumptions(res); setPhase('protocol'); },
+        res => settle(res, again, () => fixAssumption(key, value)),
         err => fail(err, () => fixAssumption(key, value)),
       );
-  }, [fail]);
+  }, [fail, estimate, settle]);
 
   // Poll the simulation while a verdict is showing.
   //
@@ -255,8 +341,6 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
   // eternal skeletons. Now the nonce only discards STALE RESPONSES; the loop
   // itself never stops except on done/failed (and every re-run remounts it
   // via pollTick, bumped in `finally`, success or not).
-  const paceRef = useRef(pace);
-  paceRef.current = pace;
   const healTries = useRef(0);
   const healing = useRef(false);
   useEffect(() => {
@@ -271,6 +355,16 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
         const res = await getSimulation(id);
         if (!alive) return;
         const s = pollNonce.current === nonce ? res.simulation : null;
+        // Build 33: the draft job for the pace on screen. Its liveness keeps
+        // this loop going after a born-failed sim (SIMULATIONS off), and its
+        // readiness is the "opens instantly" line under the build button —
+        // only for exactly the config the button would build.
+        const d = pollNonce.current === nonce ? (res.draft ?? null) : null;
+        if (pollNonce.current === nonce) {
+          setDraftJob(d);
+          setDraftReady(!!res.draft_ready && d?.config?.pace === paceRef.current && (d?.config?.variant ?? null) === null);
+        }
+        const draftLive = !!d && (d.status === 'queued' || d.status === 'running');
         if (s) {
           if (s.config?.pace !== paceRef.current) {
             // A pace switch was lost in flight: the server is simulating a
@@ -288,12 +382,12 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
                 .finally(() => { healing.current = false; });
             } else {
               setSim(s);
-              if (s.status === 'done' || s.status === 'failed') return;
+              if ((s.status === 'done' || s.status === 'failed') && !draftLive) return;
             }
           } else {
             healTries.current = 0;
             setSim(s);
-            if (s.status === 'done' || s.status === 'failed') return;
+            if ((s.status === 'done' || s.status === 'failed') && !draftLive) return;
           }
         }
       } catch { /* poll again */ }
@@ -313,6 +407,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setPrevSim(sim);
     setEditedKey(key);
     setSim(null);
+    setDraftJob(null); setDraftReady(false);
     pollNonce.current++; // in-flight responses for the old run are stale
     postAnswer(id, key, value)
       .then(() => prepareSimulation(id, pace))
@@ -337,6 +432,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
         if (res.pace.success_probability < ATTEMPT_FLOOR) return true;
         setPace('custom');
         setPrevSim(null); setEditedKey(null); setSim(null);
+        setDraftJob(null); setDraftReady(false);
         healTries.current = 0;
         pollNonce.current++;
         prepareSimulation(id, 'custom').catch(() => {}).finally(() => setPollTick(t => t + 1));
@@ -355,6 +451,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setPrevSim(null);
     setEditedKey(null);
     setSim(null);
+    setDraftJob(null); setDraftReady(false);
     healTries.current = 0;
     pollNonce.current++; // in-flight responses for the old pace are stale
     prepareSimulation(id, p)
@@ -378,6 +475,10 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setPrevSim(null);
     setEditedKey(null);
     pollNonce.current++;
+    jobNonce.current++;
+    setJob(null);
+    setDraftJob(null);
+    setDraftReady(false);
     healTries.current = 0;
     healing.current = false;
     setPickedOdds(null);
@@ -424,6 +525,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     sim, prevSim, editedKey, editInput, switchPace, priceCustom, verdictAnswers,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan, ownPlanMode,
     estimate, commitEstimate,
+    job, draftJob, draftReady,
   };
 }
 

@@ -105,6 +105,8 @@ sql(`INSERT INTO ai_request_payloads (request_id, prompt, response) VALUES ('${r
 // free-text past attempts. No user_id, no foreign key, nothing cascades it.
 sql(`INSERT INTO goal_outcomes (session_id, goal_id, answers_snapshot) VALUES ('${sessionId}', '${goalId}', '{"bodyweight":"231 lb","past_attempts":"a private thing about my divorce"}')`);
 sql(`INSERT INTO factor_guard_failopens (session_id) VALUES ('${sessionId}')`);
+// The durable draft job's record (0020): device id + ip the build was billed to.
+sql(`INSERT INTO protocol_jobs (id, session_id, epoch, pace, device_id, ip, status, created_ms) VALUES ('${sessionId}:1', '${sessionId}', 1, 'steady', '${staleDevice}', '10.0.0.1', 'done', 0)`);
 
 const seeded = {
   users: count('users', `id='${userId}'`),
@@ -121,6 +123,7 @@ const seeded = {
   ai_request_payloads: count('ai_request_payloads', `request_id='${requestId}'`),
   goal_outcomes: count('goal_outcomes', `session_id='${sessionId}'`),
   factor_guard_failopens: count('factor_guard_failopens', `session_id='${sessionId}'`),
+  protocol_jobs: count('protocol_jobs', `session_id='${sessionId}'`),
 };
 const empty = Object.entries(seeded).filter(([, n]) => n === 0).map(([t]) => t);
 bar('every table under test actually holds a row before the delete',
@@ -146,6 +149,7 @@ const after = {
   ai_request_payloads: count('ai_request_payloads', `request_id='${requestId}'`),
   goal_outcomes: count('goal_outcomes', `session_id='${sessionId}'`),
   factor_guard_failopens: count('factor_guard_failopens', `session_id='${sessionId}'`),
+  protocol_jobs: count('protocol_jobs', `session_id='${sessionId}'`),
 };
 for (const [table, n] of Object.entries(after)) {
   // ai_requests is the deliberate exception: the metadata row (model,

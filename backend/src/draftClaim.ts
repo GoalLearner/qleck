@@ -24,14 +24,18 @@
 export const DRAFT_CLAIM_MS = 90_000;
 
 /** Try to become the one generating this session's draft.
+ *  @param ttlMs how long the claim is good for — the in-request build keeps
+ *               DRAFT_CLAIM_MS; the queue consumer (draftJob.ts) passes its
+ *               own, longer one, because it can afford all three attempts.
  *  @returns the claim's expiry when taken, or null when someone else holds it
  *           (or a draft already exists, which is the same answer: don't). */
 export async function claimDraft(
   db: D1Database,
   sessionId: string,
   now = Date.now(),
+  ttlMs = DRAFT_CLAIM_MS,
 ): Promise<number | null> {
-  const until = now + DRAFT_CLAIM_MS;
+  const until = now + ttlMs;
   const res = await db
     .prepare(
       `UPDATE coach_sessions SET draft_working_until = ?
@@ -42,6 +46,35 @@ export async function claimDraft(
     .run()
     .catch(() => null);
   return res && (res.meta?.changes ?? 0) > 0 ? until : null;
+}
+
+/** Extend a claim we hold — the consumer's heartbeat lease (speed plan,
+ *  step 3). CAS'd on the current value: if the claim lapsed and someone else
+ *  took it, this returns null and the caller must STOP generating, because
+ *  the other party is now generating the same plan.
+ *
+ *  A D1 error is NOT a lost lease. It returns 'error' so the caller can keep
+ *  generating — nobody can take the claim before it lapses — and try again
+ *  at the next heartbeat. Folding the two into null aborted a healthy
+ *  generation on any transient hiccup (found in review, 11 Sep). */
+export async function renewDraft(
+  db: D1Database,
+  sessionId: string,
+  claim: number,
+  now: number,
+  ttlMs: number,
+): Promise<number | null | 'error'> {
+  const until = now + ttlMs;
+  let res: { meta?: { changes?: number } };
+  try {
+    res = await db
+      .prepare(`UPDATE coach_sessions SET draft_working_until = ? WHERE id = ? AND draft_working_until = ?`)
+      .bind(until, sessionId, claim)
+      .run();
+  } catch {
+    return 'error';
+  }
+  return (res.meta?.changes ?? 0) > 0 ? until : null;
 }
 
 /** Give the claim back, but only if it is still ours — a slow generation whose

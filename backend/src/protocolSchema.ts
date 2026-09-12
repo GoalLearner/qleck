@@ -372,6 +372,37 @@ export function reconcileDuration(p: unknown): unknown {
 }
 
 /**
+ * Days win (speed plan, step 4b). A step that names its days but counts them
+ * wrong — `days: [mon, wed, fri], per_week: 2` — was a blocking error that
+ * cost a whole generation attempt (~30s and a paid call), nine times in one
+ * harness day. The days are the more specific statement and the one the app
+ * renders; the count is derived from them, which is exactly the rule the
+ * plan editor already applies to a user's own edit (protocolEdit.ts).
+ *
+ * Deliberately narrow: only a non-empty list of VALID days is trusted, so a
+ * malformed one still fails validation. Returns how many steps were fixed.
+ */
+export function reconcileFrequency(p: unknown): number {
+  const proto = p as Protocol;
+  if (!proto || typeof proto !== 'object' || !Array.isArray(proto.phases)) return 0;
+  let fixed = 0;
+  for (const ph of proto.phases) {
+    for (const st of ph?.steps ?? []) {
+      const f = st?.frequency;
+      if (!f || !Array.isArray(f.days) || f.days.length === 0 || f.days.length > 7) continue;
+      const days = f.days.map(d => String(d).toLowerCase());
+      if (days.some(d => !VALID_DAYS.has(d))) continue;
+      if (new Set(days).size !== days.length) continue;
+      if (f.per_week !== days.length) {
+        f.per_week = days.length;
+        fixed++;
+      }
+    }
+  }
+  return fixed;
+}
+
+/**
  * Server-side validation beyond what JSON Schema can express. Returns a list
  * of problems; empty list = valid. Never trust model output that hasn't
  * passed this.
@@ -598,10 +629,14 @@ export function stripBrokenHowTos(p: Protocol): number {
   return dropped;
 }
 
-export function howToErrors(p: Protocol): string[] {
+export function howToErrors(p: Protocol, opts?: { firstPhaseOnly?: boolean }): string[] {
   const errs: string[] = [];
   const phases = p.phases ?? [];
   phases.forEach((phase, pi) => {
+    // Step 4a of the speed plan: the correction prompt captures phase-1
+    // how-to problems BEFORE stripBrokenHowTos removes the how-to, so the
+    // model is told the rule it broke rather than "needs a how_to".
+    if (opts?.firstPhaseOnly && pi > 0) return;
     for (const st of phase.steps ?? []) {
       const how = st.how_to;
       if (!how) {

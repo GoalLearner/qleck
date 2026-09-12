@@ -48,13 +48,28 @@ a full typecheck. Backend changes additionally need `cd backend` +
       a shorter runway never out-prices a longer one.
 - [ ] An over-ambitious goal counters (not refuses) and shows both numbers.
 - [ ] An unsafe goal refuses with help-seeking copy, never a plan.
+- [ ] (build 33) Linger on the verdict ~40s → **YOUR PLAN IS WRITTEN — OPENS
+      INSTANTLY** appears under the build button; tap → the plan opens in
+      under a second.
+- [ ] (build 33) Tap Build within ~5s of the verdict → the wait screen says
+      "in line" then "Writing your plan" with the clock, and the plan opens
+      the moment the job lands — never a 60-second timeout.
+- [ ] (build 33) Tap a pace pill mid-draft → the new pace's job starts within
+      seconds; the old pace's draft never appears on the new pace.
+- [ ] (build 33) Kill the app during the wait, relaunch, start over → nothing
+      is stuck; the goal is not on Today (it was never locked).
+- [ ] (build 33) A three-strike build shows the reason and **Retry**; Retry
+      starts a new job (at most three per goal, then the daily-limit copy).
+- [ ] (build 33) A build-32 install against this server still builds: it
+      waits for the job's draft, then accepts it.
 
 ## 3. Own-plan review (Tier-2)
 
 - [ ] "+ I ALREADY HAVE A PLAN" opens the commitments box; the CTA becomes
       **Review my plan**.
-- [ ] The review asks **1–2 questions only** and the verdict header reads
-      **YOUR PLAN, PRICED**.
+- [ ] The review asks **1–2 questions** for a plan of four or more lines and
+      **2–4** for a thinner one, and the verdict header reads **YOUR PLAN,
+      PRICED**.
 - [ ] The reveal keeps the user's own commitments; anything Qoach added wears
       the **QOACH ADDED** badge with its reason.
 

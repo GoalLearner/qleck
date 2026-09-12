@@ -114,7 +114,12 @@
 // the information-coverage list before a verdict (the app withholds the verdict
 // tool until then), and up to five when the readiness audit says a fact is
 // still missing.
-export const PROMPT_VERSION = 29;
+// 29 → 32 (11 Sep, speed plan step 4a): the correction prompt now shows the
+// model its RAW emission and names the phase-1 how-to rule it broke. No
+// system-prompt text changed. Bumped past 30 and 31 because the "v30
+// own-plan" and "v31 how-to" changes shipped without a bump and those labels
+// already mean those changes in the changelog and the ledger.
+export const PROMPT_VERSION = 32;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 

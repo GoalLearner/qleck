@@ -11,6 +11,10 @@ import Anthropic from '@anthropic-ai/sdk';
 
 export interface Env {
   DB: D1Database;
+  /** Durable draft jobs (speed plan, step 2): the verdict enqueues the plan
+   *  build and the `queue` handler in index.ts consumes it. The queue is
+   *  created once by the owner: `npx wrangler queues create qleck-draft-jobs`. */
+  DRAFT_JOBS: Queue<{ jobId: string }>;
   AI_PROVIDER?: string;
   ANTHROPIC_API_KEY?: string;
   DEEPSEEK_API_KEY?: string;
@@ -125,6 +129,10 @@ export interface CallParams {
    *  and a user who retries until greenlit is the exploit that opens.
    *  Question phrasing keeps the default for variety. */
   temperature?: number;
+  /** Step 3 of the speed plan: the queue consumer passes a signal so a hung
+   *  socket cannot pin its draft claim — a per-call budget plus "the lease
+   *  was lost". An abort is NOT a transport failure: it skips the backoff. */
+  signal?: AbortSignal;
 }
 
 export interface ModelCallResult {
@@ -175,6 +183,7 @@ async function deepseekOnce(env: Env, params: CallParams): Promise<RawResult> {
       // less malformed (unquoted values, dropped brackets) at reduced temp.
       temperature: params.temperature ?? 0.7,
     }),
+    signal: params.signal,
   });
   if (!res.ok) {
     const err = new Error(`deepseek ${res.status}: ${(await res.text()).slice(0, 300)}`) as Error & { status?: number };
@@ -221,6 +230,11 @@ async function deepseekOnce(env: Env, params: CallParams): Promise<RawResult> {
 //  - CONTENT failures (DeepSeek's ~5-10% malformed tool-argument JSON) get
 //    ONE fresh resample as before. 4xx other than 429 throws immediately —
 //    resending an invalid request is noise.
+export function isAbort(err: unknown): boolean {
+  const name = (err as { name?: string } | null)?.name;
+  return name === 'AbortError' || name === 'TimeoutError';
+}
+
 async function deepseekWithBackoff(env: Env, params: CallParams): Promise<RawResult & { transportRetries: number }> {
   let transportRetries = 0;
   for (let attempt = 0; ; attempt++) {
@@ -228,6 +242,9 @@ async function deepseekWithBackoff(env: Env, params: CallParams): Promise<RawRes
       const r = await deepseekOnce(env, params);
       return { ...r, transportRetries };
     } catch (err) {
+      // An abort (the consumer's lease was lost, or the per-call budget ran
+      // out) is a decision, not a transport failure: no backoff, no retry.
+      if (isAbort(err) || params.signal?.aborted) throw err;
       const status = (err as Error & { status?: number }).status;
       const retryable = status === undefined || status === 429 || status >= 500;
       if (!retryable || attempt >= 2) throw err;
@@ -269,7 +286,7 @@ async function callAnthropic(env: Env, params: CallParams): Promise<RawResult> {
     // call on the fallback route within the same request.
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-  } as Anthropic.Beta.MessageCreateParamsNonStreaming);
+  } as Anthropic.Beta.MessageCreateParamsNonStreaming, { signal: params.signal });
 
   let toolName: string | null = null;
   let toolInput: unknown = null;

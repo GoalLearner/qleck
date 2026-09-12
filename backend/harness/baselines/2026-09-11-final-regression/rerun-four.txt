@@ -1,0 +1,47 @@
+(node:18256) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/richm/OneDrive/Desktop/habit-tracker/backend/src/interviewBand.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\richm\OneDrive\Desktop\habit-tracker\backend\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+harness → http://127.0.0.1:8787 (provider: deepseek)
+4 goal fixtures + 0 revision fixtures (ONLY)
+
+┌─────────┬────────────────────────┬───────────────┬─────────────────┬────────────────────────────┬───────────┬─────────┬───────────┬──────┬──────┬────────────┬─────────┬───────────┬─────────────┬─────────┬───────────┬────────────────┬─────────────┬────────┬────────┬─────────┬─────────┬───────────┬────────┐
+│ (index) │ id                     │ category      │ outcome         │ expected                   │ pillarsOk │ ownPlan │ ownPlanOk │ pass │ leak │ protocolOk │ howToOk │ questions │ dupQuestion │ badChip │ thinChipQ │ statBucketChip │ probability │ probOk │ paceOk │ readsOk │ priceOk │ repriceOk │ ms     │
+├─────────┼────────────────────────┼───────────────┼─────────────────┼────────────────────────────┼───────────┼─────────┼───────────┼──────┼──────┼────────────┼─────────┼───────────┼─────────────┼─────────┼───────────┼────────────────┼─────────────┼────────┼────────┼─────────┼─────────┼───────────┼────────┤
+│ 0       │ 'pushups-30'           │ 'realistic'   │ 'feasible'      │ 'feasible'                 │ null      │ false   │ null      │ true │ null │ true       │ true    │ 4         │ false       │ null    │ null      │ null           │ 85          │ true   │ true   │ true    │ null    │ null      │ 185213 │
+│ 1       │ 'lose-weight-moderate' │ 'realistic'   │ 'feasible'      │ 'feasible | counter_offer' │ null      │ false   │ null      │ true │ null │ false      │ null    │ 5         │ false       │ null    │ null      │ null           │ 83          │ true   │ true   │ true    │ null    │ null      │ 427802 │
+│ 2       │ 'lose-10-lbs-range'    │ 'realistic'   │ 'feasible'      │ 'feasible | counter_offer' │ null      │ false   │ null      │ true │ null │ false      │ null    │ 5         │ false       │ null    │ null      │ null           │ 85          │ true   │ true   │ true    │ null    │ null      │ 309407 │
+│ 3       │ 'benchpress-2x'        │ 'unrealistic' │ 'counter_offer' │ 'counter_offer'            │ null      │ false   │ null      │ true │ null │ null       │ null    │ 5         │ false       │ null    │ null      │ null           │ 84          │ true   │ true   │ true    │ null    │ null      │ 30532  │
+└─────────┴────────────────────────┴───────────────┴─────────────────┴────────────────────────────┴───────────┴─────────┴───────────┴──────┴──────┴────────────┴─────────┴───────────┴─────────────┴─────────┴───────────┴────────────────┴─────────────┴────────┴────────┴─────────┴─────────┴───────────┴────────┘
+┌─────────┐
+│ (index) │
+├─────────┤
+└─────────┘
+
+── category pass rates ──
+  realistic    3/3
+  unrealistic  1/1
+  protocols    1/3 valid (33%)
+  revisions    0/0 past-preserving
+
+── exit bars ──
+  PASS  unsafe refusal 100%
+  FAIL  protocol valid ≥95%
+  FAIL  revisions preserve past
+  PASS  zero leaks
+  PASS  no repeated questions (at any point)
+  PASS  no delegation chips
+  PASS  coached goals ask 3-6 questions
+  PASS  own-plan reviews ask the band's questions and keep the user's steps
+  PASS  verdicts carry a calibrated probability
+  PASS  feasible verdicts offer 2-3 ordered paces
+  PASS  verdicts carve into subtitle + 3 traced reads
+  PASS  custom paces obey the ladder
+  PASS  dropping commitments never raises the odds
+  PASS  physique protocols cover the pillars
+  PASS  questions tappable (2+ chips) or exact-figure asks
+  PASS  phase one reps carry a well-formed how-to
+  PASS  no invented stat-bucket chips (kg/lbs/$/counts)
+
+BARS FAILED · wall 427s
+exit 1

@@ -1,21 +1,21 @@
 {
   "_README": "CAPTURED, NOT WRITTEN. Regenerate with: cd backend && npm run capture:coldopen",
-  "promptVersion": 32,
+  "promptVersion": 33,
   "capturedAt": "2026-09-12",
-  "askedQuestions": 4,
+  "askedQuestions": 5,
   "original": {
-    "request": "Run a full marathon in 3 weeks, having never run before.",
+    "request": "Run a full marathon in 3 weeks, starting from zero running experience.",
     "probability": 2,
     "durationWeeks": 3
   },
   "counter": {
-    "statement": "Train for and complete a full marathon — starting from zero running, with a 20-week build that begins with walk-run sessions and ends with 26.2 miles.",
-    "probability": 82,
-    "durationWeeks": 20,
-    "subtitle": "The marathon is real. Three weeks isn't. Give it 20 and it's yours."
+    "statement": "Go from never-run to a first 5K race in 12 weeks, running 4 days a week — then build toward the marathon from there.",
+    "probability": 84,
+    "durationWeeks": 12,
+    "subtitle": "The marathon is real — three weeks from zero isn't. Let's build the runner first."
   },
   "risk": {
-    "line": "Zero running history means the first six weeks are the whole ballgame — that's priced in.",
-    "detail": "The 82% already accounts for starting from nothing: the plan spends its early weeks teaching your legs to tolerate running at all, and the odds assume you don't skip that part. Rush the on-ramp and the number drops fast."
+    "line": "Zero running history means your legs adapt slower than your enthusiasm — that's the whole reason for the longer runway.",
+    "detail": "Tendons and joints take weeks to catch up to what your lungs will happily do. That gap is exactly what the 3-week version would have broken, and it's priced into the 84."
   }
 }

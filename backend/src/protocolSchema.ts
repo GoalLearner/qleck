@@ -154,7 +154,7 @@ export const PROTOCOL_TOOL_SCHEMA = {
             items: {
               type: 'object',
               additionalProperties: false,
-              required: ['id', 'title', 'kind', 'frequency', 'details'],
+              required: ['id', 'title', 'kind', 'frequency', 'details', 'derived_from'],
               properties: {
                 id: { type: 'string' },
                 title: { type: 'string' },
@@ -229,7 +229,7 @@ export const PROTOCOL_TOOL_SCHEMA = {
                 },
                 derived_from: {
                   type: 'array', items: { type: 'string' },
-                  description: "REQUIRED whenever this step carries a numeric target (quantity.amount > 0 or duration_minutes): the collected answer keys the number derives from, or ['goal_text'] when the goal states it, or ['standard_practice'] for domain-standard personal-data-free prescriptions.",
+                  description: "ALWAYS present. Empty ([]) only when the step carries no number at all. Whenever this step carries a numeric target (quantity.amount > 0 or duration_minutes): the collected answer keys the number derives from, or ['goal_text'] when the goal states it, or ['standard_practice'] for domain-standard personal-data-free prescriptions.",
                 },
                 assumption: {
                   type: 'string',
@@ -263,13 +263,13 @@ export const PROTOCOL_TOOL_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'week', 'title', 'criteria'],
+        required: ['id', 'week', 'title', 'criteria', 'derived_from'],
         properties: {
           id: { type: 'string' },
           week: { type: 'number' },
           title: { type: 'string' },
           criteria: { type: 'string' },
-          derived_from: { type: 'array', items: { type: 'string' }, description: 'Same contract as step targets: any number in the milestone cites the collected keys it derives from (goal_text / standard_practice legal).' },
+          derived_from: { type: 'array', items: { type: 'string' }, description: 'ALWAYS present. Empty ([]) only when neither title nor criteria contains a digit. Otherwise the same contract as step targets: any number in the milestone cites the collected keys it derives from (goal_text / standard_practice legal).' },
           assumption: { type: 'string' },
           assumption_key: { type: 'string' },
         },

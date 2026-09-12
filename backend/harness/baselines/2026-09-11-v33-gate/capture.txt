@@ -1,0 +1,19 @@
+
+> capture:coldopen
+> node harness/coldopen.mjs
+
+
+cold open capture — http://127.0.0.1:8787
+  goal: I want to run a full marathon in 3 weeks. I have never run before in my life.
+  q1: Before we go anywhere near a marathon plan — where are you actually starting f
+  q2: How many days a week could you realistically get out the door for a run — not 
+  q3: When you picture actually getting out for a run, what time of day and where — 
+  q4: You've never run, so a marathon in 3 weeks isn't on the table — but the runnin
+  q5: Got it — 34, healthy, no injuries, no race booked, four days a week free. Last
+  decision: counter_offer
+
+  2% -> 84%  (prompt v33)
+  risk: Zero running history means your legs adapt slower than your enthusiasm — that's the whole reason for the longer runway.
+  written: src/onboarding/coldOpen.json
+
+exit 0

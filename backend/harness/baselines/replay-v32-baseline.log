@@ -1,0 +1,28 @@
+
+replay v32-baseline → http://127.0.0.1:8787 · 20 of the most recent synthetic sessions
+
+  ok    0 attempts=3 first=invalid 105s  Do 30 push-ups in a row within 8 weeks. I can do about 8 rig
+  ok    1 attempts=1 first=valid 135s  Read a lot more this year — I keep buying books and not read
+  ok    2 attempts=2 first=invalid 70s  Lose 10 lbs
+  MISS  3 attempts=3 first=invalid 117s  I want to gain 5 lbs of lean muscle.
+  ok    4 attempts=1 first=valid 102s  Get to bed by 11pm on weeknights for a month. I usually drif
+  ok    5 attempts=2 first=invalid 71s  Hold a basic 5-minute conversation in Spanish within 3 month
+  ok    6 attempts=2 first=invalid 84s  Walk 10,000 steps a day consistently. I currently average ab
+  ok    7 attempts=1 first=valid 70s  I want to be able to run a 4k in six weeks. I basically neve
+  ok    9 attempts=2 first=invalid 41s  Read 10 minutes before bed every night for the next month.
+  ok   10 attempts=2 first=invalid 121s  Quit smoking over the next three months. I smoke about 10 a 
+  ok    8 attempts=1 first=valid 236s  Learn to bake a proper layered birthday cake from scratch in
+  ok   11 attempts=2 first=invalid 85s  Walk 10,000 steps a day consistently. I currently average ab
+  ok   12 attempts=2 first=invalid 84s  Read a lot more this year — I keep buying books and not read
+  ok   13 attempts=2 first=invalid 77s  Lose 10 lbs
+  ok   14 attempts=2 first=invalid 121s  I want to lose 8 kg steadily over the next 4 months.
+  ok   15 attempts=1 first=valid 97s  Get to bed by 11pm on weeknights for a month. I usually drif
+  ok   16 attempts=3 first=invalid 103s  Do 30 push-ups in a row within 8 weeks. I can do about 8 rig
+  ok   17 attempts=2 first=invalid 121s  Hold a basic 5-minute conversation in Spanish within 3 month
+  ok   18 attempts=1 first=valid 65s  Walk 10,000 steps a day consistently. I currently average ab
+  ok   19 attempts=1 first=valid 41s  I want to be able to run a 4k in six weeks. I basically neve
+
+RESULT {"label":"v32-baseline","base":"http://127.0.0.1:8787","n":20,"built":19,"first_valid":7,"first_valid_rate":0.35,"mean_attempts":1.8,"call_p50_s":26.5,"call_p90_s":44.1,"out_tokens_mean":7091}
+
+written harness/replay-v32-baseline.json
+exit 0

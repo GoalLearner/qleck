@@ -468,6 +468,45 @@ sequenced and checked against the code before a line was written.
 
 ---
 
+### Backend · 11 Sep — the first attempt passes more often (speed plan, step 6i)
+
+No build. With the draft now written before the tap, the wait a user still
+feels is the share of first attempts the validators send back — 43–52% at
+the baselines, each retry a full ~30-second call. The step-0 readout said
+what they reject: numbers with no citation, on steps and on milestones, and
+an assumption on a key the interview had already collected.
+
+- **A paired experiment, not a harness roll.** A harness run builds twelve
+  plans, too few to tell two prompts apart. `node harness/genreplay.mjs`
+  clones stored synthetic sessions (same goal, interview, answers, verdict),
+  rebuilds them through the real durable job under whatever the worker is
+  running, and counts what the validators did to the first attempt;
+  `--seed` replays exactly the sessions an earlier arm used. Twenty
+  sessions, the same twenty in each arm.
+- **Prompt v33.** `derived_from` is a REQUIRED field on every step and
+  milestone in the tool schema (empty only where there is no number), and
+  the protocol prompt ends with a pre-emit checklist of the validators that
+  reject a whole plan: cite every number, no assumption on a collected key
+  (a range is a value — use its midpoint), session days copied exactly,
+  the five physique pillars, no warm-up steps. No other prompt text changed.
+- **Measured on the same 20 sessions:** first attempt valid **7 → 13 of 20
+  (35% → 65%)**; mean attempts 1.8 → 1.55; median call 26.5s → 24.2s.
+  Paired: 8 sessions flipped invalid→valid, 2 the other way. Step-level
+  "no citation" rejections went 8 → 0; the range-assumption lines 6 → 3;
+  milestone "no citation" only 10 → 9 — those are plan-structure digits
+  ("twelve sessions", "11pm", "five nights") the validator counts as numbers
+  and the model does not, the next pass's target.
+- **The gate:** cold open re-captured (2% as asked, 84% countered); harness
+  ALL BARS CLEAR — the first fully green run of the day, 12 of 12 plans, 619s wall on the durable path; calibration on the marathon-3w arm 82 / 82 / 82 / 82 / 82 / 82 (sd 0, no errors).
+- **What the model arm needs, learned for free:** both `deepseek-flash` and
+  `deepseek-v4-pro` refuse a forced tool call while thinking is on
+  ("Thinking mode does not support this tool_choice"); the pipeline only
+  works because `deepseek-chat` is the non-thinking alias. Pro answers a
+  forced tool call once `thinking: {type: 'disabled'}` is sent. Pro's peak
+  rate is 4.4× flash on a cache miss and 3.3× on output. Not switched.
+- **Paid:** baseline arm $0.39, candidate arm $0.34, gate $0.61;
+  cumulative $6.02 of the $20 ask-first cap.
+
 ### Build 33 · 11 Sep — the plan is written before you ask for it (speed plan, steps 2–5)
 
 The measurement (step 0, above) put the problem in one number: only 5 of 38

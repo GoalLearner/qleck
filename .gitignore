@@ -46,3 +46,6 @@ backend/harness/last-protocols.json
 
 # Baseline archives keep the 400KB protocol dumps local, like last-protocols.json
 backend/harness/baselines/*/last-protocols.json
+
+# Replay arms keep their full protocol dumps local (summaries live in the changelog)
+backend/harness/replay-*.json

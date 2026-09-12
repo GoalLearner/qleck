@@ -123,7 +123,10 @@
 // steps and milestones in the tool schema, and the protocol prompt ends with a
 // pre-emit checklist of the validators that reject a whole plan. Measured on a
 // paired replay of 20 stored sessions before shipping — see the changelog.
-export const PROMPT_VERSION = 33;
+// 33 → 34 (11 Sep, step 6i second pass): the milestone line names what the
+// validator counts — any numeral, week counts and clock times included — and
+// where each kind cites; the range line says "no assumption" outright.
+export const PROMPT_VERSION = 34;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -508,8 +511,8 @@ OWN-PLAN REVIEW — when the goal arrives with <own_plan_text> (the message will
 
 BEFORE YOU EMIT, CHECK EVERY LINE — each is a validator that rejects the whole protocol and costs the user a full rewrite:
 - Every step with quantity.amount above zero or duration_minutes has a non-empty derived_from (collected keys / goal_text / standard_practice), or — ONLY for an input listed as UNRESOLVED — assumption + assumption_key. Steps with no number carry derived_from: [].
-- Every milestone whose title or criteria contains a digit has a non-empty derived_from the same way; the rest carry [].
-- No assumption names a key that appears in STRUCTURED ANSWERS. A collected range ("80-85 kg") is a collected value: derive from its midpoint and cite the key — the midpoint is not an assumption.
+- Every milestone whose title or criteria contains ANY numeral — a week count ("3 weeks"), a session count ("12 sessions"), a clock time ("11pm"), a streak ("5 for 5"), a rep or minute count — has a non-empty derived_from: the collected key the number rests on, or ["goal_text"] when the goal itself states it (its bedtime, its deadline, its target), or ["standard_practice"] when it is the plan's own structure (how many sessions, which week). The validator counts digits, not intentions. Only a milestone with no numeral anywhere carries [].
+- No assumption names a key that appears in STRUCTURED ANSWERS — even when the collected value is a range ("80-85 kg") or approximate ("about 200 lb"): derive from its midpoint, cite the key, and set NO assumption. An assumption is legal only for a key listed as UNRESOLVED.
 - A step attached to a session copies the session's days exactly, and every step's days list has exactly per_week entries.
 - Phase 1 of a physique plan carries all five pillars, the bedtime step included.
 - No warm-up or cool-down step: those live inside the session step's details.

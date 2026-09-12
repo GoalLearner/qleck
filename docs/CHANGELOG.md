@@ -468,6 +468,41 @@ sequenced and checked against the code before a line was written.
 
 ---
 
+### Backend · 11 Sep — v34, a 16k ceiling, and the first turn in parallel (speed plan, step 6i/ii/iv)
+
+No build. The second pass on the first-attempt rate, plus two levers that
+cost no content.
+
+- **Prompt v34.** The milestone line now names what the validator actually
+  counts — any numeral, week counts and clock times included ("12
+  sessions", "11pm", "5 for 5") — and where each kind cites (the collected
+  key, `goal_text` for the goal's own bedtime or deadline,
+  `standard_practice` for the plan's own structure). The range line says
+  "set NO assumption" outright. Same 20 paired sessions: first attempt
+  valid 13 of 20 again (65%), but **every one of the 20 built** (v32 19,
+  v33 18 — the three-strikes are gone) and mean attempts 1.55 → **1.4**;
+  milestone "no citation" rejections 9 → **0**, range-assumption 3 → **0**.
+  What the validators still send back on a first attempt is two content
+  rules the model breaks in spite of the checklist — a warm-up as its own
+  step (4) and a physique plan without its protein step (3) — seven lines
+  across 20 sessions, down from 35 at the baseline. Diminishing returns;
+  the next lever there is the judge, not the validators.
+- **The emission ceiling is 16,384 tokens** (`PROTOCOL_MAX_TOKENS`, was
+  8,192). A plan averages ~7,100 output tokens and the long ones were cut
+  mid-JSON, which the validators reported as "protocol is not an object" —
+  seven times in one harness day, and a revision of a long plan could fail
+  three times running (`rev-too-hard` 502'd in every regression). The flash
+  alias accepts 16k (probed); the consumer's 120s budget covers it at the
+  measured ~245 tokens/s.
+- **Safety and the domain classifier run at the same time** on the first
+  turn (`preclassify`): two ~1s calls become one wait, and nothing is
+  written until safety has passed — a refused goal drops the classification
+  (one extra call, ~$0.0005). Roughly a second off the first question.
+- **The gate:** cold open re-captured (3% as asked, 82% countered); harness 12 of 12 plans, 9 of them on the first attempt, all three revision fixtures green (`rev-too-hard` for the first time today — the ceiling), one bar lost to the known-flaky chips fixture `benchpress-2x`;
+  calibration 82 / 80 / 84 / 82 (mean 82, sd 1.6) on the four runs that reached the worker.
+- **Paid:** v34 arm $0.35, gate $0.64; cumulative $6.96 of the
+  $20 ask-first cap.
+
 ### Backend · 11 Sep — the first attempt passes more often (speed plan, step 6i)
 
 No build. With the draft now written before the tap, the wait a user still

@@ -24,7 +24,7 @@ import {
   rotateRefresh, startEmailCode, verifyEmailCode, verifyPassword, type CodePurpose,
 } from './emailAuth';
 import { verifyAppleToken } from './apple';
-import { editProtocolStep, classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
+import { editProtocolStep, classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, preclassify, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import { claimDraft, DRAFT_CLAIM_MS, releaseDraft, renewDraft, waitForDraft } from './draftClaim';
 import { claimOrWait, failedJobCount, healJob, jobView, loadJob, runDraftJob, startDraftJob, JOB_CALL_BUDGET_MS, JOB_DELIVERIES, JOB_LEASE_MS, JOB_RETRY_DELAY_S, USER_RETRY_CAP, type DraftJobMessage, type JobDeps, type JobRow, type JobView } from './draftJob';
 import type { EditOp } from './protocolEdit';
@@ -1038,12 +1038,19 @@ export default {
           .bind(sessionId, deviceId, await verifyToken(env, (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '') || null), goalText, ownPlan)
           .run();
 
+        const session = (await loadSession(env, sessionId, deviceId))!;
         // The safety gate reads goal + plan together — "lose some weight"
-        // is safe while its plan of skipped meals is not.
-        const safety = await classifyGoal(
-          env, { ...meta, sessionId },
-          ownPlan ? `${goalText}\n\nTheir own plan for it:\n${ownPlan}` : goalText,
-        );
+        // is safe while its plan of skipped meals is not. The domain
+        // classifier runs BESIDE it (step 6iv): two ~1s calls become one
+        // wait, and nothing is written until safety has passed — a refused
+        // goal simply drops the classification (one extra call, ~$0.0005).
+        const [safety, pre] = await Promise.all([
+          classifyGoal(
+            env, { ...meta, sessionId },
+            ownPlan ? `${goalText}\n\nTheir own plan for it:\n${ownPlan}` : goalText,
+          ),
+          preclassify(env, { ...meta, sessionId }, session).catch(() => undefined),
+        ]);
         if (safety.refusalMessage) {
           await env.DB
             .prepare(`UPDATE coach_sessions SET status = 'refused', updated_at = datetime('now') WHERE id = ?`)
@@ -1055,11 +1062,10 @@ export default {
           );
         }
 
-        const session = (await loadSession(env, sessionId, deviceId))!;
-        // P2a: classify the goal and extract whatever the goal text itself
-        // states (a baseline like "I smoke 15/day" lives there) before the
-        // first question is chosen.
-        await enrichStructure(env, { ...meta, sessionId }, session);
+        // P2a: extract whatever the goal text itself states (a baseline like
+        // "I smoke 15/day" lives there) before the first question is chosen;
+        // the classification came back with the safety gate above.
+        await enrichStructure(env, { ...meta, sessionId }, session, undefined, pre);
         return await runCoachTurn(env, ctx, cors, meta, session, undefined);
       }
 

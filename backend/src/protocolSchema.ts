@@ -269,7 +269,7 @@ export const PROTOCOL_TOOL_SCHEMA = {
           week: { type: 'number' },
           title: { type: 'string' },
           criteria: { type: 'string' },
-          derived_from: { type: 'array', items: { type: 'string' }, description: 'ALWAYS present. Empty ([]) only when neither title nor criteria contains a digit. Otherwise the same contract as step targets: any number in the milestone cites the collected keys it derives from (goal_text / standard_practice legal).' },
+          derived_from: { type: 'array', items: { type: 'string' }, description: 'ALWAYS present. Empty ([]) only when neither title nor criteria contains any numeral at all. A week count, session count, clock time or streak written as digits IS a number here: cite the collected key, or goal_text (the goal states it), or standard_practice (the plan\'s own structure).' },
           assumption: { type: 'string' },
           assumption_key: { type: 'string' },
         },

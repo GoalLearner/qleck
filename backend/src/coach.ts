@@ -284,13 +284,37 @@ export async function extractAnswers(
 
 /** Classify (or re-classify while vague) + extract + persist. Mutates the
  *  in-memory session so the SAME turn's interview sees the fresh state. */
+/** The domain classification alone, with NO write — so the first turn can
+ *  run it beside the safety gate (speed plan, step 6iv). A refused goal then
+ *  costs one extra classifier call (~$0.0005) and its result is dropped;
+ *  every other goal saves the classifier's ~1s off the first question. */
+export async function preclassify(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+): Promise<{ domain: string | null; needs_clarification: number }> {
+  const structure = sessionStructure(session);
+  const clsText = session.own_plan
+    ? `${session.goal_text}\nTheir own plan: ${session.own_plan}`
+    : session.goal_text;
+  const cls = await classifyDomain(env, meta, clsText, structure.answers);
+  return { domain: cls.domain, needs_clarification: cls.concrete ? 0 : 1 };
+}
+
 export async function enrichStructure(
   env: Env,
   meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
   session: SessionRow,
   latest?: { question: string; answer: string },
+  /** A classification already made by preclassify (the first turn). */
+  pre?: { domain: string | null; needs_clarification: number },
 ): Promise<void> {
   let structure = sessionStructure(session);
+  if (pre && (!structure.domain || structure.needsClarification)) {
+    session.domain = pre.domain;
+    session.needs_clarification = pre.needs_clarification;
+    structure = sessionStructure(session);
+  }
   if (!structure.domain || structure.needsClarification) {
     // While the goal is vague the structured answers are empty BY DESIGN, so
     // re-classification must read the conversation itself — the concretizing
@@ -763,6 +787,15 @@ export async function coachTurn(
 }
 
 /** Step 3 — protocol generation with server-side validation + one retry. */
+/** The emission ceiling for a protocol. A plan averages ~7,100 output tokens
+ *  (11 Sep replay), and at 8,192 the long ones were cut mid-JSON — the model
+ *  then "answered" with nothing parseable, which the validators reported as
+ *  "protocol is not an object", seven times in one harness day, and a
+ *  revision of a long plan could fail three times running. deepseek-chat
+ *  accepts 16,384 (probed 11 Sep); the consumer's 120s per-call budget still
+ *  covers it at the measured ~245 tokens/s. */
+const PROTOCOL_MAX_TOKENS = 16384;
+
 export async function generateProtocol(
   env: Env,
   meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
@@ -875,7 +908,7 @@ export async function generateProtocol(
       messages,
       tools: [protocolTool(PROTOCOL_TOOL_SCHEMA)],
       toolChoice: { type: 'tool', name: 'emit_protocol' },
-      maxTokens: 8192,
+      maxTokens: PROTOCOL_MAX_TOKENS,
       temperature,
       signal: ctl?.signal?.(),
     });
@@ -1044,7 +1077,7 @@ ${goalAsData(feedback)}
       messages,
       tools: [protocolTool(PROTOCOL_TOOL_SCHEMA)],
       toolChoice: { type: 'tool', name: 'emit_protocol' },
-      maxTokens: 8192,
+      maxTokens: PROTOCOL_MAX_TOKENS,
     });
     if (result.refused) return { errors: ['api_refusal'] };
     // Phase weeks first: an overlap is a blocking validateProtocol error, and
@@ -1131,7 +1164,7 @@ export async function maintenanceProtocol(
       messages,
       tools: [protocolTool(PROTOCOL_TOOL_SCHEMA)],
       toolChoice: { type: 'tool', name: 'emit_protocol' },
-      maxTokens: 8192,
+      maxTokens: PROTOCOL_MAX_TOKENS,
     });
     if (result.refused) return { errors: ['api_refusal'] };
     // Phase weeks first: an overlap is a blocking validateProtocol error, and

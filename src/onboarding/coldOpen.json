@@ -1,21 +1,21 @@
 {
   "_README": "CAPTURED, NOT WRITTEN. Regenerate with: cd backend && npm run capture:coldopen",
-  "promptVersion": 33,
+  "promptVersion": 34,
   "capturedAt": "2026-09-12",
-  "askedQuestions": 5,
+  "askedQuestions": 4,
   "original": {
-    "request": "Run a full marathon in 3 weeks, starting from zero running experience.",
-    "probability": 2,
+    "request": "I want to run a full marathon in 3 weeks. I have never run before in my life.",
+    "probability": 3,
     "durationWeeks": 3
   },
   "counter": {
-    "statement": "Go from never-run to a first 5K race in 12 weeks, running 4 days a week — then build toward the marathon from there.",
-    "probability": 84,
-    "durationWeeks": 12,
-    "subtitle": "The marathon is real — three weeks from zero isn't. Let's build the runner first."
+    "statement": "Run a full marathon 12 months from now — starting with a 5K in 10 weeks, then a half marathon around month 6, building to the 42.2K on a proper base.",
+    "probability": 82,
+    "durationWeeks": 52,
+    "subtitle": "The distance is yours to take — just not in three weeks. Give it a year."
   },
   "risk": {
-    "line": "Zero running history means your legs adapt slower than your enthusiasm — that's the whole reason for the longer runway.",
-    "detail": "Tendons and joints take weeks to catch up to what your lungs will happily do. That gap is exactly what the 3-week version would have broken, and it's priced into the 84."
+    "line": "Zero running history plus a 3-week deadline is the exact recipe for injury — that's priced in.",
+    "detail": "The 3% on the original ask isn't doubt about you; it's the near-certainty that tendons and bones can't adapt in 21 days. That risk is why the number is what it is, and why the timeline moves."
   }
 }

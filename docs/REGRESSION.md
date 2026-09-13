@@ -39,6 +39,19 @@ a full typecheck. Backend changes additionally need `cd backend` +
 
 ## 2. Goal intake and the verdict
 
+- [ ] (intake, 13 Sep) The intake shows the goal box, **BY WHEN?** pills
+      (2 weeks · 1 month · 3 months · 6 months · Pick a date · Qoach
+      decides), a full-width **Ask Qoach** and "I already have a plan →". No
+      suggestion chips. Cancel or Skip for now sits top right.
+- [ ] Ask Qoach stays dim until the goal has 3+ characters; a tap while dim
+      shakes the box and sends nothing.
+- [ ] A span pill prints its date inside itself ("1 month · Oct 13"); Pick a
+      date opens the month/day wheel from tomorrow up to 52 weeks out, the
+      header reads "Saturday · 34 days out", Set turns the pill into the date,
+      Cancel leaves the pick as it was. Qoach decides clears any pick.
+- [ ] With a date picked, the first question arrives as usual and the verdict
+      prices that runway (a too-tight date counters, and OR NAME IT on the
+      counter-offer page still works).
 - [ ] Type a realistic goal → Qoach asks 3–6 questions, each with tappable
       chips (or an exact-figure ask with no chips, never bucket ranges).
 - [ ] No question repeats in different words.
@@ -65,8 +78,10 @@ a full typecheck. Backend changes additionally need `cd backend` +
 
 ## 3. Own-plan review (Tier-2)
 
-- [ ] "+ I ALREADY HAVE A PLAN" opens the commitments box; the CTA becomes
-      **Review my plan**.
+- [ ] "I already have a plan →" swaps the screen to **Bring the plan you've
+      got.** with a short goal box and the plan box; "← Start from a goal
+      instead" swaps back and keeps both drafts. Ask Qoach needs the goal
+      AND the plan; the picked date carries over.
 - [ ] The review asks **1–2 questions** for a plan of four or more lines and
       **2–4** for a thinner one, and the verdict header reads **YOUR PLAN,
       PRICED**.

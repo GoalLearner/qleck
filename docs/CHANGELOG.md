@@ -468,110 +468,66 @@ sequenced and checked against the code before a line was written.
 
 ---
 
-### Backend · 11 Sep — the pro model, measured and declined (speed plan, step 6i)
+### Backend · 11 Sep — measurement before speed (speed plan, step 0)
 
-No build. The last of step 6's questions: would `deepseek-v4-pro` on the
-coach role pass the validators more often than flash? Same 20 paired
-sessions, same v34 prompt, only the model changed (`GEN_MODEL` on the dev
-worker; `thinking: {type: 'disabled'}` now sent on every DeepSeek call,
-because both models refuse a forced tool call while thinking is on).
+No build. The owner asked for a faster coach without thinner plans; the
+research (two agent workflows, 11 Sep) found that every latency number the
+app had ever quoted was inferred from gaps between ledger rows, and that the
+wait screen's "26s mean, a third over 40s" was calibrated on validator
+retries rather than first builds. So the first step is a ruler.
 
-- **Pro:** first attempt valid 14 of 20 (70%, one more than flash's 13);
-  but only 18 of 20 built (two three-strikes, where flash built all 20);
-  mean attempts 1.4, the same; median call **48s against 26s**, p90 87s
-  against 55s; and the plans were **half the length** — 3,814 output
-  tokens against 7,107 — which on this plan's rules is thinner how-to
-  sheets, not better ones. **$0.50 for 27 calls** at honest pro rates,
-  about three times flash per plan.
-- **Verdict: stay on flash.** The remaining first-attempt misses are the
-  same two content rules on either model (a missing protein or bedtime
-  step, a warm-up as its own step). The lever is not the model.
-- **The ledger prices honestly now.** Per-model rates with the cache-hit
-  discount (DeepSeek bills a hit at about 1/50 of a miss, and 81–92% of this
-  pipeline's input tokens are hits). Rows written before this evening were
-  priced flat and read 1.6–3.2× high; `npm run latency` and the changelog's
-  spend figures before this entry carry that overstatement.
-- **Not started, by design:** a judge-measured compactness pass (the how-to
-  is ~46% of a 7,100-token emission; the owner's call is that content stays
-  as designed); the legacy synchronous branch comes out after both phones
-  have run build 33 for a week.
-- **Paid:** pro arm $0.50 plus a $0.02 false start on flash. **Day's total
-  on the ledger: about $7.50 of the $20 ask-first cap** (the pre-evening
-  rows being an upper bound).
-
-### Backend · 11 Sep — v34, a 16k ceiling, and the first turn in parallel (speed plan, step 6i/ii/iv)
-
-No build. The second pass on the first-attempt rate, plus two levers that
-cost no content.
-
-- **Prompt v34.** The milestone line now names what the validator actually
-  counts — any numeral, week counts and clock times included ("12
-  sessions", "11pm", "5 for 5") — and where each kind cites (the collected
-  key, `goal_text` for the goal's own bedtime or deadline,
-  `standard_practice` for the plan's own structure). The range line says
-  "set NO assumption" outright. Same 20 paired sessions: first attempt
-  valid 13 of 20 again (65%), but **every one of the 20 built** (v32 19,
-  v33 18 — the three-strikes are gone) and mean attempts 1.55 → **1.4**;
-  milestone "no citation" rejections 9 → **0**, range-assumption 3 → **0**.
-  What the validators still send back on a first attempt is two content
-  rules the model breaks in spite of the checklist — a warm-up as its own
-  step (4) and a physique plan without its protein step (3) — seven lines
-  across 20 sessions, down from 35 at the baseline. Diminishing returns;
-  the next lever there is the judge, not the validators.
-- **The emission ceiling is 16,384 tokens** (`PROTOCOL_MAX_TOKENS`, was
-  8,192). A plan averages ~7,100 output tokens and the long ones were cut
-  mid-JSON, which the validators reported as "protocol is not an object" —
-  seven times in one harness day, and a revision of a long plan could fail
-  three times running (`rev-too-hard` 502'd in every regression). The flash
-  alias accepts 16k (probed); the consumer's 120s budget covers it at the
-  measured ~245 tokens/s.
-- **Safety and the domain classifier run at the same time** on the first
-  turn (`preclassify`): two ~1s calls become one wait, and nothing is
-  written until safety has passed — a refused goal drops the classification
-  (one extra call, ~$0.0005). Roughly a second off the first question.
-- **The gate:** cold open re-captured (3% as asked, 82% countered); harness 12 of 12 plans, 9 of them on the first attempt, all three revision fixtures green (`rev-too-hard` for the first time today — the ceiling), one bar lost to the known-flaky chips fixture `benchpress-2x`;
-  calibration 82 / 80 / 84 / 82 (mean 82, sd 1.6) on the four runs that reached the worker.
-- **Paid:** v34 arm $0.35, gate $0.64; cumulative $6.96 of the
-  $20 ask-first cap.
-
-### Backend · 11 Sep — the first attempt passes more often (speed plan, step 6i)
-
-No build. With the draft now written before the tap, the wait a user still
-feels is the share of first attempts the validators send back — 43–52% at
-the baselines, each retry a full ~30-second call. The step-0 readout said
-what they reject: numbers with no citation, on steps and on milestones, and
-an assumption on a key the interview had already collected.
-
-- **A paired experiment, not a harness roll.** A harness run builds twelve
-  plans, too few to tell two prompts apart. `node harness/genreplay.mjs`
-  clones stored synthetic sessions (same goal, interview, answers, verdict),
-  rebuilds them through the real durable job under whatever the worker is
-  running, and counts what the validators did to the first attempt;
-  `--seed` replays exactly the sessions an earlier arm used. Twenty
-  sessions, the same twenty in each arm.
-- **Prompt v33.** `derived_from` is a REQUIRED field on every step and
-  milestone in the tool schema (empty only where there is no number), and
-  the protocol prompt ends with a pre-emit checklist of the validators that
-  reject a whole plan: cite every number, no assumption on a collected key
-  (a range is a value — use its midpoint), session days copied exactly,
-  the five physique pillars, no warm-up steps. No other prompt text changed.
-- **Measured on the same 20 sessions:** first attempt valid **7 → 13 of 20
-  (35% → 65%)**; mean attempts 1.8 → 1.55; median call 26.5s → 24.2s.
-  Paired: 8 sessions flipped invalid→valid, 2 the other way. Step-level
-  "no citation" rejections went 8 → 0; the range-assumption lines 6 → 3;
-  milestone "no citation" only 10 → 9 — those are plan-structure digits
-  ("twelve sessions", "11pm", "five nights") the validator counts as numbers
-  and the model does not, the next pass's target.
-- **The gate:** cold open re-captured (2% as asked, 84% countered); harness
-  ALL BARS CLEAR — the first fully green run of the day, 12 of 12 plans, 619s wall on the durable path; calibration on the marathon-3w arm 82 / 82 / 82 / 82 / 82 / 82 (sd 0, no errors).
-- **What the model arm needs, learned for free:** both `deepseek-flash` and
-  `deepseek-v4-pro` refuse a forced tool call while thinking is on
-  ("Thinking mode does not support this tool_choice"); the pipeline only
-  works because `deepseek-chat` is the non-thinking alias. Pro answers a
-  forced tool call once `thinking: {type: 'disabled'}` is sent. Pro's peak
-  rate is 4.4× flash on a cache miss and 3.3× on output. Not switched.
-- **Paid:** baseline arm $0.39, candidate arm $0.34, gate $0.61;
-  cumulative $6.02 of the $20 ask-first cap.
+- **Every model call now records how long it took.** Migration 0019 adds
+  `ai_requests.duration_ms`, written in `callModel` on the success path AND
+  on the provider-failure row, so a call that dies is a number rather than a
+  missing row. Applied locally and to production; the worker that writes it
+  is deployed.
+- **`npm run latency`** (from `backend/`, read-only, `--local` /
+  `--synthetic` / `--days N`) prints the five numbers the speed plan is judged
+  by, before and after every step: per-kind duration percentiles (with the
+  old gap proxy beside them, labelled), first-attempt validation rate, the
+  fast-path rate (the accepted plan IS the background draft), verdict-to-
+  accept time, and what the validators rejected — bucketed on the
+  validators' own templates with every quoted string masked, so no step
+  title, id or user text is ever printed.
+- **The production baseline, last 21 days.** Fast path **5 of 38** saves
+  (13%). First attempts **52% invalid** (163 calls); attempt 1 62% invalid,
+  attempt 2 72%. Gap-proxy protocol p50 15s / p90 75s; verdict p50 8s / max
+  10s; verdict-to-accept p50 68s. Of **443 rejected lines, 385 (87%) are one
+  mechanical category**: a step's days or per-week disagreeing with the
+  session it is attached to ("per_week N exceeds its session's N days" ×192,
+  "days (…) must equal its session's days (…)" ×194). Conditional steps
+  without a session are next at 26. Everything else is single digits. That is
+  step 4b's target, named by data rather than by guess.
+- **The first measured durations** (two harness runs, 102 protocol calls):
+  protocol **p50 28.8s / p90 59.5s / max 76.4s**; verdict_turn **p50 5.8s /
+  p90 11.0s**; every interview-side call (safety, classify, extract, coach
+  turn, audit) p50 1.0–1.8s. First attempts 43% invalid in the harness. The
+  wait screen's "usually about half a minute" survives; "longest measured: 75
+  seconds" turns out to be right by accident (76.4s). The 40-second line does
+  not: p90 is 60s, and the common case is one call of ~29s.
+- **The harness bar the 9 Sep band change had broken is reconciled.** The
+  own-plan bar demanded 1–2 questions while `interviewBand` deliberately gives
+  a thin plan 2–4; the bar now reads `interviewBand` itself, and the two
+  own-plan fixtures (both three-line plans) expect 2–4. Both runs: PASS.
+- **Two baseline runs archived** under `backend/harness/baselines/` (console +
+  report committed; the 400KB protocol dumps stay local like
+  `last-protocols.json`). Ledger cost **$0.87 + $0.89 = $1.76**, an upper
+  bound: the ledger prices at flat rates while 81–86% of input tokens were
+  cache hits. Cumulative research spend so far: $1.76 (cap $20 before asking).
+- **The noise floor, now known.** Neither run was fully green. Run 1 failed
+  two bars, run 2 a third, each on ONE fixture, none repeated:
+  `lose-10-lbs-range` phrased its deficit past the "energy" regex,
+  `inj-sysprompt` reached a feasible verdict without a full pace ladder,
+  `benchpress-2x` asked one question with under two chips. Run 2 also lost
+  one revision fixture to a 502 when `wrangler dev` recycled (excluded from
+  scoring by the harness's own rule). Every later paid gate is read against
+  this: one flaky bar per run is HEAD's normal; the same bar failing on the
+  same fixture twice is a regression.
+- Dev-only: the local D1 migration journal had stopped at 0013 while the
+  tables from 0014–0016 existed, and 0017–0018 had never been applied
+  locally. Journal repaired, 0017–0019 applied; `npm run migrate:local` is
+  clean again. A `qleck-api-dev` entry in `.claude/launch.json` runs the
+  supervised dev worker for harness runs.
 
 ### Build 33 · 11 Sep — the plan is written before you ask for it (speed plan, steps 2–5)
 
@@ -658,66 +614,148 @@ at 60s.
   synchronous branch stays until the ledger shows a week without build-≤32
   traffic (step 6 vi); no prompt text changed.
 
-### Backend · 11 Sep — measurement before speed (speed plan, step 0)
+### Backend · 11 Sep — the first attempt passes more often (speed plan, step 6i)
 
-No build. The owner asked for a faster coach without thinner plans; the
-research (two agent workflows, 11 Sep) found that every latency number the
-app had ever quoted was inferred from gaps between ledger rows, and that the
-wait screen's "26s mean, a third over 40s" was calibrated on validator
-retries rather than first builds. So the first step is a ruler.
+No build. With the draft now written before the tap, the wait a user still
+feels is the share of first attempts the validators send back — 43–52% at
+the baselines, each retry a full ~30-second call. The step-0 readout said
+what they reject: numbers with no citation, on steps and on milestones, and
+an assumption on a key the interview had already collected.
 
-- **Every model call now records how long it took.** Migration 0019 adds
-  `ai_requests.duration_ms`, written in `callModel` on the success path AND
-  on the provider-failure row, so a call that dies is a number rather than a
-  missing row. Applied locally and to production; the worker that writes it
-  is deployed.
-- **`npm run latency`** (from `backend/`, read-only, `--local` /
-  `--synthetic` / `--days N`) prints the five numbers the speed plan is judged
-  by, before and after every step: per-kind duration percentiles (with the
-  old gap proxy beside them, labelled), first-attempt validation rate, the
-  fast-path rate (the accepted plan IS the background draft), verdict-to-
-  accept time, and what the validators rejected — bucketed on the
-  validators' own templates with every quoted string masked, so no step
-  title, id or user text is ever printed.
-- **The production baseline, last 21 days.** Fast path **5 of 38** saves
-  (13%). First attempts **52% invalid** (163 calls); attempt 1 62% invalid,
-  attempt 2 72%. Gap-proxy protocol p50 15s / p90 75s; verdict p50 8s / max
-  10s; verdict-to-accept p50 68s. Of **443 rejected lines, 385 (87%) are one
-  mechanical category**: a step's days or per-week disagreeing with the
-  session it is attached to ("per_week N exceeds its session's N days" ×192,
-  "days (…) must equal its session's days (…)" ×194). Conditional steps
-  without a session are next at 26. Everything else is single digits. That is
-  step 4b's target, named by data rather than by guess.
-- **The first measured durations** (two harness runs, 102 protocol calls):
-  protocol **p50 28.8s / p90 59.5s / max 76.4s**; verdict_turn **p50 5.8s /
-  p90 11.0s**; every interview-side call (safety, classify, extract, coach
-  turn, audit) p50 1.0–1.8s. First attempts 43% invalid in the harness. The
-  wait screen's "usually about half a minute" survives; "longest measured: 75
-  seconds" turns out to be right by accident (76.4s). The 40-second line does
-  not: p90 is 60s, and the common case is one call of ~29s.
-- **The harness bar the 9 Sep band change had broken is reconciled.** The
-  own-plan bar demanded 1–2 questions while `interviewBand` deliberately gives
-  a thin plan 2–4; the bar now reads `interviewBand` itself, and the two
-  own-plan fixtures (both three-line plans) expect 2–4. Both runs: PASS.
-- **Two baseline runs archived** under `backend/harness/baselines/` (console +
-  report committed; the 400KB protocol dumps stay local like
-  `last-protocols.json`). Ledger cost **$0.87 + $0.89 = $1.76**, an upper
-  bound: the ledger prices at flat rates while 81–86% of input tokens were
-  cache hits. Cumulative research spend so far: $1.76 (cap $20 before asking).
-- **The noise floor, now known.** Neither run was fully green. Run 1 failed
-  two bars, run 2 a third, each on ONE fixture, none repeated:
-  `lose-10-lbs-range` phrased its deficit past the "energy" regex,
-  `inj-sysprompt` reached a feasible verdict without a full pace ladder,
-  `benchpress-2x` asked one question with under two chips. Run 2 also lost
-  one revision fixture to a 502 when `wrangler dev` recycled (excluded from
-  scoring by the harness's own rule). Every later paid gate is read against
-  this: one flaky bar per run is HEAD's normal; the same bar failing on the
-  same fixture twice is a regression.
-- Dev-only: the local D1 migration journal had stopped at 0013 while the
-  tables from 0014–0016 existed, and 0017–0018 had never been applied
-  locally. Journal repaired, 0017–0019 applied; `npm run migrate:local` is
-  clean again. A `qleck-api-dev` entry in `.claude/launch.json` runs the
-  supervised dev worker for harness runs.
+- **A paired experiment, not a harness roll.** A harness run builds twelve
+  plans, too few to tell two prompts apart. `node harness/genreplay.mjs`
+  clones stored synthetic sessions (same goal, interview, answers, verdict),
+  rebuilds them through the real durable job under whatever the worker is
+  running, and counts what the validators did to the first attempt;
+  `--seed` replays exactly the sessions an earlier arm used. Twenty
+  sessions, the same twenty in each arm.
+- **Prompt v33.** `derived_from` is a REQUIRED field on every step and
+  milestone in the tool schema (empty only where there is no number), and
+  the protocol prompt ends with a pre-emit checklist of the validators that
+  reject a whole plan: cite every number, no assumption on a collected key
+  (a range is a value — use its midpoint), session days copied exactly,
+  the five physique pillars, no warm-up steps. No other prompt text changed.
+- **Measured on the same 20 sessions:** first attempt valid **7 → 13 of 20
+  (35% → 65%)**; mean attempts 1.8 → 1.55; median call 26.5s → 24.2s.
+  Paired: 8 sessions flipped invalid→valid, 2 the other way. Step-level
+  "no citation" rejections went 8 → 0; the range-assumption lines 6 → 3;
+  milestone "no citation" only 10 → 9 — those are plan-structure digits
+  ("twelve sessions", "11pm", "five nights") the validator counts as numbers
+  and the model does not, the next pass's target.
+- **The gate:** cold open re-captured (2% as asked, 84% countered); harness
+  ALL BARS CLEAR — the first fully green run of the day, 12 of 12 plans, 619s wall on the durable path; calibration on the marathon-3w arm 82 / 82 / 82 / 82 / 82 / 82 (sd 0, no errors).
+- **What the model arm needs, learned for free:** both `deepseek-flash` and
+  `deepseek-v4-pro` refuse a forced tool call while thinking is on
+  ("Thinking mode does not support this tool_choice"); the pipeline only
+  works because `deepseek-chat` is the non-thinking alias. Pro answers a
+  forced tool call once `thinking: {type: 'disabled'}` is sent. Pro's peak
+  rate is 4.4× flash on a cache miss and 3.3× on output. Not switched.
+- **Paid:** baseline arm $0.39, candidate arm $0.34, gate $0.61;
+  cumulative $6.02 of the $20 ask-first cap.
+
+### Backend · 11 Sep — v34, a 16k ceiling, and the first turn in parallel (speed plan, step 6i/ii/iv)
+
+No build. The second pass on the first-attempt rate, plus two levers that
+cost no content.
+
+- **Prompt v34.** The milestone line now names what the validator actually
+  counts — any numeral, week counts and clock times included ("12
+  sessions", "11pm", "5 for 5") — and where each kind cites (the collected
+  key, `goal_text` for the goal's own bedtime or deadline,
+  `standard_practice` for the plan's own structure). The range line says
+  "set NO assumption" outright. Same 20 paired sessions: first attempt
+  valid 13 of 20 again (65%), but **every one of the 20 built** (v32 19,
+  v33 18 — the three-strikes are gone) and mean attempts 1.55 → **1.4**;
+  milestone "no citation" rejections 9 → **0**, range-assumption 3 → **0**.
+  What the validators still send back on a first attempt is two content
+  rules the model breaks in spite of the checklist — a warm-up as its own
+  step (4) and a physique plan without its protein step (3) — seven lines
+  across 20 sessions, down from 35 at the baseline. Diminishing returns;
+  the next lever there is the judge, not the validators.
+- **The emission ceiling is 16,384 tokens** (`PROTOCOL_MAX_TOKENS`, was
+  8,192). A plan averages ~7,100 output tokens and the long ones were cut
+  mid-JSON, which the validators reported as "protocol is not an object" —
+  seven times in one harness day, and a revision of a long plan could fail
+  three times running (`rev-too-hard` 502'd in every regression). The flash
+  alias accepts 16k (probed); the consumer's 120s budget covers it at the
+  measured ~245 tokens/s.
+- **Safety and the domain classifier run at the same time** on the first
+  turn (`preclassify`): two ~1s calls become one wait, and nothing is
+  written until safety has passed — a refused goal drops the classification
+  (one extra call, ~$0.0005). Roughly a second off the first question.
+- **The gate:** cold open re-captured (3% as asked, 82% countered); harness 12 of 12 plans, 9 of them on the first attempt, all three revision fixtures green (`rev-too-hard` for the first time today — the ceiling), one bar lost to the known-flaky chips fixture `benchpress-2x`;
+  calibration 82 / 80 / 84 / 82 (mean 82, sd 1.6) on the four runs that reached the worker.
+- **Paid:** v34 arm $0.35, gate $0.64; cumulative $6.96 of the
+  $20 ask-first cap.
+
+### Backend · 11 Sep — the pro model, measured and declined (speed plan, step 6i)
+
+No build. The last of step 6's questions: would `deepseek-v4-pro` on the
+coach role pass the validators more often than flash? Same 20 paired
+sessions, same v34 prompt, only the model changed (`GEN_MODEL` on the dev
+worker; `thinking: {type: 'disabled'}` now sent on every DeepSeek call,
+because both models refuse a forced tool call while thinking is on).
+
+- **Pro:** first attempt valid 14 of 20 (70%, one more than flash's 13);
+  but only 18 of 20 built (two three-strikes, where flash built all 20);
+  mean attempts 1.4, the same; median call **48s against 26s**, p90 87s
+  against 55s; and the plans were **half the length** — 3,814 output
+  tokens against 7,107 — which on this plan's rules is thinner how-to
+  sheets, not better ones. **$0.50 for 27 calls** at honest pro rates,
+  about three times flash per plan.
+- **Verdict: stay on flash.** The remaining first-attempt misses are the
+  same two content rules on either model (a missing protein or bedtime
+  step, a warm-up as its own step). The lever is not the model.
+- **The ledger prices honestly now.** Per-model rates with the cache-hit
+  discount (DeepSeek bills a hit at about 1/50 of a miss, and 81–92% of this
+  pipeline's input tokens are hits). Rows written before this evening were
+  priced flat and read 1.6–3.2× high; `npm run latency` and the changelog's
+  spend figures before this entry carry that overstatement.
+- **Not started, by design:** a judge-measured compactness pass (the how-to
+  is ~46% of a 7,100-token emission; the owner's call is that content stays
+  as designed); the legacy synchronous branch comes out after both phones
+  have run build 33 for a week.
+- **Paid:** pro arm $0.50 plus a $0.02 false start on flash. **Day's total
+  on the ledger: about $7.50 of the $20 ask-first cap** (the pre-evening
+  rows being an upper bound).
+
+### Unreleased · 13 Sep — the intake, redesigned (Ask Intake, turn 3a)
+
+The Claude Design handoff *Qleck Ask Intake* carried three turns; the owner
+chose turn 3a — "no sheet, the date lives on the screen" — with turn 2's
+plan mode behind the link, and dropped the suggestion chips.
+
+- **The date is on the screen.** Under the goal box, **BY WHEN?** is four
+  pills (2 weeks · 1 month · 3 months · 6 months) that print their date
+  inside themselves when picked ("1 month · Oct 13"), **Pick a date** — a
+  month/day wheel from tomorrow to 52 weeks out, headed "Saturday · 34 days
+  out" — and a dashed **Qoach decides**, which is the default. The old mono
+  "+ BY WHEN?" toggle and its weeks stepper are gone.
+- **What the coach reads is unchanged in form, and never longer than the
+  date.** The pick folds into the goal as the same "— in N weeks." phrase,
+  now FLOORED: 1 month is 4 weeks, 3 months is 12, a date 51 days out is 7.
+  The plan can come in a few days early; it can never run past the date.
+  The wheel stops at 52 weeks because that is the longest runway the fold
+  states. `check:timeline` has the date helpers pinned (45 fixtures).
+- **A quieter screen.** Goal box, the date, a full-width **Ask Qoach** that
+  stays dim until the goal has three characters (a tap while dim shakes the
+  box), and "I already have a plan →". Left-aligned headline, no ambient
+  glow, no cycling ghost prompt, no suggestion chips, no "AI COACH" pill.
+  Not in the design but still needed: onboarding's *Skip for now* and the
+  new-goal modal's *Cancel* moved to the top right of the Qoach header.
+- **Plan mode is its own screen state.** "I already have a plan →" swaps
+  the headline to **Bring the plan you've got.** ("Qoach won't rewrite it —
+  it keeps you honest to it."), shortens the goal box, adds the plan box, and
+  "← Start from a goal instead" swaps back with both drafts kept. Ask Qoach
+  needs the goal and the plan; the CTA stays "Ask Qoach" as designed (it
+  used to flip to "Review my plan").
+- Two palette tokens the design needed: `surfaceRaised` (the wheel sheet) and
+  `textStrong` (unselected pills), both themes. `goalSuggestions.ts` is no
+  longer imported; it stays in the tree in case the chips come back.
+- Checked in the web preview at phone width, dark and light: typing, a span
+  pill, the wheel (month change, day, Set), plan mode, the dim-button gate,
+  and the submit payload with the network intercepted — `"Run a 5k without
+  stopping — in 7 weeks."` plus the plan, zero model calls.
 
 ## Not shipped
 

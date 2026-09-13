@@ -11,11 +11,15 @@ import type { ThemeMode } from '../theme';
 
 export interface NightPalette {
   bg: string; surface: string; surfaceDeep: string;
+  /** A sheet lifted above `surface` (the intake's date wheel). */
+  surfaceRaised: string;
   accent: string; accentInk: string; accentSoft: string; accentSofter: string;
   accentTint: string; accentBorder: string; accentBorderStrong: string;
   accentFaint: string; accentGlow: string; accentText: string;
   text: string; textMuted: string; textSoft: string; textDim: string;
   textFaint: string; textGhost: string;
+  /** Near-full text for unselected controls (the intake's pills). */
+  textStrong: string;
   hairline: string; border: string; borderMuted: string; borderStrong: string;
   borderDashed: string;
   danger: string; warn: string; violet: string; violetText: string; blue: string;
@@ -26,6 +30,7 @@ export const NIGHT_DARK: NightPalette = {
   bg: '#0C0F14',
   surface: '#151B24',
   surfaceDeep: '#11161E',
+  surfaceRaised: '#1C222B',
 
   accent: '#2BE380',
   accentInk: '#07130C',
@@ -44,6 +49,7 @@ export const NIGHT_DARK: NightPalette = {
   textDim: 'rgba(242,245,244,0.5)',
   textFaint: 'rgba(242,245,244,0.45)',
   textGhost: 'rgba(242,245,244,0.4)',
+  textStrong: 'rgba(242,245,244,0.85)',
 
   hairline: 'rgba(255,255,255,0.1)',
   border: 'rgba(255,255,255,0.12)',
@@ -66,6 +72,7 @@ export const NIGHT_LIGHT: NightPalette = {
   bg: '#f5f2ea',
   surface: '#fffefb',
   surfaceDeep: '#efece1',
+  surfaceRaised: '#ffffff',
 
   accent: '#2f8f5b',
   accentInk: '#ffffff',
@@ -84,6 +91,7 @@ export const NIGHT_LIGHT: NightPalette = {
   textDim: 'rgba(38,43,51,0.52)',
   textFaint: 'rgba(38,43,51,0.46)',
   textGhost: 'rgba(38,43,51,0.42)',
+  textStrong: 'rgba(38,43,51,0.85)',
 
   hairline: 'rgba(38,43,51,0.08)',
   border: 'rgba(38,43,51,0.1)',

@@ -8,7 +8,6 @@
 // its fake routes are replaced by the real pipeline via useCoachFlow.
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Keyboard, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DIAGONAL, night, nightFonts } from '../theme';
@@ -19,26 +18,17 @@ import type { SimulationState } from '../../api/coachTypes';
 import { reportAiResponse } from '../../api/coach';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import PredictScreen, { bandFor } from './PredictScreen';
-import { suggestionLook, suggestionsFor } from '../goalSuggestions';
-import { useRally } from '../../state/RallyContext';
 import { ATTEMPT_FLOOR } from '../../api/coachTypes';
 import type { PaceKey, Protocol, ProtocolEditOp, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
 import Confetti, { type ConfettiHandle } from '../../components/Confetti';
 import { celebratePlan } from '../../lib/celebrate';
-import { DEFAULT_WEEKS, GOAL_INPUT_MAX, clampWeeks, foldTimeline } from '../../lib/goalTimeline';
+import {
+  GOAL_INPUT_MAX, SPAN_PILLS, addDays, byWhenWeeks, foldTimeline, shortDate, todayYMD, wheelDays, wheelMonths, wheelPreview,
+  type ByWhen, type YMD,
+} from '../../lib/goalTimeline';
 
 
 const MONO = nightFonts.mono;
-
-// Canvas section 3 ("first-page glow-up"): goal chips carry a rep-kind glyph.
-// The set is picked at render time (src/onboarding/goalSuggestions.ts) so a
-// chip is never offered for something the user already has in flight.
-
-// Cycling ghost prompt inside the empty ask-box.
-const GHOSTS = [
-  '“run a 4k in six weeks”', '“quit smoking for good”', '“bake a proper sourdough”',
-  '“read 10 min before bed”', '“do 20 clean pull-ups”', '“cold shower every morning”',
-];
 
 // Mirrors MIN_CLARIFY_TURNS in backend/src/interviewBand.ts: the server guarantees at
 // least this many questions, so the progress track can promise them.
@@ -71,35 +61,151 @@ function MonoLabel({ text, color = night.textGhost, style }: { text: string; col
   );
 }
 
-// Soft radial ambience behind the intake hero (canvas: two blurred orbs).
-function AmbientGlow({ id, color, size, style }: { id: string; color: string; size: number; style: object }) {
+/* ── intake: by when? (Ask Intake, turn 3a) ─────────────────────────────── */
+
+/** One pill under BY WHEN?. Selected fills with the accent; the dashed one is
+ *  "Qoach decides"; the chevron one opens the wheel. */
+function ByWhenPill({ label, on = false, dashed = false, chevron = false, onPress }: {
+  label: string; on?: boolean; dashed?: boolean; chevron?: boolean; onPress: () => void;
+}) {
   return (
-    <Svg width={size} height={size} style={[{ position: 'absolute' }, style]} pointerEvents="none">
-      <Defs>
-        <RadialGradient id={id}>
-          <Stop offset="0" stopColor={color} stopOpacity={0.13} />
-          <Stop offset="0.65" stopColor={color} stopOpacity={0} />
-        </RadialGradient>
-      </Defs>
-      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={`url(#${id})`} />
-    </Svg>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row', alignItems: 'center', gap: 7,
+        paddingVertical: 10, paddingHorizontal: 15, borderRadius: 999,
+        backgroundColor: on ? night.accent : 'transparent',
+        borderWidth: 1.5, borderStyle: dashed ? 'dashed' : 'solid',
+        borderColor: on ? night.accent : pressed ? night.accentBorderStrong : dashed ? night.borderStrong : night.borderMuted,
+      })}
+    >
+      {chevron ? (
+        <View
+          style={{
+            width: 9, height: 9, borderRightWidth: 1.8, borderBottomWidth: 1.8,
+            borderColor: on ? night.accentInk : night.textStrong,
+            transform: [{ translateY: -2 }, { rotate: '45deg' }],
+          }}
+        />
+      ) : null}
+      <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, color: on ? night.accentInk : dashed ? night.textSoft : night.textStrong }}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
-function GhostPrompt() {
-  const [idx, setIdx] = useState(0);
+const WHEEL_ROW = 42;
+
+/** One scroll column of the date wheel. The parent owns the index; the column
+ *  keeps its scroll position in step when the index changes from outside
+ *  (a month change clamping the day). Rows are tappable too. */
+function WheelColumn({ labels, index, onIndex, flex }: {
+  labels: string[]; index: number; onIndex: (i: number) => void; flex: number;
+}) {
+  const ref = useRef<ScrollView>(null);
+  const at = useRef(-1);
+  const place = (i: number, animated = false) => {
+    at.current = i;
+    ref.current?.scrollTo({ y: i * WHEEL_ROW, animated });
+  };
   useEffect(() => {
-    const iv = setInterval(() => setIdx(i => i + 1), 2600);
-    return () => clearInterval(iv);
-  }, []);
+    if (at.current !== index) place(index);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, labels.length]);
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', top: 16, left: 20 }}>
-      <Pop key={idx} duration={400}>
-        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 16, color: 'rgba(150,160,170,0.5)' }}>
-          {GHOSTS[idx % GHOSTS.length]}
-        </Text>
+    <ScrollView
+      ref={ref}
+      style={{ flex, height: 210 }}
+      contentContainerStyle={{ paddingVertical: 84 }}
+      showsVerticalScrollIndicator={false}
+      snapToInterval={WHEEL_ROW}
+      decelerationRate="fast"
+      scrollEventThrottle={16}
+      onLayout={() => place(index)}
+      onScroll={e => {
+        const i = Math.max(0, Math.min(labels.length - 1, Math.round(e.nativeEvent.contentOffset.y / WHEEL_ROW)));
+        at.current = i;
+        if (i !== index) onIndex(i);
+      }}
+    >
+      {labels.map((l, i) => (
+        <Pressable
+          key={l}
+          onPress={() => { place(i, true); onIndex(i); }}
+          style={{ height: WHEEL_ROW, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={{ fontFamily: i === index ? nightFonts.bodyMedium : nightFonts.body, fontSize: 20, color: i === index ? night.text : night.textGhost }}>
+            {l}
+          </Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+}
+
+/** "Pick a date": a month and a day, from tomorrow to the 52-week horizon —
+ *  the longest runway the fold can state (goalTimeline.ts). Plain scroll
+ *  columns, no native picker. */
+function DateWheelSheet({ today, initial, onCancel, onSet }: {
+  today: YMD; initial: YMD | null; onCancel: () => void; onSet: (day: YMD) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const months = React.useMemo(() => wheelMonths(today), [today]);
+  const [start] = useState(() => {
+    if (initial) {
+      const mi = months.findIndex(mo => mo.y === initial.y && mo.m === initial.m);
+      const di = mi >= 0 ? wheelDays(today, months[mi]).indexOf(initial.d) : -1;
+      if (di >= 0) return { mi, di };
+    }
+    // The design opens on the first of next month.
+    return { mi: Math.min(1, months.length - 1), di: 0 };
+  });
+  const [mi, setMi] = useState(start.mi);
+  const [di, setDi] = useState(start.di);
+  const days = wheelDays(today, months[mi]);
+  const dayIdx = Math.min(di, days.length - 1);
+  const picked: YMD = { y: months[mi].y, m: months[mi].m, d: days[dayIdx] };
+  return (
+    <Pressable
+      onPress={onCancel}
+      style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: night.scrim, justifyContent: 'flex-end' }}
+    >
+      <Pop duration={300}>
+        <Pressable
+          onPress={() => {}}
+          style={{
+            backgroundColor: night.surfaceRaised, borderTopLeftRadius: 22, borderTopRightRadius: 22,
+            paddingBottom: Math.max(insets.bottom, 18) + 8,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingVertical: 12, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: night.hairline,
+            }}
+          >
+            <Pressable onPress={onCancel} hitSlop={8} style={{ padding: 4 }}>
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 15, color: night.textSoft }}>Cancel</Text>
+            </Pressable>
+            <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textFaint }}>{wheelPreview(picked, today)}</Text>
+            <Pressable onPress={() => onSet(picked)} hitSlop={8} style={{ padding: 4 }}>
+              <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: night.accent }}>Set</Text>
+            </Pressable>
+          </View>
+          <View style={{ paddingTop: 8, paddingHorizontal: 18 }}>
+            <View
+              pointerEvents="none"
+              style={{ position: 'absolute', left: 18, right: 18, top: 8 + 84, height: WHEEL_ROW, borderRadius: 10, backgroundColor: night.hairline }}
+            />
+            <View style={{ flexDirection: 'row', gap: 10, height: 210 }}>
+              <WheelColumn flex={1.5} labels={months.map(mo => mo.label)} index={mi} onIndex={setMi} />
+              <WheelColumn flex={1} labels={days.map(String)} index={dayIdx} onIndex={setDi} />
+            </View>
+          </View>
+        </Pressable>
       </Pop>
-    </View>
+    </Pressable>
   );
 }
 
@@ -2497,7 +2603,6 @@ export default function FirstGoalScreen({
   // tell someone they run optimistic — their own history, which is the only
   // kind of evidence this product is allowed to show. One guess per user
   // would have been a curiosity; one per plan is a dataset.
-  const { goals } = useRally();
   const coach = useCoachFlow({ askEstimate: true });
   // Nothing about a coach session is written down until a plan is locked,
   // so every phase past intake is state a stray swipe would throw away. The
@@ -2507,84 +2612,65 @@ export default function FirstGoalScreen({
   const unsaved = coach.phase !== 'intake' && coach.phase !== 'error' && coach.phase !== 'refused';
   useEffect(() => { onUnsaved?.(unsaved); }, [unsaved, onUnsaved]);
   useEffect(() => () => { onUnsaved?.(false); }, [onUnsaved]);
-  // Recomputed only when the active goal set changes — locking a goal here
-  // retires its whole domain (smoking ⊃ vaping ⊃ cigarettes) next time.
-  const suggestions = React.useMemo(
-    () => suggestionsFor(goals.map(g => `${g.statement} ${g.protocol.goal_statement ?? ''}`)),
-    [goals],
-  );
   const [draft, setDraft] = useState(initialGoal ?? '');
   const [answer, setAnswer] = useState('');
   const [boxFocused, setBoxFocused] = useState(false);
   const [shakeCount, setShakeCount] = useState(0);
-  // Tier-2: the second door — the user brings their own plan and Qoach
-  // reviews it instead of authoring one. Open = the plan box is showing;
-  // an open-but-empty box still takes the coached lane.
-  const [planOpen, setPlanOpen] = useState(false);
-  // "By when?" — an optional runway, folded into the goal text at submit so
-  // the coach reads it the way it reads any stated timeline (goalTimeline.ts).
-  // Null = no deadline named.
-  const [byWeeks, setByWeeks] = useState<number | null>(null);
-  // The stage is centred in a flex:1 box. When the keyboard takes half the
-  // screen that box shrinks, and centred content that no longer fits overflows
-  // in BOTH directions — so the title climbs up under the status bar and the
-  // Qoach row collides with the subtitle. Top-aligning while the keyboard is up
-  // makes the overflow fall off the bottom instead, where nothing is reading.
-  const [kbUp, setKbUp] = useState(false);
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKbUp(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbUp(false));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
+  // Ask Intake, turn 3a (13 Sep): two doors on one screen. 'plan' is turn 2's
+  // plan mode — the user brings their own plan and Qoach reviews it instead
+  // of authoring one. The goal sentence stays: a plan is priced FOR something.
+  const [mode, setMode] = useState<'goal' | 'plan'>('goal');
   const [planDraft, setPlanDraft] = useState('');
   const [planFocused, setPlanFocused] = useState(false);
+  // "By when?" — a span pill, an exact day off the wheel, or Qoach decides
+  // (null). Folded into the goal text at submit as whole weeks, floored, so
+  // the coach reads a stated fact and the plan never runs past the date.
+  const today = React.useMemo(() => todayYMD(), []);
+  const [byWhen, setByWhen] = useState<ByWhen>(null);
+  const [wheelOpen, setWheelOpen] = useState(false);
 
   const lockIn = () => {
     if (coach.acceptedPlan) onLocked(coach.acceptedPlan);
   };
 
-  /* intake — the stage, not a form (canvas section 3) */
+  /* intake — Ask Intake, turn 3a: the date lives on the screen */
   if (coach.phase === 'intake') {
-    const reviewing = planOpen && !!planDraft.trim();
+    const planMode = mode === 'plan';
+    const ready = draft.trim().length > 2 && (!planMode || planDraft.trim().length > 2);
     const ask = () => {
-      if (draft.trim()) coach.submitGoal(foldTimeline(draft, byWeeks), planOpen ? planDraft : undefined);
-      else setShakeCount(c => c + 1);
+      if (!ready) { setShakeCount(c => c + 1); return; }
+      coach.submitGoal(foldTimeline(draft, byWhenWeeks(byWhen, today)), planMode ? planDraft : undefined);
     };
+    const exact = byWhen?.kind === 'exact' ? byWhen.date : null;
+    const field = (focused: boolean, height: number) => ({
+      height, borderRadius: 16, backgroundColor: night.surface,
+      borderWidth: 1.5, borderColor: focused ? night.accent : night.border,
+      color: night.text, fontFamily: nightFonts.bodyMedium, fontSize: 16, lineHeight: 24,
+      paddingHorizontal: 18, paddingTop: 14, paddingBottom: 14, textAlignVertical: 'top' as const,
+    });
     return (
-      <Screen scroll={false}>
-        <AmbientGlow id="glow-a" color={night.accent} size={420} style={{ top: -160, left: -80 }} />
-        <AmbientGlow id="glow-v" color={night.violet} size={480} style={{ bottom: -200, right: -120 }} />
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-          <QoachMark />
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 19, color: night.text, letterSpacing: 0.2 }}>Qoach</Text>
-          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1, borderColor: night.border }}>
-            <MonoLabel text="AI COACH" color={night.violetText} style={{ letterSpacing: 1 }} />
+      <View style={{ flex: 1 }}>
+        <Screen horizontal={26}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            <QoachMark size={28} fontSize={16} />
+            <Text style={{ flex: 1, fontFamily: nightFonts.display, fontSize: 18, color: night.text }}>Qoach</Text>
+            {/* Not in the design, still needed: onboarding's "Skip for now"
+                and the new-goal modal's "Cancel" both leave from here. */}
+            <Pressable onPress={onDismiss} hitSlop={10}>
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 14, color: night.textSoft }}>{dismissLabel}</Text>
+            </Pressable>
           </View>
-        </View>
 
-        {/* Top-align whenever the stage outgrows the space it has — with the
-            plan box open, or with the keyboard up. Centred only when it fits. */}
-        <View style={{ flex: 1, justifyContent: planOpen || kbUp ? 'flex-start' : 'center', paddingTop: planOpen || kbUp ? 14 : 0 }}>
-          <Text style={{ fontFamily: nightFonts.display, fontSize: planOpen ? 27 : 34, lineHeight: planOpen ? 31 : 38, color: night.text, textAlign: 'center', marginBottom: 12 }}>
-            What do you want to <Text style={{ color: night.accent }}>pull off?</Text>
+          <Text style={{ marginTop: 34, marginBottom: 8, fontFamily: nightFonts.display, fontSize: 34, lineHeight: 37, color: night.text }}>
+            {planMode ? 'Bring the plan ' : 'What do you want to '}
+            <Text style={{ color: night.accent }}>{planMode ? "you've got." : 'pull off?'}</Text>
           </Text>
-          <Text style={{ fontFamily: nightFonts.body, fontSize: 15.5, lineHeight: 23, color: night.textMuted, textAlign: 'center', marginBottom: 26 }}>
-            Say it plain — like you'd text a friend. Got a date in mind? Name it — Qoach prices it straight.
+          <Text style={{ marginBottom: 22, fontFamily: nightFonts.body, fontSize: 15, lineHeight: 22.5, color: night.textMuted }}>
+            {planMode ? "Qoach won't rewrite it — it keeps you honest to it." : "Say it plain — like you'd text a friend."}
           </Text>
 
           <Shake trigger={shakeCount}>
-            <View
-              style={{
-                backgroundColor: night.surface, borderRadius: 22, borderWidth: 1.5,
-                borderColor: boxFocused ? night.accent : night.hairline,
-                shadowColor: boxFocused ? night.accent : '#000',
-                shadowOpacity: boxFocused ? 0.18 : 0.35,
-                shadowRadius: boxFocused ? 18 : 24,
-                shadowOffset: { width: 0, height: 12 },
-              }}
-            >
-              {!draft && <GhostPrompt />}
+            <View style={{ gap: 10 }}>
               <TextInput
                 value={draft}
                 onChangeText={setDraft}
@@ -2592,128 +2678,78 @@ export default function FirstGoalScreen({
                 onBlur={() => setBoxFocused(false)}
                 multiline
                 maxLength={GOAL_INPUT_MAX}
-                placeholder=""
-                style={{
-                  height: 88, color: night.text, fontFamily: nightFonts.bodyMedium, fontSize: 16,
-                  lineHeight: 23, paddingHorizontal: 20, paddingTop: 16, textAlignVertical: 'top',
-                }}
+                placeholder={planMode ? 'What it’s for — “run a half marathon”' : '“cold shower every morning”'}
+                placeholderTextColor={night.textGhost}
+                style={field(boxFocused, planMode ? 64 : 112)}
               />
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 10, paddingBottom: 10 }}>
-                <Pressable
-                  onPress={ask}
-                  style={({ pressed }) => ({
-                    height: 46, paddingHorizontal: 26, borderRadius: 23, backgroundColor: night.accent,
-                    alignItems: 'center', justifyContent: 'center',
-                    opacity: draft.trim() ? (pressed ? 0.88 : 1) : 0.55,
-                    shadowColor: night.accent, shadowOpacity: 0.28, shadowRadius: 12, shadowOffset: { width: 0, height: 8 },
-                  })}
-                >
-                  <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: night.accentInk }}>{reviewing ? 'Review my plan' : 'Ask Qoach'}</Text>
-                </Pressable>
-              </View>
+              {planMode ? (
+                <TextInput
+                  value={planDraft}
+                  onChangeText={setPlanDraft}
+                  onFocus={() => setPlanFocused(true)}
+                  onBlur={() => setPlanFocused(false)}
+                  multiline
+                  maxLength={1000}
+                  placeholder="Mon: 3 mi easy · Wed: intervals · Sat: long run…"
+                  placeholderTextColor={night.textGhost}
+                  style={field(planFocused, 112)}
+                />
+              ) : null}
             </View>
           </Shake>
 
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 22, marginTop: 13 }}>
-            <Pressable onPress={() => setByWeeks(w => (w == null ? DEFAULT_WEEKS : null))} hitSlop={8}>
-              <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, color: byWeeks != null ? night.accentText : night.textGhost, textAlign: 'center' }}>
-                {byWeeks != null ? '— NO DEADLINE' : '+ BY WHEN?'}
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => setPlanOpen(o => !o)} hitSlop={8}>
-              <Text style={{ fontFamily: MONO, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, color: planOpen ? night.violetText : night.textGhost, textAlign: 'center' }}>
-                {planOpen ? '— NEVER MIND, COACH ME' : '+ I ALREADY HAVE A PLAN'}
-              </Text>
-            </Pressable>
-          </View>
-          {byWeeks != null ? (
-            <View style={{ marginTop: 10, alignItems: 'center', gap: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Pressable onPress={() => setByWeeks(w => clampWeeks((w ?? DEFAULT_WEEKS) - 1))} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontFamily: nightFonts.display, fontSize: 14, color: night.text }}>−</Text>
-                </Pressable>
-                <Text style={{ fontFamily: nightFonts.display, fontSize: 15, color: night.text, minWidth: 64, textAlign: 'center' }}>
-                  {byWeeks} wk
-                </Text>
-                <Pressable onPress={() => setByWeeks(w => clampWeeks((w ?? DEFAULT_WEEKS) + 1))} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontFamily: nightFonts.display, fontSize: 14, color: night.text }}>+</Text>
-                </Pressable>
-              </View>
-              {/* True because the counter-offer picker shipped first: a runway
-                  the coach judges too tight is countered, and "price MY weeks"
-                  is one tap on that page. */}
-              <Text style={{ fontFamily: nightFonts.body, fontSize: 11, lineHeight: 15.5, color: night.textGhost, textAlign: 'center', maxWidth: 320 }}>
-                Qoach prices your date as asked. Too tight and it says so — then you can name any runway on the verdict page.
-              </Text>
-            </View>
-          ) : null}
-          {planOpen ? (
-            <View
-              style={{
-                marginTop: 10, backgroundColor: night.surface, borderRadius: 18,
-                borderWidth: 1.5, borderColor: planFocused ? night.violet : night.hairline,
-              }}
-            >
-              <TextInput
-                value={planDraft}
-                onChangeText={setPlanDraft}
-                onFocus={() => setPlanFocused(true)}
-                onBlur={() => setPlanFocused(false)}
-                multiline
-                placeholder={'Your commitments, one per line —\nRun 3 mornings a week\nNo phone in the bedroom'}
-                placeholderTextColor={night.textGhost}
-                style={{
-                  height: 92, color: night.text, fontFamily: nightFonts.body, fontSize: 14,
-                  lineHeight: 21, paddingHorizontal: 16, paddingTop: 12, textAlignVertical: 'top',
-                }}
+          <View style={{ marginTop: 24, gap: 11 }}>
+            <Text style={{ fontFamily: nightFonts.display, fontSize: 10.5, letterSpacing: 1.5, color: night.textGhost }}>BY WHEN?</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {SPAN_PILLS.map(pill => {
+                const on = byWhen?.kind === 'span' && byWhen.label === pill.label;
+                return (
+                  <ByWhenPill
+                    key={pill.label}
+                    on={on}
+                    label={on ? `${pill.label} · ${shortDate(addDays(today, pill.days), today)}` : pill.label}
+                    onPress={() => setByWhen({ kind: 'span', label: pill.label, days: pill.days })}
+                  />
+                );
+              })}
+              <ByWhenPill
+                chevron
+                on={!!exact}
+                label={exact ? shortDate(exact, today) : 'Pick a date'}
+                onPress={() => { Keyboard.dismiss(); setWheelOpen(true); }}
               />
-              <Text style={{ paddingHorizontal: 16, paddingBottom: 10, fontFamily: nightFonts.body, fontSize: 11, lineHeight: 15.5, color: night.textGhost }}>
-                Qoach reviews it: honest odds for your plan as written, plus only the fixes it truly needs.
-              </Text>
+              <ByWhenPill dashed label="Qoach decides" onPress={() => setByWhen(null)} />
             </View>
-          ) : null}
+          </View>
 
-          <Text style={{ fontFamily: nightFonts.display, fontSize: 10.5, letterSpacing: 1.6, color: night.textGhost, textAlign: 'center', marginTop: planOpen ? 18 : 26, marginBottom: 10 }}>
-            OR STEAL ONE
-          </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 9 }}>
-            {suggestions.map(sg => {
-              const look = suggestionLook(sg.kind);
-              return (
-              <Pressable
-                key={sg.label}
-                onPress={() => setDraft(sg.label)}
-                style={({ pressed }) => ({
-                  flexDirection: 'row', alignItems: 'center', gap: 9,
-                  paddingVertical: 9, paddingLeft: 9, paddingRight: 15, borderRadius: 999,
-                  backgroundColor: pressed ? night.surface : night.surfaceDeep,
-                  borderWidth: 1, borderColor: pressed ? night.accentBorderStrong : night.border,
-                })}
-              >
-                <View
-                  style={{
-                    width: 24, height: 24, borderRadius: 8, backgroundColor: look.bg,
-                    borderWidth: 1, borderColor: look.bd, alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ fontFamily: MONO, fontSize: 11, fontWeight: '700', color: look.c }}>{look.g}</Text>
-                </View>
-                <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13, color: night.text }}>{sg.label}</Text>
-              </Pressable>
-              );
+          <View style={{ flex: 1, minHeight: 24 }} />
+
+          <Pressable
+            onPress={ask}
+            style={({ pressed }) => ({
+              height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: ready ? night.accent : night.accentFaint,
+              opacity: ready && pressed ? 0.9 : 1,
             })}
-          </View>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'baseline', gap: 16, marginTop: 22 }}>
-            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>
-              Your goal is sent to our AI coach to build your plan.
+          >
+            <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: ready ? night.accentInk : night.textGhost }}>Ask Qoach</Text>
+          </Pressable>
+          <Pressable onPress={() => setMode(planMode ? 'goal' : 'plan')} hitSlop={6} style={{ marginTop: 14, alignSelf: 'center', padding: 6 }}>
+            <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 14, color: night.textSoft }}>
+              {planMode ? '← Start from a goal instead' : 'I already have a plan →'}
             </Text>
-            <Pressable onPress={onDismiss} hitSlop={8}>
-              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textFaint }}>{dismissLabel}</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Screen>
+          </Pressable>
+        </Screen>
+
+        {wheelOpen ? (
+          <DateWheelSheet
+            today={today}
+            initial={exact}
+            onCancel={() => setWheelOpen(false)}
+            onSet={day => { setByWhen({ kind: 'exact', date: day }); setWheelOpen(false); }}
+          />
+        ) : null}
+      </View>
     );
   }
 

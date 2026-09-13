@@ -719,7 +719,7 @@ because both models refuse a forced tool call while thinking is on).
   on the ledger: about $7.50 of the $20 ask-first cap** (the pre-evening
   rows being an upper bound).
 
-### Unreleased · 13 Sep — the intake, redesigned (Ask Intake, turn 3a)
+### Build 34 · 13 Sep — the intake, redesigned (Ask Intake, turn 3a)
 
 The Claude Design handoff *Qleck Ask Intake* carried three turns; the owner
 chose turn 3a — "no sheet, the date lives on the screen" — with turn 2's

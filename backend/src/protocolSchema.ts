@@ -866,7 +866,12 @@ export function fabricationErrors(
  *      ONE session — there is nothing else it could be attached to
  *   2. an attached step with no fixed days
  *   3. an attached step whose days disagree with its session's
- *   4. an attached step asking for more reps per week than the session has days
+ *   4. an attached step whose reps per week differ from the session's day count
+ *      (15 Sep: this used to only LOWER per_week. A rep given one of its
+ *      session's two days came out with days = both, per_week = 1 — a shape
+ *      validateProtocol rejects and POST /goals then refused to save. Two
+ *      production plans were locked in that shape; neither goal ever reached
+ *      the server, and every tick on them stalled the check-in queue.)
  *
  * What is NOT repaired stays blocking, because each needs a decision this
  * cannot make honestly: a malformed or duplicate session, a step pointing at a
@@ -900,13 +905,17 @@ export function alignStepsToSessions(p: Protocol): number {
       }
       const sess = sessions.get(st.session_id!);
       if (!sess) continue;                                  // dangling ref: validator's job
+      if (!st.frequency || typeof st.frequency !== 'object') continue; // shape error: validator's job
       const days = (st.frequency.days ?? []).map(d => String(d).toLowerCase());
       const want = [...sess.days].sort().join(',');
       if (days.length === 0 || [...days].sort().join(',') !== want) {
         st.frequency.days = [...sess.days];
         fixed++;
       }
-      if (st.frequency.per_week > sess.days.length) {
+      // The only count both validators accept once the days ARE the session's:
+      // validateProtocol wants days.length === per_week, sessionErrors wants
+      // per_week <= the session's day count. Raise or lower to meet both.
+      if (st.frequency.per_week !== sess.days.length) {
         st.frequency.per_week = sess.days.length;
         fixed++;
       }

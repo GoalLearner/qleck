@@ -15,7 +15,7 @@ import {
   MAX_ACTIVE_GOALS, activeGoalCount, appendProtocolStatements, completeGoal, getGoalById,
   protocolExists, stepStatements, type GoalRecord,
 } from './goals';
-import { validateProtocol, type Protocol } from './protocolSchema';
+import { reconcileFrequency, validateProtocol, type Protocol } from './protocolSchema';
 import type { Env } from './ai';
 
 export interface GraduateBody {
@@ -126,6 +126,7 @@ export async function graduate(
     }
 
     const merged = spliceFrozenPast(current, result.protocol, frozenThrough);
+    reconcileFrequency(merged);
     const errors = validateProtocol(merged);
     if (errors.length > 0) return { ok: false, error: 'graduation_failed', status: 502, details: errors };
     if (merged.duration_weeks <= current.duration_weeks) {

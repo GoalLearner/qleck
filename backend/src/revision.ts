@@ -17,7 +17,7 @@ import {
   stepStatements, type GoalRecord,
 } from './goals';
 import { spliceFrozenPast } from './graduation';
-import { validateProtocol, type Protocol } from './protocolSchema';
+import { reconcileFrequency, validateProtocol, type Protocol } from './protocolSchema';
 import type { Env } from './ai';
 
 const UUID = /^[0-9a-fA-F-]{36}$/;
@@ -95,6 +95,7 @@ export async function proposeRevision(
   // Weeks before the one being lived are frozen; put the stored versions back
   // rather than trusting the model to have preserved them.
   const merged = spliceFrozenPast(current, result.protocol, currentWeek - 1);
+  reconcileFrequency(merged);
   const errors = validateProtocol(merged);
   if (errors.length > 0) return { ok: false, error: 'revision_failed', status: 502, details: errors };
   if (merged.duration_weeks < currentWeek) {
@@ -141,6 +142,7 @@ export async function applyRevision(
   }
 
   const merged = spliceFrozenPast(current, proposed as Protocol, currentWeek - 1);
+  reconcileFrequency(merged);
   const errors = validateProtocol(merged);
   if (errors.length > 0) return { ok: false, error: 'invalid_protocol', status: 400, details: errors };
   if (merged.duration_weeks < currentWeek) {

@@ -3,7 +3,7 @@
 // protocols are stored as immutable versioned JSON plus a normalized
 // latest-version step table for the execution engine's queries.
 import type { Env } from './ai';
-import { validateProtocol, type Protocol } from './protocolSchema';
+import { reconcileFrequency, validateProtocol, type Protocol } from './protocolSchema';
 
 export interface GoalRecord {
   id: string;
@@ -61,6 +61,12 @@ export function parseCreateGoal(body: CreateGoalBody):
   const spRaw = Number(body.successProbability);
   const successProbability =
     Number.isInteger(spRaw) && spRaw >= 1 && spRaw <= 97 ? spRaw : null;
+  // Heal before judging (15 Sep). Clients hold plans generated before the
+  // session repair was fixed, with a rep's days and its per_week disagreeing;
+  // the days are what the app renders, so the count follows them. Refusing
+  // here parked the goal on the phone for good, and every tick on it stalled
+  // the whole check-in queue.
+  reconcileFrequency(body.protocol);
   const errors = validateProtocol(body.protocol);
   if (errors.length > 0) return { ok: false, error: 'invalid_protocol: ' + errors[0] };
   return { ok: true, id, goalText, statement, durationWeeks, startedOn, timezone, successProbability, protocol: body.protocol as Protocol };

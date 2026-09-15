@@ -2,7 +2,7 @@
 // capture (step 4a), checked without a model.
 //
 //   node harness/frequency.check.mjs
-import { reconcileFrequency, howToErrors, validateProtocol } from '../src/protocolSchema.ts';
+import { reconcileFrequency, howToErrors, validateProtocol, sessionErrors } from '../src/protocolSchema.ts';
 
 let pass = 0; const failures = [];
 const ok = (name, cond) => { if (cond) { pass++; console.log(`  PASS  ${name}`); } else { failures.push(name); console.log(`  FAIL  ${name}`); } };
@@ -43,6 +43,18 @@ console.log('\ndays win · phase-1 how-to capture\n');
   const p = proto([step({ frequency: { per_week: 9, days: ['MON', 'Wed'] } })]);
   reconcileFrequency(p);
   ok('day names are matched case-insensitively (the count follows them)', p.phases[0].steps[0].frequency.per_week === 2);
+}
+{
+  // The shapes production actually stored (15 Sep read-only query): a rep on
+  // a session, days = the session's, per_week lower. The lock refused them.
+  for (const [perWeek, days] of [[1, ['mon', 'thu']], [3, ['mon', 'tue', 'wed', 'thu', 'fri']], [4, ['mon', 'tue', 'wed', 'thu', 'fri']]]) {
+    const p = proto([step({ session_id: 'sess', frequency: { per_week: perWeek, days } })]);
+    p.sessions = [{ id: 'sess', type: 'session', days }];
+    const before = validateProtocol(p).some(e => /days list length must equal per_week/.test(e));
+    reconcileFrequency(p);
+    const after = validateProtocol(p).filter(e => /per_week|days list/.test(e)).length === 0 && sessionErrors(p).length === 0;
+    ok(`stored shape ${perWeek}/wk on a ${days.length}-day session: refused before, heals to ${days.length}/wk and passes both validators`, before && after && p.phases[0].steps[0].frequency.per_week === days.length);
+  }
 }
 ok('a non-object emission is left to the validator, not thrown on', reconcileFrequency(null) === 0 && reconcileFrequency('x') === 0 && reconcileFrequency({ phases: 'no' }) === 0);
 {

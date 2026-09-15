@@ -975,6 +975,9 @@ export async function generateProtocol(
       // A conditional rep inherits its session's days rather than costing the
       // plan — see alignStepsToSessions for what stays blocking.
       alignStepsToSessions(repaired as Protocol);
+      // The repairs above run AFTER the structural check, so check the shape
+      // again: a plan returned from here must be one POST /goals will save.
+      errors.push(...validateProtocol(repaired));
       errors.push(...physiquePillarErrors(`${targetStatement} ${session.goal_text}`, repaired as Protocol));
       errors.push(...provenanceErrors(repaired as Protocol, structure.answers, assumableKeys));
       errors.push(...exhaustedKeyErrors(repaired as Protocol, session.domain, assumableKeys, structure.answers));
@@ -1084,6 +1087,7 @@ ${goalAsData(feedback)}
     // failing there skips the whole repair layer below — including the
     // session/day fixes — so one arithmetic slip used to cost the plan.
     retilePhaseWeeks(result.toolInput);
+    reconcileFrequency(result.toolInput);
     const repaired = reconcileDuration(result.toolInput);
     const errors = validateProtocol(repaired);
     const revised = repaired as Protocol;
@@ -1171,6 +1175,7 @@ export async function maintenanceProtocol(
     // failing there skips the whole repair layer below — including the
     // session/day fixes — so one arithmetic slip used to cost the plan.
     retilePhaseWeeks(result.toolInput);
+    reconcileFrequency(result.toolInput);
     const repaired = reconcileDuration(result.toolInput);
     const errors = validateProtocol(repaired);
     await reclassifyRequest(env.DB, result.requestId, errors.length === 0 ? 'valid' : 'invalid');
@@ -1570,6 +1575,9 @@ export async function editProtocolStep(
 > {
   const verdict = JSON.parse(session.verdict!) as Verdict;
   const stored = JSON.parse(session.protocol!) as Protocol;
+  // A plan stored before 15 Sep can carry days.length !== per_week; heal it
+  // first, or every edit on it is refused by the structural check.
+  reconcileFrequency(stored);
   const out = applyProtocolOp(stored, op, protocolFirstError(verdict.goal_statement));
   if ('refused' in out) return out;
   session.protocol = JSON.stringify(out.protocol);
@@ -1604,6 +1612,7 @@ export async function repriceTrimmedProtocol(
 > {
   const verdict = JSON.parse(session.verdict!) as Verdict;
   const full = JSON.parse(session.protocol!) as Protocol;
+  reconcileFrequency(full); // see editProtocolStep: heal a pre-15-Sep shape first
   const allSteps = full.phases.flatMap(ph => ph.steps);
   const allIds = new Set(allSteps.map(s => s.id));
   let wanted = [...new Set(droppedIds)].filter(id => allIds.has(id));

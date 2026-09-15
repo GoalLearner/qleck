@@ -44,7 +44,7 @@ import { shareGoal, unshareGoal, witnessPage, witnessView } from './witness';
 import { exportAccount, purgeAccount } from './account';
 import { betaReadout } from './metrics';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
-import type { Protocol } from './protocolSchema';
+import { reconcileFrequency, type Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
 const MAX_OWN_PLAN_CHARS = 1000; // Tier-2: the user's own plan, ~10-12 commitment lines
@@ -1304,6 +1304,7 @@ export default {
         if (!session) return json({ error: 'session_not_found' }, 404, cors);
         if (session.status === 'protocol' && session.protocol) {
           const cached = JSON.parse(session.protocol) as Protocol;
+          reconcileFrequency(cached); // pre-15-Sep plans: days win over per_week
           return json({ sessionId: session.id, type: 'protocol', protocol: cached, ...assumptionPayload(session, cached) }, 200, cors);
         }
         if (session.status !== 'verdict' || !session.verdict) {
@@ -1350,6 +1351,7 @@ export default {
           if (simState.status !== 'done' && simState.status !== 'simulating' && simState.status !== 'failed') return null;
           if (simState.config.pace !== wantPace || simState.config.variant !== wantVariant) return null;
           const draft = JSON.parse(s.draft_protocol) as Protocol;
+          reconcileFrequency(draft); // pre-15-Sep drafts: days win over per_week
           const chosen = chosenOddsFor(verdict, wantPace, wantVariant ?? undefined);
           await env.DB
             .prepare(`UPDATE coach_sessions SET status = 'protocol', protocol = ?, base_protocol = ?, plan_odds = ?, odds_ceiling = ?, updated_at = datetime('now') WHERE id = ?`)

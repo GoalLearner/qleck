@@ -89,6 +89,25 @@ const reg = await api('/device/register', { body: {} });
 const token = reg.body.token;
 bar('register', reg.status === 200 && !!token);
 
+/* ── the lock heals a stored plan shape instead of refusing it (15 Sep) ── */
+{
+  const id = crypto.randomUUID();
+  const protocol = protocolFor('Healed shape');
+  protocol.sessions = [{ id: 'lift', type: 'lift', days: ['mon', 'thu'] }];
+  protocol.phases[0].steps = [{ id: 'ph1-s1', title: 'Lift', kind: 'binary', session_id: 'lift', frequency: { per_week: 1, days: ['mon', 'thu'] }, details: 'd' }];
+  const res = await api('/goals', {
+    token,
+    body: { id, goalText: 'healed goal', statement: 'Healed goal', durationWeeks: 6, startedOn: today(), timezone: 'Europe/Oslo', protocol },
+  });
+  bar('POST /goals saves a plan whose rep has 2 days and per_week 1 (was a 400 that parked the goal on the phone)',
+    res.status >= 200 && res.status < 300 && !!res.body.goal, `${res.status} ${JSON.stringify(res.body).slice(0, 160)}`);
+  const list = await api('/goals', { method: 'GET', token });
+  const saved = (list.body.goals ?? []).find(g => g.id === id);
+  const savedStep = saved?.protocol?.phases?.[0]?.steps?.[0];
+  bar('…and stores it healed: per_week follows the days (2)', savedStep?.frequency?.per_week === 2, JSON.stringify(savedStep?.frequency));
+  if (saved) await api(`/goals/${id}`, { method: 'DELETE', token });
+}
+
 /* ── pause / resume ─────────────────────────────────────────────────────── */
 
 const pauseId = await seed(token);

@@ -16,6 +16,7 @@ import Confetti, { type ConfettiHandle } from '../components/Confetti';
 import { goalTitle } from '../components/protocolViews';
 import { celebratePlan } from '../lib/celebrate';
 import { planEndDate, planStats, type PlanStats } from '../lib/protocolTime';
+import { graduationErrorCopy, plural } from '../lib/copy';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
 
@@ -128,13 +129,12 @@ export default function GraduationScreen() {
       else await graduate(goal.id, choice, choice === 'extend' ? weeks : undefined);
       navigation.goBack();
     } catch (e) {
-      // Close-out never depends on the AI, so it stays available when the
-      // coach is down — say so rather than stranding the user here.
-      setError(
-        choice === 'close'
-          ? "Couldn't close this out — check your connection and try again."
-          : "Qoach couldn't write that plan just now. You can try again, or close this goal out.",
-      );
+      // Named, because the refusals are not all about Qoach: five goals
+      // already running, the daily limit, a plan graduated on another device.
+      // Telling someone to try again at something that cannot work is how
+      // they end up trying all evening. Close-out never depends on the AI, so
+      // it stays available when the coach is down.
+      setError(graduationErrorCopy((e as { code?: string })?.code, choice));
       setBusy(null);
     }
   };
@@ -157,7 +157,7 @@ export default function GraduationScreen() {
           {goalTitle(goal.statement, goal.protocol)}
         </Text>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 8 }}>
-          {weeks} weeks · {goal.startedOn} to {planEndDate(goal.startedOn, weeks, goal.pauses)}
+          {plural(weeks, 'week')} · {goal.startedOn} to {planEndDate(goal.startedOn, weeks, goal.pauses)}
         </Text>
 
         {/* the run in review */}
@@ -228,7 +228,7 @@ export default function GraduationScreen() {
           />
           <ChoiceCard
             tone="plain"
-            title={`Give it another ${weeks} weeks`}
+            title={`Give it another ${plural(weeks, 'week')}`}
             blurb="Same goal, same history — Qoach builds the next phases on top."
             busy={busy === 'extend'}
             disabled={!!busy && busy !== 'extend'}

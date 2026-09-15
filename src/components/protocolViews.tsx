@@ -5,6 +5,7 @@ import React from 'react';
 import { Text, View } from 'react-native';
 import type { Protocol, ProtocolStep } from '../api/coachTypes';
 import { colors, fonts, radii } from '../theme';
+import { planShape } from '../lib/copy';
 
 // One dot color per goal, by position — Today's groups and the Goals shelf
 // must agree on which goal is which color. Lives on the palette so each mode
@@ -108,7 +109,7 @@ export function GoalHero({ protocol }: { protocol: Protocol }) {
         {protocol.goal_statement}
       </Text>
       <Text style={{ fontSize: 12.5, fontFamily: fonts.semibold, color: colors.onNavyMuted, marginTop: 10 }}>
-        {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
+        {planShape(protocol.duration_weeks, protocol.phases.length)} · built with Qoach
       </Text>
     </View>
   );

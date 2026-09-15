@@ -926,6 +926,24 @@ stuck in the queue on the phone — and two defects put them there.
   than missed, the week it came out in expects only what it banked (so a drop
   can never lower adherence or un-earn a milestone), and Goals shows it struck
   through with "Dropped in week N". The days already banked keep counting.
+- **The end of a plan stops reading wrong.** "1 weeks · 1 phases" was
+  reachable everywhere a duration is printed — and the first plan a tester can
+  finish in a day is exactly the one that says it. Every refusal of "keep it
+  going" said the same sentence, including the ones that have nothing to do
+  with Qoach (five goals already running, the daily limit, a plan graduated on
+  another device), so people were told to try again at things that could not
+  work. And a Ledger week after the plan ended claimed the plan "hadn't
+  started yet". All three now come from one small module with its own bars
+  (`check:copy`).
+- **A plan that ends overnight says so without a relaunch.** The day was read
+  on render, so nothing rolled it at midnight: a finished plan kept showing
+  yesterday's reps until the app was killed. It now rolls on a timer and
+  whenever the app comes back to the foreground.
+- **Goals knows a plan is finished.** A PLAN COMPLETE chip, "N weeks, done"
+  instead of "week 6 of 6", **See how it went ›** into the graduation screen,
+  no Pause on a plan there is nothing left to pause, and the header counts
+  what is actually running ("Nothing on the clock — see how the last one
+  went").
 - **"Keep it going, lighter" works on short plans.** A finished plan could
   only maintain for twice its own length, but the maintenance prompt asks for
   4-12 weeks — so a plan of six weeks or less could never graduate at all:

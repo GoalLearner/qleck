@@ -36,6 +36,7 @@ import { localDate } from '../api/device';
 import { celebrateDay, celebrateGoal, celebratePlan, hapticCheck } from '../lib/celebrate';
 import { loadSeenMilestones, markMilestonesSeen } from '../lib/milestones';
 import { laterVersions } from '../lib/ticks';
+import { plural } from '../lib/copy';
 import { loadOfferedWitness, markWitnessOffered } from '../lib/witnessOffer';
 import {
   allCheckIns, freshMilestones, witnessCandidate, mergedMissedTwice, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type ActiveGoalLike, type CheckIn, type ReachedMilestone, reachedMilestones, type DayRep, type WeekDay, weekOf, weekdayName,
@@ -1503,7 +1504,7 @@ function FinishedGoalCard({ goal, onOpen }: { goal: ActiveGoal; onOpen: () => vo
           {goalTitle(goal.statement, goal.protocol)}
         </Text>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 18, color: colors.muted, marginTop: 4 }}>
-          {goal.protocol.duration_weeks} weeks, done. See how it went and pick what's next.
+          {plural(goal.protocol.duration_weeks, 'week')}, done. See how it went and pick what's next.
         </Text>
       </View>
       <Text style={{ fontFamily: fonts.bold, fontSize: 18, color: colors.success }}>›</Text>

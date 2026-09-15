@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 import {
   abandonGoal, clearGoalOutbox, completeGoal, fetchFinishedGoals, fetchGoals, flushGoalOutbox,
   deleteGoal, dropSteps, graduateGoal, mintGoalId, pauseGoal, pendingGoals, resumeGoal, saveGoal,
@@ -316,7 +317,24 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
    * nothing auto-completes behind their back — but Today must stop scheduling
    * reps from it, or an ended plan reads as a permanent rest day.
    */
-  const today = localDate();
+  // The day is STATE, not a value read on render. A plan that ended
+  // overnight kept showing yesterday's reps — and no PLAN COMPLETE — until
+  // the app was killed and relaunched, because nothing re-rendered this
+  // provider at midnight. It rolls on a timer AND whenever the app comes back
+  // to the foreground, since a sleeping phone fires no timers.
+  const [today, setToday] = useState(localDate);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setHours(24, 0, 0, 0);
+      timer = setTimeout(() => { setToday(localDate()); schedule(); }, Math.max(1000, midnight.getTime() - now.getTime()));
+    };
+    schedule();
+    const sub = AppState.addEventListener('change', s => { if (s === 'active') setToday(localDate()); });
+    return () => { clearTimeout(timer); sub.remove(); };
+  }, []);
   // A paused goal schedules nothing and ends nothing: it is out of both lists
   // until it resumes. Because NudgeManager runs off liveGoals, this is also
   // what makes nudges go quiet on a paused goal (P4's "nudges cease on

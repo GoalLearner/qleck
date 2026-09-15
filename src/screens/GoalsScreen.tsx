@@ -19,8 +19,9 @@ import { goalDot, goalTitle, kindLook } from '../components/protocolViews';
 import { RepSheet, freqChip, hasHowTo } from '../components/RepSheet';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { apiBase, localDate } from '../api/device';
-import { oddsTier, phaseForWeek, planEndDate, reforecastOdds, repsForDate, weekOf, type Reforecast } from '../lib/protocolTime';
+import { oddsTier, phaseForWeek, planEndDate, planIsOver, reforecastOdds, repsForDate, weekOf, type Reforecast } from '../lib/protocolTime';
 import { laterVersions } from '../lib/ticks';
+import { planShape, plural } from '../lib/copy';
 import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -108,11 +109,17 @@ interface GoalModel {
   repsToday: number;
   /** Accepted odds re-forecast against actual adherence; null without odds. */
   rf: Reforecast | null;
+  /** The plan's weeks have run out: it is finished, not on week N of N. */
+  ended: boolean;
 }
 
-function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
+function GoalCard({ m, onOpen, onSeeHow }: { m: GoalModel; onOpen: () => void; onSeeHow?: () => void }) {
   // A paused goal schedules nothing — it must not read as running (P4).
   const paused = m.goal.status === 'paused';
+  // A plan whose weeks have run out is not "week 6 of 6, one rep today": it
+  // is finished, and the only useful thing on this card is the way into how
+  // it went. Today already knew this; Goals did not.
+  const ended = m.ended;
   // Every goal is private until you share it, and a shared one used to look
   // exactly like a private one here — you had to open the goal to find out.
   // These goals are intimate; whether somebody else can see this one is not a
@@ -128,8 +135,15 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
         opacity: paused ? 0.62 : 1,
       }}
     >
-      {(paused || shared) && (
+      {(paused || shared || ended) && (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {ended && (
+            <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.successBg }}>
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 9.5, letterSpacing: 1.3, color: colors.success }}>
+                PLAN COMPLETE
+              </Text>
+            </View>
+          )}
           {paused && (
             <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: colors.outline }}>
               <Text style={{ fontFamily: fonts.extrabold, fontSize: 9.5, letterSpacing: 1.3, color: colors.muted }}>
@@ -155,13 +169,18 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.2, color: colors.sectionLabel }}>
-            WEEK {m.week} OF {m.goal.protocol.duration_weeks}
+            {ended ? `${plural(m.goal.protocol.duration_weeks, 'WEEK')}, DONE` : `WEEK ${m.week} OF ${m.goal.protocol.duration_weeks}`}
           </Text>
           <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.sectionLabel }}>›</Text>
         </View>
       </View>
       {/* flexWrap: three chips + the week track overflowed the card when a
           phase title ran long ("Solid odds · 85%" clipped off the edge). */}
+      {ended ? (
+        <Pressable onPress={onSeeHow} style={{ marginTop: 14, alignSelf: 'flex-start' }}>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.accentLink }}>See how it went \u203a</Text>
+        </Pressable>
+      ) : (
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 14 }}>
         <View style={{ maxWidth: '100%', paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.successBg }}>
           <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.success }}>Now: {m.phase.title}</Text>
@@ -187,6 +206,7 @@ function GoalCard({ m, onOpen }: { m: GoalModel; onOpen: () => void }) {
           <WeekTrack weeks={m.goal.protocol.duration_weeks} week={m.week} filled />
         </View>
       </View>
+      )}
     </Pressable>
   );
 }
@@ -496,8 +516,10 @@ function PauseButton({ paused, onToggle }: { paused: boolean; onToggle: () => vo
   );
 }
 
-function DetailView({ m, onBack, onDrop, onTweak, onRegenerate, onTogglePause, shareUrl, onShare, onStopSharing }: {
+function DetailView({ m, onBack, onDrop, onTweak, onSeeHow, onRegenerate, onTogglePause, shareUrl, onShare, onStopSharing }: {
   m: GoalModel; onBack: () => void; onDrop: () => void; onTweak: (stepId?: string) => void;
+  /** A finished plan's only move: the graduation screen. */
+  onSeeHow: () => void;
   /** Old-shape goals only: rebuild with the current engine. Lives on the
    *  parent because DetailView has no navigator of its own — the button used
    *  to reach for `navigation` here and got the DOM global instead, which
@@ -536,7 +558,7 @@ function DetailView({ m, onBack, onDrop, onTweak, onRegenerate, onTogglePause, s
           </Pressable>
         )}
         <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.onNavySoft, marginTop: 10 }}>
-          {protocol.duration_weeks} weeks · {protocol.phases.length} phases · built with Qoach
+          {planShape(protocol.duration_weeks, protocol.phases.length)} · built with Qoach
           {m.rf ? ` · ${m.rf.current}% — ${m.rf.drifted ? `slipping, was ${m.rf.original}%` : oddsTier(m.rf.current).label.toLowerCase()} — if you do the reps` : ''}
         </Text>
       </View>
@@ -544,7 +566,9 @@ function DetailView({ m, onBack, onDrop, onTweak, onRegenerate, onTogglePause, s
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 16, marginBottom: 20, marginHorizontal: 4 }}>
         <WeekTrack weeks={protocol.duration_weeks} week={m.week} filled={false} />
         <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.muted }}>
-          week {m.week} of {protocol.duration_weeks} · phase {m.nowIdx + 1} of {protocol.phases.length}
+          {m.ended
+            ? `all ${plural(protocol.duration_weeks, 'week')} lived · ${plural(protocol.phases.length, 'phase')}`
+            : `week ${m.week} of ${protocol.duration_weeks} · phase ${m.nowIdx + 1} of ${protocol.phases.length}`}
         </Text>
       </View>
 
@@ -577,7 +601,18 @@ function DetailView({ m, onBack, onDrop, onTweak, onRegenerate, onTogglePause, s
         <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, color: colors.sectionLabel }}> — nothing here is sacred.</Text>
       </View>
 
-      <PauseButton paused={m.goal.status === 'paused'} onToggle={onTogglePause} />
+      {/* A finished plan has nothing to pause and nothing to tweak: the only
+          move left is to look at how it went and choose what happens next. */}
+      {m.ended ? (
+        <Pressable
+          onPress={onSeeHow}
+          style={{ marginTop: 18, paddingVertical: 15, borderRadius: 999, backgroundColor: colors.ink, alignItems: 'center' }}
+        >
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, color: colors.bg }}>See how it went</Text>
+        </Pressable>
+      ) : (
+        <PauseButton paused={m.goal.status === 'paused'} onToggle={onTogglePause} />
+      )}
       <DropGoalButton onDrop={onDrop} />
       {sheet ? (
         <RepSheet
@@ -623,10 +658,15 @@ export default function GoalsScreen() {
       nowIdx: Math.max(0, goal.protocol.phases.findIndex(p => p.id === phase.id)),
       repsToday: repsForDate(goal.protocol, goal.startedOn, today, checkInsByGoal[goal.id] ?? []).length,
       rf: reforecastOdds(goal.odds, goal.protocol, goal.startedOn, checkInsByGoal[goal.id] ?? [], today),
+      ended: goal.status !== 'paused' && planIsOver(goal.startedOn, goal.protocol.duration_weeks, today, goal.pauses),
     };
   });
   const sel = models.find(m => m.goal.id === selId) ?? null;
-  const liveCount = COUNT_WORDS[goals.length] ?? String(goals.length);
+  // "three live" means three plans that are actually running — a finished
+  // one is not on the clock, and counting it made that line a lie on the day
+  // a plan ended.
+  const live = models.filter(m => !m.ended && m.goal.status !== 'paused').length;
+  const liveCount = COUNT_WORDS[live] ?? String(live);
 
   return (
     <FadeInUp style={{ flex: 1 }}>
@@ -645,6 +685,7 @@ export default function GoalsScreen() {
               onBack={() => setSelId(null)}
               onDrop={() => { dropGoal(sel.goal.id); setSelId(null); }}
               onTweak={stepId => navigation.navigate('AdjustPlan', { goalId: sel.goal.id, ...(stepId ? { stepId } : {}) })}
+              onSeeHow={() => navigation.navigate('Graduation', { goalId: sel.goal.id })}
               onRegenerate={() => navigation.navigate('NewGoal', { prefill: sel.goal.statement, replaceGoalId: sel.goal.id })}
               shareUrl={sel.goal.shareToken ? witnessUrl(sel.goal.shareToken) : null}
               onShare={() => shareGoalById(sel.goal.id)}
@@ -660,7 +701,11 @@ export default function GoalsScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: fonts.serif, fontSize: 30, lineHeight: 34.5, color: colors.ink }}>Your systems</Text>
                   <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 6 }}>
-                    {goals.length === 0 ? 'Nothing on the clock yet' : `${liveCount} live · built with Qoach`}
+                    {goals.length === 0
+                      ? 'Nothing on the clock yet'
+                      : live === 0
+                        ? 'Nothing on the clock — see how the last one went'
+                        : `${liveCount} live · built with Qoach`}
                   </Text>
                 </View>
                 <Pressable onPress={() => navigation.navigate('You')}>
@@ -691,7 +736,12 @@ export default function GoalsScreen() {
                   </View>
                 )}
                 {models.map(m => (
-                  <GoalCard key={m.goal.id} m={m} onOpen={() => setSelId(m.goal.id)} />
+                  <GoalCard
+                    key={m.goal.id}
+                    m={m}
+                    onOpen={() => setSelId(m.goal.id)}
+                    onSeeHow={() => navigation.navigate('Graduation', { goalId: m.goal.id })}
+                  />
                 ))}
                 <Pressable
                   onPress={() => navigation.navigate('NewGoal')}
@@ -728,7 +778,7 @@ export default function GoalsScreen() {
                               {goalTitle(g.statement, g.protocol)}
                             </Text>
                             <Text style={{ fontFamily: fonts.semibold, fontSize: 11.5, color: colors.sectionLabel, marginTop: 2 }}>
-                              {g.protocol.duration_weeks} weeks · {g.startedOn} to {planEndDate(g.startedOn, g.protocol.duration_weeks, g.pauses)}
+                              {plural(g.protocol.duration_weeks, 'week')} · {g.startedOn} to {planEndDate(g.startedOn, g.protocol.duration_weeks, g.pauses)}
                             </Text>
                           </View>
                           <View style={{ width: 70, flexDirection: 'row' }}>

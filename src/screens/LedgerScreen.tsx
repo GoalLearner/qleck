@@ -18,7 +18,8 @@ import { localDate } from '../api/device';
 import {
   DAY_LETTERS, rowsForWeek, stepsWithSessionDays, type CellState,
 } from '../lib/ledgerWeek';
-import { addDays, phaseForWeek, weekOf, weekStart } from '../lib/protocolTime';
+import { addDays, phaseForWeek, planEndDate, weekOf, weekStart } from '../lib/protocolTime';
+import { emptyWeekReason } from '../lib/copy';
 import { useRally } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
 
@@ -117,7 +118,15 @@ export default function LedgerScreen() {
           {totalRows === 0 ? (
             <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 26, padding: 20, marginTop: 20 }}>
               <Text style={{ fontFamily: fonts.semibold, fontSize: 13, lineHeight: 19, color: colors.muted }}>
-                Nothing ran this week — the plan hadn't started yet.
+                {emptyWeekReason({
+                  monday,
+                  sunday: addDays(monday, 6),
+                  noGoals: goals.length === 0,
+                  firstStart: goals.length ? goals.map(g => g.startedOn).sort()[0] : null,
+                  lastEnd: goals.length
+                    ? goals.map(g => planEndDate(g.startedOn, g.protocol.duration_weeks, g.pauses)).sort().slice(-1)[0]
+                    : null,
+                })}
               </Text>
             </View>
           ) : perGoal.map(p => (

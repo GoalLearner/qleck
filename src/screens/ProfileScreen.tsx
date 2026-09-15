@@ -22,6 +22,7 @@ import { useRally } from '../state/RallyContext';
 import { useTheme, type ThemePref } from '../state/ThemeContext';
 import type { LogoutOpts } from '../../App';
 import { colors, fonts, radii } from '../theme';
+import { plural } from '../lib/copy';
 
 // "Notifications" used to live here as a chevron that did nothing. It comes
 // back with the feature (ROADMAP P4: local nudges, quiet hours, per-goal mute)
@@ -222,7 +223,7 @@ export default function ProfileScreen({ onLogout }: { onLogout: (opts?: LogoutOp
                   {goalTitle(goal.statement, goal.protocol)}
                 </Text>
                 <Text style={{ fontSize: 11.5, fontFamily: fonts.semibold, color: colors.muted, marginTop: 3 }}>
-                  {goal.durationWeeks} weeks · coached by Qoach
+                  {plural(goal.durationWeeks, 'week')} · coached by Qoach
                 </Text>
               </View>
             ))

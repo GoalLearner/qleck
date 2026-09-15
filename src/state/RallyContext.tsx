@@ -167,9 +167,12 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     setGoals(active);
     setFinishedGoals(archived.map(toActive));
     const today = localDate();
-    const known = active.filter(g => remoteIds.has(g.id));
-    const rows = await Promise.all(known.map(g => fetchCheckIns(g.id, g.startedOn, today)));
-    setCheckInsByGoal(prev => ({ ...prev, ...Object.fromEntries(known.map((g, i) => [g.id, rows[i]])) }));
+    // Every listed goal, including one still waiting in the goal queue: the
+    // server answers an unknown goal with no rows, and fetchCheckIns lays the
+    // queued ticks on top — so reps banked on a goal that hasn't saved yet
+    // stay on screen instead of vanishing at the next refresh.
+    const rows = await Promise.all(active.map(g => fetchCheckIns(g.id, g.startedOn, today)));
+    setCheckInsByGoal(prev => ({ ...prev, ...Object.fromEntries(active.map((g, i) => [g.id, rows[i]])) }));
   }, []);
 
   /**

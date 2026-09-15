@@ -107,6 +107,13 @@ a full typecheck. Backend changes additionally need `cd backend` +
 - [ ] Two concurrent goals render as separate labelled groups, no cross-talk.
 - [ ] **Airplane mode**: check a rep, kill the app, restore network, reopen →
       the check-in syncs exactly once (no duplicate).
+- [ ] (build 35) After installing over a phone that was ticking since 8 Sep:
+      relaunch online → the reps banked since then are still shown, and Goals /
+      the Ledger show them on the days they were tapped (the queue drained).
+- [ ] (build 35) Airplane mode: tick, untick, tick the same rep, reconnect →
+      it ends ticked, once.
+- [ ] (build 35) Tick three reps in quick succession on a slow connection →
+      all three land (none erased by a flush in flight).
 
 ## 6. Missing days (P4)
 

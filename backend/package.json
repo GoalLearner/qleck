@@ -28,6 +28,7 @@
     "check:apple": "node harness/apple.check.mjs",
     "check:auth": "node harness/auth.check.mjs",
     "check:goals": "node harness/goals.check.mjs",
+    "check:recovery": "node harness/recovery.check.mjs",
     "check:witness": "node harness/witness.check.mjs",
     "check:purge": "node harness/purge.check.mjs",
     "check:exactask": "node harness/exactask.check.mjs"

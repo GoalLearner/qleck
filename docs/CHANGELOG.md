@@ -757,6 +757,48 @@ plan mode behind the link, and dropped the suggestion chips.
   and the submit payload with the network intercepted — `"Run a 5k without
   stopping — in 7 weeks."` plus the plan, zero model calls.
 
+### Build 35 · 15 Sep — the ticks that never arrived
+
+No check-in from any account had reached the server since 8 Sep, while both
+testers had been ticking reps every day. The reps were never lost — they were
+stuck in the queue on the phone — and two defects put them there.
+
+- **The server refused to save a plan shape it had generated itself.** A rep
+  tied to a session (a lift, a run) kept a lower weekly count than the
+  session's days after the coach's own repair: "2 days, 1 a week". The plan
+  validator rejects that, so `POST /goals` answered 400 when the plan was
+  locked. Two production plans were locked in that shape (6 and 12 Sep);
+  neither goal ever reached the server. **Server, deployed 15 Sep (worker
+  f231826d):** the repair now sets the count from the session's days, the
+  coach re-checks the plan after its repairs, and every place that saves or
+  reads a plan heals that shape instead of refusing it.
+- **One refused tick froze every tick behind it.** The phone parked the
+  refused goal (still shown, never retried), so every tick on it came back
+  "goal not found" — and the check-in queue stopped at the first refusal,
+  treating it as "still offline". From that tick on, nothing else ever sent,
+  on any goal. And after a refresh, Today showed only what the server had, so
+  banked reps looked gone. **Build 35:** a refused tick is held with that
+  goal's later ticks while every other goal's ticks send; nothing is ever
+  dropped. Goals parked by older builds get one more try, which the server
+  fix now turns into a save, so the stuck ticks go out with their original
+  dates, in the order they were tapped. Today keeps showing queued ticks
+  after a refresh.
+- **A tick tapped while another was sending could be erased.** The queue was
+  read once per flush and its own copy written back after each send, so a tick
+  queued mid-flush was overwritten; the goal queue had the same race with a
+  plan locked mid-flush. Every queue change now goes through one lock and the
+  drain re-reads the queue before each step.
+- **Until build 35 is installed: don't sign out, don't use "Reset this
+  device", don't delete the app.** Each of those erases the queue that is
+  holding the stuck ticks. Ticking as normal is fine — it queues.
+- Checks: `check:outbox` (20 bars on the real drain loop: held vs later,
+  order within a goal, a tick queued mid-send survives, parked-goal epochs),
+  `check:recovery` (live worker, no AI: recreates the stuck phone, reproduces
+  the old stall, then rescues the parked goal and lands all 7 ticks with their
+  dates), `check:session` +5, `check:frequency` +3, `check:goals` +2.
+  Production job smoke after the deploy: draft 30.1s after the verdict,
+  accept 345ms.
+
 ## Not shipped
 
 ### Not started, deliberately

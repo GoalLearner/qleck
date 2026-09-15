@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AcceptedPlan } from '../onboarding/useCoachFlow';
 import type { Protocol } from './coachTypes';
 import { authedFetch, localDate } from './device';
+import { drainQueue, isSettledPark, makeLock, parked } from '../lib/outboxPolicy';
 
 export interface RemoteGoal {
   id: string;
@@ -60,10 +61,13 @@ export interface PendingGoal {
   successProbability: number | null;
   protocol: Protocol;
   /** Set when the server refused the payload outright (4xx). Kept in the
-   *  queue so the goal stays visible, but not retried — a rejection will be
-   *  rejected again, and a silent drop is how plans got lost in the first
-   *  place. */
+   *  queue so the goal stays visible, but not retried every pass — a silent
+   *  drop is how plans got lost in the first place. */
   rejected?: boolean;
+  /** The GOAL_RETRY_EPOCH it was parked under (outboxPolicy.ts). A build that
+   *  bumps the epoch gives every older park one more try, because a server
+   *  fix can turn a refusal into a save (15 Sep). Missing = parked by build ≤34. */
+  rejectedEpoch?: number;
 }
 
 async function readGoalOutbox(): Promise<PendingGoal[]> {
@@ -82,41 +86,42 @@ export async function pendingGoals(): Promise<PendingGoal[]> {
   return readGoalOutbox();
 }
 
+/** Every read-modify-write of the goal queue goes through this. */
+const goalLock = makeLock();
+
 /** Drop the queue (logout — a pending goal belongs to the old identity). */
 export async function clearGoalOutbox(): Promise<void> {
   await AsyncStorage.removeItem(GOAL_OUTBOX_KEY).catch(() => {});
 }
 
 let flushingGoals = false;
-/** Drain the goal queue. Safe to call any time; one pass at a time. */
+let flushGoalsAgain = false;
+/** Drain the goal queue. Safe to call any time; one pass at a time.
+ *  A goal the server refuses is parked (still listed, not retried each pass)
+ *  and its neighbours carry on; see outboxPolicy.ts for the retry epoch. */
 export async function flushGoalOutbox(): Promise<void> {
-  if (flushingGoals) return;
+  if (flushingGoals) { flushGoalsAgain = true; return; }
   flushingGoals = true;
   try {
-    const items = await readGoalOutbox();
-    const keep: PendingGoal[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.rejected) { keep.push(item); continue; } // known-bad: skip, don't drop
-      try {
-        const res = await authed('/goals', { method: 'POST', body: JSON.stringify(item) });
-        if (res.ok) continue;                            // saved — leaves the queue
-        if (res.status >= 400 && res.status < 500) {
-          // The server will never accept this. Retrying forever would wedge
-          // everything behind it, and dropping it would make the user's plan
-          // disappear — so park it: still listed, no longer retried.
-          console.warn(`goal ${item.id} refused by the server (${res.status})`);
-          keep.push({ ...item, rejected: true });
-          continue;
-        }
-        keep.push(item, ...items.slice(i + 1));           // 5xx — try again later
-        break;
-      } catch {
-        keep.push(item, ...items.slice(i + 1));           // offline — queue intact
-        break;
-      }
-    }
-    await writeGoalOutbox(keep);
+    do {
+      flushGoalsAgain = false;
+      const result = await drainQueue<PendingGoal>({
+        store: { read: readGoalOutbox, write: writeGoalOutbox },
+        lock: goalLock,
+        send: async item => {
+          try {
+            return (await authed('/goals', { method: 'POST', body: JSON.stringify(item) })).status;
+          } catch { return null; }
+        },
+        groupOf: item => item.id,
+        skip: item => isSettledPark(item),
+        onHold: (item, status) => {
+          console.warn(`goal ${item.id} refused by the server (${status}) — parked`);
+          return parked(item);
+        },
+      });
+      if (result.stopped) break; // offline or 5xx — try again later
+    } while (flushGoalsAgain);
   } finally { flushingGoals = false; }
 }
 
@@ -137,7 +142,7 @@ export async function saveGoal(plan: AcceptedPlan, goalText: string, id?: string
     protocol: plan.protocol,
     ...(plan.coachSessionId ? { sessionId: plan.coachSessionId } : {}),
   };
-  await writeGoalOutbox([...(await readGoalOutbox()), item]);
+  await goalLock(async () => writeGoalOutbox([...(await readGoalOutbox()), item]));
   void flushGoalOutbox();
 }
 

@@ -57,11 +57,9 @@ export interface SessionRow {
   last_extract_added?: number;
 }
 
-interface TranscriptEntry {
-  question: string;
-  why: string;
-  answer?: string;
-}
+// The transcript entry lives in rewind.ts (15 Sep: it now carries the chips
+// as delivered and the structured state each question was chosen from).
+type TranscriptEntry = import('./rewind').TranscriptEntry;
 
 export interface CoachTurnResult {
   type: 'question' | 'verdict' | 'refused' | 'error';
@@ -340,10 +338,11 @@ export async function enrichStructure(
     session.last_extract_added = Object.keys(merged).length - before;
     session.answers = JSON.stringify(merged);
   }
-  await env.DB
-    .prepare(`UPDATE coach_sessions SET domain = ?, needs_clarification = ?, answers = ? WHERE id = ?`)
-    .bind(session.domain, session.needs_clarification, session.answers || '{}', session.id)
-    .run();
+  // No write here (15 Sep). This used to UPDATE domain/answers before the
+  // turn had produced anything, so a turn that then failed left answers ahead
+  // of the transcript — and the retry computed last_extract_added = 0 and
+  // stopped asking for required fields. runCoachTurn now commits the whole
+  // turn (transcript, count, structure) in one guarded write.
 }
 
 function goalAsData(goalText: string): string {

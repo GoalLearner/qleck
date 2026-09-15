@@ -812,6 +812,33 @@ stuck in the queue on the phone — and two defects put them there.
   typed. The link is gone. Regenerating an old goal skips straight to the
   goal intake. The design's "OR STEAL ONE" list stays out (dropped 13 Sep).
 
+- **One turn, one write.** Each interview turn used to reach the database two
+  or three times: the structured answers were saved before the model was
+  called, the question count was incremented relative to whatever was stored,
+  and the transcript was written afterwards. Two real costs — a turn that
+  failed after the extract left the saved answers ahead of the conversation,
+  and two sends of the same answer (a double tap, a retry on a slow phone)
+  each counted a question, so a three-question interview could report five. A
+  turn now computes everything in memory and commits **once**, guarded on the
+  transcript it was computed from. A commit that loses that race replays the
+  turn the winner produced when it carries the same answer, and says the
+  conversation moved on when it does not; the background draft starts only
+  after the verdict is committed. Proven live: two simultaneous sends of one
+  answer came back as the same question, and left one entry.
+- **Every question now records what it was asked with** — the answer chips as
+  delivered, and the structured state Qoach chose it from. Nothing new reaches
+  the model: every reader of the transcript still sees only the question, the
+  why and the answer. This is what will make changing an earlier answer
+  honest, and it is what lets a duplicated send be replayed today.
+- Regression, full harness against the local worker: 12/12 protocols valid,
+  3/3 revisions past-preserving, no leaks, no repeated questions, question
+  counts in band, 468s wall (the fastest run recorded — one less write per
+  turn). The two red bars are the known flaky pair on this suite (a pace
+  ladder on `lose-weight-moderate`, the "what does the scale say" question on
+  `pushups-30`), both seen on unmodified code in earlier runs and on other
+  fixtures. Archived under `backend/harness/baselines/2026-09-15-3a-regression/`.
+  Spend today $0.29 of the $5 the owner approved for this list.
+
 ## Not shipped
 
 ### Not started, deliberately

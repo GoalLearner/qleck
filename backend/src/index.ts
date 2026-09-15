@@ -26,6 +26,7 @@ import {
 import { verifyAppleToken } from './apple';
 import { editProtocolStep, classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, preclassify, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import { claimDraft, DRAFT_CLAIM_MS, releaseDraft, renewDraft, waitForDraft } from './draftClaim';
+import { answeredAt, entryFor, parseTranscript, type TranscriptEntry } from './rewind';
 import { claimOrWait, failedJobCount, healJob, jobView, loadJob, runDraftJob, startDraftJob, JOB_CALL_BUDGET_MS, JOB_DELIVERIES, JOB_LEASE_MS, JOB_RETRY_DELAY_S, USER_RETRY_CAP, type DraftJobMessage, type JobDeps, type JobRow, type JobView } from './draftJob';
 import type { EditOp } from './protocolEdit';
 
@@ -1662,6 +1663,41 @@ function sanitizeOdds(v: Verdict, answers: Record<string, string>, ownPlan = fal
   v.pace_options = paces;
 }
 
+/** The verdict response, built the same way whether the verdict was just
+ *  issued or is being replayed from the stored row. */
+function verdictResponse(session: SessionRow, verdict: Verdict, cors: Record<string, string>): Response {
+  const structureOut = sessionStructure(session);
+  return json({
+    sessionId: session.id, type: 'verdict', verdict,
+    domain: structureOut.domain, answers: structureOut.answers,
+    missing_required: structureOut.domain
+      ? missingRequired(structureOut.domain, structureOut.answers).map(f => f.key)
+      : [],
+    quick_picks: structureOut.domain
+      ? Object.fromEntries(MANIFESTS[structureOut.domain].filter(f => f.quickPicks).map(f => [f.key, f.quickPicks]))
+      : {},
+  }, 200, cors);
+}
+
+/** The turn a stored row already holds, as a response — for a duplicated or
+ *  retried request whose answer has already landed. Null when the row holds
+ *  nothing that can be replayed (a refusal's message is not stored). */
+function turnFromRow(session: SessionRow, cors: Record<string, string>): Response | null {
+  if (session.status === 'open') {
+    const tx = parseTranscript(session.transcript);
+    const last = tx?.[tx.length - 1];
+    if (!last || last.answer !== undefined) return null;
+    return json({
+      sessionId: session.id, type: 'question',
+      question: { question: last.question, why_it_matters: last.why, suggested_answers: last.suggested ?? [] },
+    }, 200, cors);
+  }
+  if (session.status === 'verdict' && session.verdict) {
+    return verdictResponse(session, JSON.parse(session.verdict) as Verdict, cors);
+  }
+  return null;
+}
+
 async function runCoachTurn(
   env: Env,
   ctx: ExecutionContext,
@@ -1669,21 +1705,67 @@ async function runCoachTurn(
   meta: { deviceId: string; ip: string },
   session: SessionRow,
   answer: string | undefined,
+  /** A rewind (15 Sep) runs the normal turn on a rewound session, but must
+   *  compare against the transcript actually stored and count itself. */
+  opts: { expect?: string; index?: number; rewind?: boolean } = {},
 ): Promise<Response> {
+  // ONE TURN, ONE WRITE (15 Sep). Nothing below writes the session until the
+  // turn has produced its result; then a single UPDATE commits transcript,
+  // question count and structure together, guarded on the transcript this
+  // turn was computed from. Two sends of the same answer used to both add to
+  // clarify_turns, and a turn that failed after enrichStructure had written
+  // left answers ahead of the transcript.
+  const expect = opts.expect ?? session.transcript;
+  const loaded = parseTranscript(session.transcript) ?? [];
+  const index = opts.index ?? loaded.length - 1;
+
   // P2a: fold the new answer into the structured layer BEFORE the turn runs,
   // so this very turn's missing-fields steering sees it. First turns were
-  // enriched at session start.
+  // enriched at session start. In memory only — committed with the turn.
   if (answer !== undefined) {
-    const priorTranscript = JSON.parse(session.transcript) as { question: string }[];
-    const lastQ = priorTranscript.length ? priorTranscript[priorTranscript.length - 1].question : '';
+    const lastQ = loaded.length ? loaded[loaded.length - 1].question : '';
     await enrichStructure(env, { ...meta, sessionId: session.id }, session, { question: lastQ, answer });
   }
   const result = await coachTurn(env, { ...meta, sessionId: session.id }, session, answer);
 
-  const transcript = JSON.parse(session.transcript) as { question: string; why: string; answer?: string }[];
+  const transcript: TranscriptEntry[] = loaded.map(e => ({ ...e }));
   if (answer !== undefined && transcript.length > 0) {
     transcript[transcript.length - 1].answer = answer;
   }
+
+  /** The guarded commit. Zero rows changed = the stored session moved under
+   *  this turn (a duplicate send, a rewind racing a message). */
+  const commit = async (extra: { status?: 'verdict' | 'refused'; verdict?: string }): Promise<boolean> => {
+    const sets = [
+      'transcript = ?', 'clarify_turns = ?', 'domain = ?', 'needs_clarification = ?', 'answers = ?',
+      ...(extra.status ? ['status = ?'] : []),
+      ...(extra.verdict !== undefined ? ['verdict = ?'] : []),
+      ...(opts.rewind ? ['rewinds = rewinds + 1'] : []),
+      "updated_at = datetime('now')",
+    ];
+    const binds: unknown[] = [
+      JSON.stringify(transcript), transcript.length, session.domain ?? null, session.needs_clarification ?? 0, session.answers || '{}',
+      ...(extra.status ? [extra.status] : []),
+      ...(extra.verdict !== undefined ? [extra.verdict] : []),
+      session.id, expect,
+    ];
+    const res = await env.DB
+      .prepare(`UPDATE coach_sessions SET ${sets.join(', ')} WHERE id = ? AND status = 'open' AND transcript = ?`)
+      .bind(...binds)
+      .run();
+    return (res.meta?.changes ?? 0) > 0;
+  };
+
+  /** The commit lost: answer with what's stored if this answer already
+   *  landed there, otherwise say the session moved. */
+  const converge = async (): Promise<Response> => {
+    const fresh = await loadSession(env, session.id, meta.deviceId);
+    if (fresh && answer !== undefined && answeredAt(fresh, index, answer)) {
+      const replay = turnFromRow(fresh, cors);
+      if (replay) return replay;
+    }
+    return json({ error: 'session_moved', message: 'This conversation changed in another request — reload it.' }, 409, cors);
+  };
 
   if (result.type === 'question' && result.question) {
     // Delegation chips ("you decide", "not sure") are banned in the prompt,
@@ -1702,13 +1784,14 @@ async function runCoachTurn(
           !((/\b(under|over|about|around)\b|[0-9][^a-z]{0,3}[-–][^a-z]{0,3}[0-9]/i.test(c)) &&
             (/kg\b|lbs?\b|\$|dollar|follower|subscriber|view/i.test(c))));
     }
-    transcript.push({ question: result.question.question, why: result.question.why_it_matters });
-    await env.DB
-      .prepare(
-        `UPDATE coach_sessions SET transcript = ?, clarify_turns = clarify_turns + 1, updated_at = datetime('now') WHERE id = ?`,
-      )
-      .bind(JSON.stringify(transcript), session.id)
-      .run();
+    // The entry records the chips as delivered and the structured state this
+    // question was chosen from, so a rewind to it can be exact (rewind.ts).
+    transcript.push(entryFor(result.question, {
+      domain: session.domain ?? null,
+      needs_clarification: session.needs_clarification ?? 0,
+      answers: session.answers || '{}',
+    }));
+    if (!(await commit({}))) return converge();
     return json({ sessionId: session.id, type: 'question', question: result.question }, 200, cors);
   }
 
@@ -1749,17 +1832,12 @@ async function runCoachTurn(
       result.verdict.factors = [];
       result.verdict.verdict_fallback = true;
     }
-    await env.DB
-      .prepare(
-        `UPDATE coach_sessions SET transcript = ?, status = 'verdict', verdict = ?, updated_at = datetime('now') WHERE id = ?`,
-      )
-      .bind(JSON.stringify(transcript), JSON.stringify(result.verdict), session.id)
-      .run();
+    if (!(await commit({ status: 'verdict', verdict: JSON.stringify(result.verdict) }))) return converge();
     // 2c (owner decision 1): generate-before-verdict. The response returns
     // NOW with the rubric number; the draft + scenario lanes build in the
     // background and the client polls GET /simulation to stream lanes into
-    // the reveal. The dial's final number is the blend, written back onto
-    // the stored verdict when the runs finish.
+    // the reveal. Only after the commit landed: a turn that lost its commit
+    // must never start a draft for a verdict that was not stored.
     if (result.verdict.decision === 'feasible' || result.verdict.decision === 'counter_offer') {
       session.transcript = JSON.stringify(transcript);
       const simSession = { ...session, status: 'verdict', verdict: JSON.stringify(result.verdict) };
@@ -1782,24 +1860,11 @@ async function runCoachTurn(
         })());
       }
     }
-    const structureOut = sessionStructure(session);
-    return json({
-      sessionId: session.id, type: 'verdict', verdict: result.verdict,
-      domain: structureOut.domain, answers: structureOut.answers,
-      missing_required: structureOut.domain
-        ? missingRequired(structureOut.domain, structureOut.answers).map(f => f.key)
-        : [],
-      quick_picks: structureOut.domain
-        ? Object.fromEntries(MANIFESTS[structureOut.domain].filter(f => f.quickPicks).map(f => [f.key, f.quickPicks]))
-        : {},
-    }, 200, cors);
+    return verdictResponse(session, result.verdict, cors);
   }
 
   if (result.type === 'refused') {
-    await env.DB
-      .prepare(`UPDATE coach_sessions SET transcript = ?, status = 'refused', updated_at = datetime('now') WHERE id = ?`)
-      .bind(JSON.stringify(transcript), session.id)
-      .run();
+    if (!(await commit({ status: 'refused' }))) return converge();
     return json({ sessionId: session.id, type: 'refused', refusal: result.refusal }, 200, cors);
   }
 

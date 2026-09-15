@@ -1,0 +1,11 @@
+-- Migration 0022 — ticks on the plan (the second list, notes 3 and 5).
+--
+-- The drop picker used to REPLACE the stored protocol with the trimmed one,
+-- so re-ticking a rep you had dropped meant rebuilding the plan — and the
+-- server had no record of which plan the stored odds described.
+--
+-- Now the stored protocol stays whole and this column records the step ids
+-- `plan_odds` is the price OF (JSON array; NULL = the plan as designed, at
+-- its own price). Ticking a rep back on is a re-price, not a rebuild, and
+-- the number on screen always says which plan it belongs to.
+ALTER TABLE coach_sessions ADD COLUMN drop_ids TEXT;

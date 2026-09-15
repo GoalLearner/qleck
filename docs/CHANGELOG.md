@@ -859,6 +859,29 @@ stuck in the queue on the phone — and two defects put them there.
   lost on the way back (a dropped connection on a slow phone) was re-sent by
   Retry and applied to the NEXT question. Now the server recognises it and
   replays the turn it produced. Older builds are unaffected.
+- **Tick a rep off the plan** (server half). The testers asked to choose what
+  they will and won't do without being forced. The old drop picker refused any
+  drop that cost a "physique pillar" — on a weight goal that is most of phase
+  1, so the honest answer to "I can't do this one" was *no*. Now the only
+  refusal is a plan with nothing left in it, and the cost is **stated**: the
+  app writes one line naming the pillars that came out, or the phase that has
+  nothing left (its weeks join its neighbour; the plan keeps its length and its
+  milestones). The line is written from stored facts, never by the model —
+  asked to describe a cost, a model sells it.
+- **The stored plan stays whole.** Re-pricing used to replace it with the
+  trimmed version, so ticking a rep back on meant rebuilding the plan. The
+  price now records *which set it is the price of* (migration 0022), so
+  ticking one back on is a re-price — and ticking everything back on is the
+  plan as designed at its own number, with no model call at all.
+- **A drop can no longer RAISE the odds.** The clamp compared against the
+  verdict's steady number, so on a sprint, a custom runway or an own-plan
+  review — where the plan actually built is priced lower — removing work could
+  come back with a higher number. It is now clamped to the odds of the plan
+  Qoach built, and to the last price whenever the new set drops everything the
+  last one did and more.
+- `check:drop` (44 bars, including 3,600 random tick sets over the twelve
+  plans of the last harness run: none of them can produce a plan the
+  validators reject) and a live `smoke:drop` (13 bars).
 - Regression, full harness against the local worker: 12/12 protocols valid,
   3/3 revisions past-preserving, no leaks, no repeated questions, question
   counts in band, 468s wall (the fastest run recorded — one less write per
@@ -893,6 +916,22 @@ stuck in the queue on the phone — and two defects put them there.
 
 ### Known and unfixed
 
+- **A revised plan can leave a rep on days its session does not have.**
+  Found on 15 Sep by the randomised tick bar: of the twelve plans the last
+  harness run produced, the two that were also revision sources each carry a
+  rep whose days disagree with its session ("kit by the door the night
+  before" on sun/tue/thu against a mon/wed/fri run session). Generation runs
+  `sessionErrors` and would never ship it; `reviseProtocol` and the
+  graduation merge validate the schema only, and they rewrite the later
+  phases — which is exactly where every mismatch is. **Nothing visible
+  breaks**: the app reads a step's own days and only falls back to the
+  session's when the step has none, so the rep renders on the days the coach
+  meant. The two consequences are that the plan editor locks those days (it
+  treats an attached rep's days as the session's to set), and that anything
+  gating on `sessionErrors` must be differential — re-pricing a tick is, and
+  says so. Left alone deliberately: the honest repair is to DETACH such a rep
+  rather than move it onto days the coach did not choose, and that is a
+  judgement about model output, not a mechanical fix.
 - **`repriceTrimmedProtocol`** — this entry was OVERSTATED and is corrected
   here rather than deleted. It runs three validators, not two: `validateProtocol`,
   `sessionErrors` and `physiquePillarErrors`, plus an explicit empty-phase

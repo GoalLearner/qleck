@@ -24,7 +24,7 @@ import {
   rotateRefresh, startEmailCode, verifyEmailCode, verifyPassword, type CodePurpose,
 } from './emailAuth';
 import { verifyAppleToken } from './apple';
-import { editProtocolStep, classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, preclassify, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
+import { editProtocolStep, classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, preclassify, priceCustomPace, repriceTicks, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import { claimDraft, DRAFT_CLAIM_MS, releaseDraft, renewDraft, waitForDraft } from './draftClaim';
 import { answeredAt, entryFor, parseTranscript, planRewind, type TranscriptEntry } from './rewind';
 import { claimOrWait, failedJobCount, healJob, jobView, loadJob, runDraftJob, startDraftJob, JOB_CALL_BUDGET_MS, JOB_DELIVERIES, JOB_LEASE_MS, JOB_RETRY_DELAY_S, USER_RETRY_CAP, type DraftJobMessage, type JobDeps, type JobRow, type JobView } from './draftJob';
@@ -1319,9 +1319,15 @@ export default {
         }, 200, cors);
       }
 
-      /* POST /coach/sessions/:id/protocol/reprice {dropped_step_ids} —
-       * Tier-1B commitment picker: trim the accepted (unlocked) protocol,
-       * refuse structure-breaking drops with reasons, re-price the rest. */
+      /* POST /coach/sessions/:id/protocol/reprice — price the plan the user
+       * actually intends to live.
+       *
+       * {unticked_step_ids} (build 36 on) is the whole tick state: the reps
+       * that are OFF right now, sent every time, so the price always
+       * describes the set on screen and ticking one back on is a re-price
+       * rather than a rebuild. An empty list prices the plan as designed.
+       * {dropped_step_ids} is the old commitment picker (builds ≤35): it
+       * trims the stored protocol and refuses structure-breaking drops. */
       const repriceMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/protocol\/reprice$/);
       if (repriceMatch && request.method === 'POST') {
         const session = await loadSession(env, repriceMatch[1], deviceId);
@@ -1329,9 +1335,18 @@ export default {
         if (session.status !== 'protocol' || !session.protocol || !session.verdict) {
           return json({ error: 'no_protocol_yet', status: session.status }, 409, cors);
         }
-        const ids = Array.isArray(body.dropped_step_ids)
-          ? (body.dropped_step_ids as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 40)
-          : [];
+        const idList = (v: unknown) => (Array.isArray(v)
+          ? (v as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 40)
+          : null);
+        const unticked = idList(body.unticked_step_ids);
+        if (unticked) {
+          const out = await repriceTicks(env, { ...meta, sessionId: session.id }, session, unticked);
+          if ('error' in out) {
+            return json({ sessionId: session.id, ...out }, out.error === 'price_failed' ? 502 : 400, cors);
+          }
+          return json({ sessionId: session.id, ...out }, 200, cors);
+        }
+        const ids = idList(body.dropped_step_ids) ?? [];
         if (!ids.length) return json({ error: 'nothing_dropped' }, 400, cors);
         const out = await repriceTrimmedProtocol(env, { ...meta, sessionId: session.id }, session, ids);
         if ('error' in out) {

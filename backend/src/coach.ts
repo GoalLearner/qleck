@@ -10,6 +10,7 @@ import { emissionFingerprint, planNextAttempt } from './retryPolicy';
 import { clampToLadder, ladderFor, ladderLine, pacingDirection } from './pace';
 import { interviewBand } from './interviewBand';
 import { applyProtocolOp, type EditOp } from './protocolEdit';
+import { costLine, dropOddsBounds, untickPlan } from './dropPlan';
 import { PROTOCOL_TOOL_SCHEMA, alignStepsToSessions, ownPlanLineCount, exhaustedKeyErrors, fabricationErrors, howToErrors, mergeIdenticalPhases, milestoneProvenanceErrors, ownPlanErrors, physiquePillarErrors, provenanceErrors, reconcileDuration, reconcileFrequency, retilePhaseWeeks, sequencingErrors, sessionErrors, stripBrokenHowTos, validateProtocol, type Protocol } from './protocolSchema';
 import { DOMAINS, MANIFESTS, fieldForPrompt, isDomain, missingRequired, type Domain, type ManifestField } from './manifests';
 import {
@@ -52,6 +53,9 @@ export interface SessionRow {
   plan_odds?: number | null;
   /** The chosen pace's odds at generation — an edited plan's ceiling. */
   odds_ceiling?: number | null;
+  /** Ticks (migration 0022): the step ids `plan_odds` is the price OF. The
+   *  stored protocol stays whole, so re-ticking is a re-price. */
+  drop_ids?: string | null;
   /** Answers changed in this interview (migration 0021). Capped at
    *  MAX_REWINDS by rewind.ts; absent on rows read before the migration. */
   rewinds?: number;
@@ -1679,6 +1683,113 @@ export async function repriceTrimmedProtocol(
     .bind(session.protocol, p, session.id)
     .run();
   return { protocol: trimmed, odds: p, note: String(input?.note ?? '').trim().slice(0, 220), refused };
+}
+
+/**
+ * Ticks on the plan, before locking (15 Sep — the testers' "tick what you
+ * want and don't want, don't force it").
+ *
+ * Three differences from the drop picker it replaces. Nothing is refused but
+ * an empty plan: a physique pillar can be unticked, and the cost is stated
+ * rather than used as a veto. The stored protocol stays FULL and `drop_ids`
+ * records the set the price describes, so re-ticking a rep is a re-price and
+ * never a rebuild. And the clamp is the odds of the plan Qoach actually
+ * built (`odds_ceiling`), not the verdict's steady number — which is what let
+ * a drop RAISE the number on a sprint, a custom runway or an own-plan build.
+ */
+export async function repriceTicks(
+  env: Env,
+  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  session: SessionRow,
+  untickedIds: string[],
+): Promise<
+  | { protocol: Protocol; odds: number; note: string; cost: string | null; unticked: string[] }
+  | { error: string; reason?: string }
+> {
+  const verdict = JSON.parse(session.verdict!) as Verdict;
+  const full = JSON.parse(session.protocol!) as Protocol;
+  reconcileFrequency(full); // see editProtocolStep: heal a pre-15-Sep shape first
+  const ceiling =
+    typeof session.odds_ceiling === 'number' ? session.odds_ceiling
+    : typeof verdict.success_probability === 'number' ? verdict.success_probability
+    : 97;
+
+  const out = untickPlan(full, untickedIds);
+  if ('error' in out) return { error: out.error };
+
+  const write = async (odds: number, ids: string[]) => {
+    session.plan_odds = odds;
+    session.drop_ids = ids.length ? JSON.stringify(ids) : null;
+    await env.DB
+      .prepare(`UPDATE coach_sessions SET plan_odds = ?, drop_ids = ?, updated_at = datetime('now') WHERE id = ?`)
+      .bind(odds, session.drop_ids, session.id)
+      .run();
+  };
+
+  // Everything ticked back on: the plan as designed, at the price it was
+  // designed at. No model call — there is nothing new to judge.
+  if (!out.ids.length) {
+    await write(ceiling, []);
+    return { protocol: full, odds: ceiling, note: '', cost: null, unticked: [] };
+  }
+
+  // Safety net that should never fire: taking reps out cannot break the
+  // schema or the session skeleton (drop.check proves it over every fixture).
+  // Differential on purpose — a plan can arrive carrying a complaint of its
+  // own (a revision's rewritten phases can leave a rep on days its session
+  // does not have), and a tick must answer for what IT broke, nothing else.
+  const before = new Set([...validateProtocol(full), ...sessionErrors(full)]);
+  const broken = [...validateProtocol(out.plan), ...sessionErrors(out.plan)].find(e => !before.has(e));
+  if (broken) return { error: 'refused', reason: String(broken) };
+
+  const lastIds: string[] = (() => {
+    try { const v = JSON.parse(session.drop_ids || '[]'); return Array.isArray(v) ? v as string[] : []; }
+    catch { return []; }
+  })();
+  const cur = dropOddsBounds(ceiling, { odds: session.plan_odds, ids: lastIds }, out.ids);
+
+  const allSteps = full.phases.flatMap(ph => ph.steps);
+  const gone = allSteps.filter(s => out.ids.includes(s.id));
+  const keptTitles = out.plan.phases.flatMap(ph => ph.steps).map(s => s.title);
+  // The message is the drop picker's, word for word — only the number it
+  // fills in changed. Re-pricing is the one place a wording change would
+  // move every plan's odds, so it moves with a prompt version or not at all.
+  const result = await callModel(env, { ...meta, kind: 'verdict_turn' }, {
+    model: modelsFor(env).coach,
+    system: COACH_SYSTEM,
+    messages: [{
+      role: 'user',
+      content:
+        `A plan was accepted for this goal (currently priced ${cur}% at ${out.plan.duration_weeks} weeks):\n${verdict.goal_statement}\n\n` +
+        `Before locking it, the user REMOVED these commitments:\n${gone.map(s => `- ${s.title}`).join('\n')}\n\n` +
+        `Kept commitments:\n${keptTitles.map(t => `- ${t}`).join('\n')}\n\n` +
+        `Re-price the SAME goal at the SAME duration with only the kept commitments, using the SUCCESS PROBABILITY procedure. Removing real supports lowers the odds; a genuinely cosmetic removal may leave them unchanged. NEVER price above ${cur}.`,
+    }],
+    tools: [PRICE_TOOL],
+    toolChoice: { type: 'tool', name: PRICE_TOOL.name },
+    maxTokens: 300,
+  });
+  const input = result.toolName === PRICE_TOOL.name
+    ? (result.toolInput as { success_probability: number; note: string })
+    : null;
+  const raw = input ? Math.round(Number(input.success_probability)) : NaN;
+  if (!Number.isFinite(raw)) return { error: 'price_failed' };
+  const odds = Math.max(1, Math.min(cur, raw));
+  await write(odds, out.ids);
+  return {
+    protocol: out.plan,
+    odds,
+    note: String(input?.note ?? '').trim().slice(0, 220),
+    // What it cost, in the app's own words: the pillars this leaves phase 1
+    // without, a phase with nothing left in it, or Qoach's own reason for a
+    // rep it added to the user's plan.
+    cost: costLine({
+      pillars: physiquePillarErrors(verdict.goal_statement, out.plan),
+      folded: out.folded,
+      qoach: gone.filter(s => s.source === 'qoach').map(s => ({ title: s.title, details: s.details })),
+    }),
+    unticked: out.ids,
+  };
 }
 
 /** Initialize the simulation state for a config (planned lanes, empty). */

@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   abandonGoal, clearGoalOutbox, completeGoal, fetchFinishedGoals, fetchGoals, flushGoalOutbox,
-  deleteGoal, graduateGoal, mintGoalId, pauseGoal, pendingGoals, resumeGoal, saveGoal,
+  deleteGoal, dropSteps, graduateGoal, mintGoalId, pauseGoal, pendingGoals, resumeGoal, saveGoal,
   shareGoal, unshareGoal, type RemoteGoal,
 } from '../api/goals';
 import { fetchCheckIns, flushOutbox, removeCheckIn, submitCheckIn } from '../api/checkins';
@@ -50,6 +50,10 @@ export interface ActiveGoal {
    *  week 3" true after a pause. Absent on goals cached by builds ≤16 — an
    *  empty list is exactly the old behaviour, so they degrade cleanly. */
   pauses?: PauseSpan[];
+  /** Which version of the plan this is. "Not for me" sends it back so a drop
+   *  against a plan the phone has not seen yet is refused rather than
+   *  retiring ids that no longer mean anything. */
+  planVersion?: number;
 }
 
 // The funnel only knows what it actually asked for: the log-in path collects no
@@ -116,6 +120,8 @@ interface RallyState {
   resumeGoalById: (goalId: string) => Promise<void>;
   /** P4: erase a goal and everything hanging off it. Nothing is archived. */
   deleteGoalById: (goalId: string) => Promise<void>;
+  /** "Not for me": take reps out of a running plan from this week on. */
+  dropRep: (goalId: string, stepIds: string[], currentWeek: number, opts?: { price?: boolean }) => Promise<{ odds: number | null; cost: string | null }>;
   /** P4.5: let one person watch this goal (returns the link), or stop. */
   shareGoalById: (goalId: string) => Promise<string>;
   unshareGoalById: (goalId: string) => Promise<void>;
@@ -145,6 +151,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     durationWeeks: g.duration_weeks, protocol: g.protocol,
     odds: g.success_probability ?? undefined, status: g.status, shareToken: g.share_token ?? null,
     pauses: g.pauses ?? [],
+    planVersion: g.protocol_version,
   });
 
   /** Re-read goals + their check-ins from the server. Called on launch and
@@ -345,6 +352,23 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     await refresh();
   }, [goals, checkInsByGoal, refresh]);
 
+  /**
+   * "Not for me": take a rep (and optionally its later versions) out of a
+   * running plan, from this week on. The server owns the new plan version and
+   * the re-priced odds, so this re-reads rather than guessing at the shape.
+   * `price: false` takes it out without a number when Qoach can't be reached.
+   */
+  const dropRep = useCallback(async (
+    goalId: string, stepIds: string[], currentWeek: number, opts?: { price?: boolean },
+  ): Promise<{ odds: number | null; cost: string | null }> => {
+    const goal = goals.find(g => g.id === goalId);
+    const res = await dropSteps(
+      goalId, stepIds, currentWeek, mintGoalId(), goal?.planVersion ?? 1, opts?.price !== false,
+    );
+    await refresh();
+    return { odds: res.odds, cost: res.cost };
+  }, [goals, refresh]);
+
   const dropGoal = useCallback((goalId: string) => {
     setGoals(prev => prev.filter(g => g.id !== goalId));
     setCheckInsByGoal(prev => {
@@ -439,12 +463,12 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<RallyState>(() => ({
     profile, currentUserId, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
-    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, dropRep, completeGoalById, graduate,
     pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById,
     refreshGoals: refresh, signOut, syncAccount,
   }), [profile, currentUserId, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
-    checkInsByGoal, checkInStep, uncheckStep, dropGoal, completeGoalById, graduate,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, dropRep, completeGoalById, graduate,
     pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById, refresh, signOut, syncAccount]);
 
   return <RallyContext.Provider value={value}>{children}</RallyContext.Provider>;

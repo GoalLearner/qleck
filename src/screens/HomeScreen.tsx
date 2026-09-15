@@ -35,6 +35,7 @@ import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { localDate } from '../api/device';
 import { celebrateDay, celebrateGoal, celebratePlan, hapticCheck } from '../lib/celebrate';
 import { loadSeenMilestones, markMilestonesSeen } from '../lib/milestones';
+import { laterVersions } from '../lib/ticks';
 import { loadOfferedWitness, markWitnessOffered } from '../lib/witnessOffer';
 import {
   allCheckIns, freshMilestones, witnessCandidate, mergedMissedTwice, mergedMissedYesterday, mergedTomorrowPreview, mergedWeekStrip, oddsTier, phaseForWeek, reforecastOdds, repsForDate, streakDays, type ActiveGoalLike, type CheckIn, type ReachedMilestone, reachedMilestones, type DayRep, type WeekDay, weekOf, weekdayName,
@@ -301,8 +302,10 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false, r
         <View style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: chip.bg, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: chip.fg }}>{chip.glyph}</Text>
         </View>
+        {/* The whole rep opens its sheet, how-to or not — that is where the
+            instructions, the receipts and "Not for me" all live. */}
         <Pressable
-          onPress={onOpenHowTo && hasHowTo(rep.step) ? onOpenHowTo : undefined}
+          onPress={onOpenHowTo}
           style={{ flex: 1, minWidth: 0, opacity: rep.checked ? 0.55 : 1 }}
         >
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, lineHeight: 19.5, color: colors.ink }}>{rep.step.title}</Text>
@@ -329,11 +332,20 @@ function RepCard({ rep, onCheck, onUncheck, loggedValue, qty, stacked = false, r
   );
 }
 
-/** The sheet's header wants the phase the rep is living in right now. */
+/** What the rep sheet is open on, including what "Not for me" would need. */
+type SheetState = ReturnType<typeof sheetFor>;
+
+/** The sheet's header wants the phase the rep is living in right now — and
+ *  "Not for me" wants the week it would come out from, the goal's odds, and
+ *  the same rep's later versions. */
 function sheetFor(goal: ActiveGoal, step: ProtocolStep, today: string) {
   const week = weekOf(goal.startedOn, today, goal.protocol.duration_weeks, goal.pauses);
   const phase = phaseForWeek(goal.protocol, week);
-  return { step, goalId: goal.id, phaseLabel: `${phase.title} \u00b7 WK ${phase.start_week}\u2013${phase.end_week}` };
+  return {
+    step, goalId: goal.id, week, odds: goal.odds,
+    phaseLabel: `${phase.title} \u00b7 WK ${phase.start_week}\u2013${phase.end_week}`,
+    laterVersions: laterVersions(goal.protocol, step.id),
+  };
 }
 
 /* ── day states ─────────────────────────────────────────────────────────── */
@@ -1076,12 +1088,12 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
   goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>;
   celebrate: () => void; miniBurst: (x: number, y: number, color: string) => void;
 }) {
-  const { checkInStep, uncheckStep, profile } = useRally();
+  const { checkInStep, uncheckStep, profile, dropRep } = useRally();
   const m = useTodayModel(goals, byGoal);
   const milestone = useMilestoneCelebration(goals, byGoal);
   const navigation = useNavigation<any>();
   const witness = useWitnessOffer(goals, byGoal);
-  const [sheet, setSheet] = useState<{ step: ProtocolStep; phaseLabel: string; goalId: string } | null>(null);
+  const [sheet, setSheet] = useState<SheetState | null>(null);
   const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   const multi = m.perGoal.length > 1;
@@ -1127,6 +1139,9 @@ function TodayLoop({ goals, byGoal, celebrate, miniBurst }: {
               goalId={sheet.goalId}
               onClose={() => setSheet(null)}
               onTweak={stepId => { setSheet(null); navigation.navigate('AdjustPlan', { goalId: sheet.goalId, stepId }); }}
+              odds={sheet.odds}
+              laterVersions={sheet.laterVersions}
+              onDrop={(ids, price) => dropRep(sheet.goalId, ids, sheet.week, { price })}
             />
           ) : null}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}
@@ -1265,12 +1280,12 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
   goals: ActiveGoal[]; byGoal: Record<string, CheckIn[]>;
   celebrate: () => void; miniBurst: (x: number, y: number, color: string) => void;
 }) {
-  const { checkInStep, uncheckStep, profile } = useRally();
+  const { checkInStep, uncheckStep, profile, dropRep } = useRally();
   const navigation = useNavigation<any>();
   const m = useTodayModel(goals, byGoal);
   const milestone = useMilestoneCelebration(goals, byGoal);
   const witness = useWitnessOffer(goals, byGoal);
-  const [sheet, setSheet] = useState<{ step: ProtocolStep; phaseLabel: string; goalId: string } | null>(null);
+  const [sheet, setSheet] = useState<SheetState | null>(null);
   const fold = useGroupFolding();
   const headerRefs = useRef<Record<string, View | null>>({});
   useCelebrateOnDone(m.allDone, celebrate);
@@ -1323,6 +1338,9 @@ function DesktopToday({ goals, byGoal, celebrate, miniBurst }: {
               goalId={sheet.goalId}
               onClose={() => setSheet(null)}
               onTweak={stepId => { setSheet(null); navigation.navigate('AdjustPlan', { goalId: sheet.goalId, stepId }); }}
+              odds={sheet.odds}
+              laterVersions={sheet.laterVersions}
+              onDrop={(ids, price) => dropRep(sheet.goalId, ids, sheet.week, { price })}
             />
           ) : null}
           {m.missedTwiceGoals.length > 0 && !m.allDone ? <ComebackBanner goals={m.missedTwiceGoals} /> : m.missed && !m.allDone ? <MissedBanner /> : null}

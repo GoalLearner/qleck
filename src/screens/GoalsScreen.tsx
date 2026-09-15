@@ -20,6 +20,7 @@ import { RepSheet, freqChip, hasHowTo } from '../components/RepSheet';
 import type { ProtocolPhase, ProtocolStep } from '../api/coachTypes';
 import { apiBase, localDate } from '../api/device';
 import { oddsTier, phaseForWeek, planEndDate, reforecastOdds, repsForDate, weekOf, type Reforecast } from '../lib/protocolTime';
+import { laterVersions } from '../lib/ticks';
 import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -214,22 +215,31 @@ function RepRow({ step, onOpen }: { step: ProtocolStep; onOpen?: () => void }) {
   const look = kindLook(step.kind);
   const more = hasHowTo(step);
   const gist = step.how_to?.gist || step.details;
+  // Every rep opens its sheet now, how-to or not: the sheet is where "Not for
+  // me" lives, and a rep whose instructions fit in a sentence was the one you
+  // could not get at.
+  const retired = typeof step.retired_from_week === 'number';
   return (
     <Pressable
-      onPress={more ? onOpen : undefined}
-      style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 11, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: colors.chipBg }}
+      onPress={retired ? undefined : onOpen}
+      style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 11, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: colors.chipBg, opacity: retired ? 0.5 : 1 }}
     >
       <View style={{ width: 28, height: 28, borderRadius: 10, backgroundColor: look.bg, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontFamily: fonts.extrabold, fontSize: 12, color: look.fg }}>{look.glyph}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 14, lineHeight: 18.2, color: colors.ink }}>{step.title}</Text>
-        {!!gist && (
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 14, lineHeight: 18.2, color: colors.ink, textDecorationLine: retired ? 'line-through' : 'none' }}>{step.title}</Text>
+        {retired ? (
+          <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.muted, marginTop: 4 }}>
+            Dropped in week {step.retired_from_week}
+          </Text>
+        ) : null}
+        {!retired && !!gist && (
           <Text numberOfLines={2} style={{ fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 3 }}>
             {gist}
           </Text>
         )}
-        {more ? (
+        {more && !retired ? (
           <Text style={{ fontFamily: fonts.bold, fontSize: 11.5, color: colors.success, marginTop: 5 }}>How to do it ›</Text>
         ) : null}
       </View>
@@ -498,10 +508,11 @@ function DetailView({ m, onBack, onDrop, onTweak, onRegenerate, onTogglePause, s
   onShare: () => Promise<string>;
   onStopSharing: () => Promise<void>;
 }) {
+  const { dropRep } = useRally();
   const [open, setOpen] = useState<number>(m.nowIdx);
   // The rep whose how-to sheet is showing. Held here rather than inside
   // PhaseCard so the sheet overlays the screen, not one collapsed card.
-  const [sheet, setSheet] = useState<{ step: ProtocolStep; phaseLabel: string } | null>(null);
+  const [sheet, setSheet] = useState<{ step: ProtocolStep; phaseLabel: string; week: number } | null>(null);
   const protocol = m.goal.protocol;
   return (
     <FadeInUp>
@@ -551,7 +562,7 @@ function DetailView({ m, onBack, onDrop, onTweak, onRegenerate, onTogglePause, s
             now={pi === m.nowIdx}
             open={pi === open}
             onToggle={() => setOpen(prev => (prev === pi ? -1 : pi))}
-            onOpenStep={(step, phaseLabel) => setSheet({ step, phaseLabel })}
+            onOpenStep={(step, phaseLabel) => setSheet({ step, phaseLabel, week: m.week })}
           />
         ))}
       </View>
@@ -575,6 +586,9 @@ function DetailView({ m, onBack, onDrop, onTweak, onRegenerate, onTogglePause, s
           goalId={m.goal.id}
           onClose={() => setSheet(null)}
           onTweak={stepId => { setSheet(null); onTweak(stepId); }}
+          odds={m.goal.odds}
+          laterVersions={laterVersions(m.goal.protocol, sheet.step.id)}
+          onDrop={m.goal.status === 'paused' ? undefined : (ids, price) => dropRep(m.goal.id, ids, sheet.week, { price })}
         />
       ) : null}
     </FadeInUp>

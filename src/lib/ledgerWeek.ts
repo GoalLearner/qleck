@@ -8,7 +8,7 @@
 // One implementation, two renderers.
 import type { ProtocolStep } from '../api/coachTypes';
 import {
-  addDays, planIsOver, stepPinnedOn, type CheckIn, type PauseSpan,
+  addDays, planIsOver, stepActiveInWeek, stepPinnedOn, weekOf, type CheckIn, type PauseSpan,
 } from './protocolTime';
 
 export const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -58,7 +58,11 @@ export function rowsForWeek(
   for (let i = 0; i < 7; i++) {
     const date = addDays(monday, i);
     const inPlan = date >= startedOn && !planIsOver(startedOn, durationWeeks, date, pauses);
-    if (!inPlan) { cells.push('blank'); continue; }
+    // A rep taken out with "Not for me" stops being asked for from its week
+    // on: its days read blank rather than missed. The weeks it WAS lived keep
+    // their receipts, which is the whole point of retiring instead of
+    // deleting.
+    if (!inPlan || !stepActiveInWeek(step, weekOf(startedOn, date, durationWeeks, pauses))) { cells.push('blank'); continue; }
     inPlanDays++;
     const banked = checkIns.some(c => c.step_id === step.id && c.local_date === date);
     if (banked) bankedWeek++;

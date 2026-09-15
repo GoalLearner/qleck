@@ -162,6 +162,30 @@ a full typecheck. Backend changes additionally need `cd backend` +
 - [ ] (build 35) Tick three reps in quick succession on a slow connection →
       all three land (none erased by a flush in flight).
 
+### "Not for me", after the plan is running (15 Sep)
+
+- [ ] Tap any rep on Today — one with a how-to and one without; both open the
+      sheet. Under Got it / Tweak there is a quiet **Not for me**.
+- [ ] Tap it → "Take “…” out? From today on. Days you already banked stay
+      banked, and Qoach re-prices the plan." A rep that appears later in the
+      plan shows **Also from weeks 9–16**, ticked. **Keep it** closes it and
+      changes nothing.
+- [ ] Take it out → "Out of the plan. 80% → 68%", the line saying what it
+      cost, and "The days you already banked stay banked."
+- [ ] Today no longer lists it; the Ledger still shows the days you banked it
+      before, and the days after are blank rather than missed. The week you
+      dropped it in does not lose adherence.
+- [ ] Goals → the goal → its phase shows the rep struck through with
+      "Dropped in week N"; later phases no longer list it at all.
+- [ ] Adjust the same day still works (a drop does not spend the day's one
+      adjustment), and the adjusted plan does **not** bring the dropped rep
+      back.
+- [ ] With the worker unreachable: Not for me → Take it out → "Qoach could
+      not re-price the plan" → **Take it out without re-pricing** → the rep is
+      gone and the goal shows no odds.
+- [ ] The last rep standing refuses: "That would leave nothing to do between
+      now and the end."
+
 ## 6. Missing days (P4)
 
 - [ ] Miss one scheduled day → the gentle "yesterday slipped" banner.

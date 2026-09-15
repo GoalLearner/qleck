@@ -914,6 +914,18 @@ stuck in the queue on the phone — and two defects put them there.
   extend and maintain are shown the plan without them, and the markers are
   restored afterwards, so a revision cannot quietly resurrect a rep the user
   took out or rewrite what a lived week expected.
+- **"Not for me" on a rep you are living** (the app half). Every rep on Today
+  and Goals opens its sheet now, how-to or not — that is where it lives, under
+  Got it / Tweak. It asks once ("From today on. Days you already banked stay
+  banked, and Qoach re-prices the plan"), offers to take the same rep out of
+  the later phases too, and answers with the new number and what it cost:
+  "Out of the plan. 80% → 68%". When Qoach cannot be reached the rep can
+  still go, with the goal's odds cleared.
+- **The past stays true on screen too.** A retired rep leaves today's list and
+  the strips from its week on, its later days go blank in the Ledger rather
+  than missed, the week it came out in expects only what it banked (so a drop
+  can never lower adherence or un-earn a milestone), and Goals shows it struck
+  through with "Dropped in week N". The days already banked keep counting.
 - `check:ticks` (18 bars) and `check:drop` (60 bars, including 3,600 random tick sets over the twelve
   plans of the last harness run: none of them can produce a plan the
   validators reject) and a live `smoke:drop` (13 bars).

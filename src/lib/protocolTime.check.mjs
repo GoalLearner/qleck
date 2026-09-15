@@ -194,5 +194,45 @@ const unpausedStats = planStats(PROTOCOL, START, beforePause);
 eq('a pause never un-banks work already done', pausedStats.banked, unpausedStats.banked);
 eq('...and that is not zero', pausedStats.banked > 0, true);
 
+/* ── "Not for me": a rep taken out from a week on (15 Sep) ──────────────── */
+//
+// The promise is that the past stays true: the weeks already lived still
+// expected the rep, the days banked against it still count, and nothing after
+// it is asked for or missed.
+{
+  const retired = JSON.parse(JSON.stringify(PROTOCOL));
+  retired.phases[0].steps[1].retired_from_week = 2;   // "Thrice", out from week 2
+
+  // Week 1 (untouched) expects 7 + 3; week 2 expects the daily rep plus only
+  // what the retired one actually banked before it came out.
+  const banked = [ci('ph1-s2', day(7)), ci('ph1-s1', day(7))];       // the Monday of week 2
+  const stats = planStats(retired, START, banked);
+  eq('the week a rep is taken out expects only what it banked', stats.weeks[1].expected, 8);
+  eq('...and that day still counts as banked', stats.weeks[1].banked, 2);
+  eq('weeks before it are untouched', stats.weeks[0].expected, 10);
+  eq('weeks after it lose it entirely', stats.weeks[2].expected, 7);
+
+  // A drop can never make the plan look worse than it did.
+  const before = planStats(PROTOCOL, START, banked);
+  eq('taking a rep out never lowers adherence',
+    stats.banked / stats.expected >= before.banked / before.expected, true);
+
+  // It is off today's list from its week on, and still there before it.
+  const wk2 = repsForDate(retired, START, day(8), []).map(r => r.step.id);
+  const wk1 = repsForDate(retired, START, day(1), []).map(r => r.step.id);
+  eq('a retired rep is off the day it was retired from', wk2, ['ph1-s1']);
+  eq('...and was still on the list before that', wk1.includes('ph1-s2'), true);
+
+  // A pinned rep that is gone cannot be missed.
+  const pinned = JSON.parse(JSON.stringify(PROTOCOL));
+  pinned.phases[0].steps[1].frequency = { per_week: 1, days: ['tue'] };
+  const pinnedOut = JSON.parse(JSON.stringify(pinned));
+  pinnedOut.phases[0].steps[0].retired_from_week = 1;   // leave only the Tuesday rep
+  pinnedOut.phases[0].steps[1].retired_from_week = 2;
+  eq('a day whose only pinned rep was retired is not a miss',
+    missedYesterday(pinnedOut, START, day(9), []), false);
+  eq('...while it was still on, it was', missedYesterday(pinned, START, day(2), []), true);
+}
+
 console.log(failed === 0 ? '\nALL FIXTURES PASS\n' : `\n${failed} FAILED\n`);
 process.exit(failed === 0 ? 0 : 1);

@@ -320,4 +320,26 @@ export async function applyRevision(
   return data.goal;
 }
 
+/**
+ * "Not for me": take reps out of a plan that is already running, from this
+ * week on. `protocolId` is minted by the CALLER and reused across retries, so
+ * a retry after a dropped response replays instead of appending twice.
+ * `price: false` takes them out without asking Qoach for a new number — the
+ * goal's odds are cleared, because none describes the plan any more.
+ */
+export async function dropSteps(
+  id: string,
+  stepIds: string[],
+  currentWeek: number,
+  protocolId: string,
+  baseVersion: number,
+  price = true,
+): Promise<{ goal: RemoteGoal; odds: number | null; cost: string | null }> {
+  const res = await authed(`/goals/${id}/steps/drop`, {
+    method: 'POST',
+    body: JSON.stringify({ stepIds, currentWeek, protocolId, baseVersion, price }),
+  });
+  return expectJson<{ goal: RemoteGoal; odds: number | null; cost: string | null }>(res);
+}
+
 export { mintId as mintGoalId };

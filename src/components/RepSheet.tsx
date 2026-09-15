@@ -90,6 +90,16 @@ const KIND_LABEL: Record<ProtocolStep['kind'], string> = {
  *  "8,000 steps, assumed because you never told us how active you are" — and
  *  the first build of this made those rows untappable, which hid the receipt
  *  behind a link that never appeared. */
+/** Why Qoach kept a rep the user tried to take out. */
+const DROP_REFUSALS: Record<string, string> = {
+  nothing_left: 'That would leave nothing to do between now and the end.',
+  stale_plan: 'Your plan changed somewhere else — reopen it and try again.',
+  goal_not_active: 'This goal is paused.',
+  quota_exceeded: 'Qoach is done for today, so it cannot re-price the plan.',
+  ai_disabled: 'Qoach cannot re-price the plan right now.',
+  ai_unconfigured: 'Qoach cannot re-price the plan right now.',
+};
+
 export function hasHowTo(step: ProtocolStep): boolean {
   return !!step.how_to
     || (step.details?.length ?? 0) > 88
@@ -170,10 +180,19 @@ function StepProvenance({ step, answers }: {
  * before this shipped. That fallback is the point: this had to improve the
  * plans people already have, not only the ones written after it.
  */
-export function RepSheet({ step, phaseLabel, goalId, onClose, onTweak }: {
+export function RepSheet({ step, phaseLabel, goalId, onClose, onTweak, odds, laterVersions, onDrop }: {
   step: ProtocolStep; phaseLabel: string; goalId: string; onClose: () => void;
   /** Fires AFTER the sheet has finished dismissing, with the rep it was open on. */
   onTweak: (stepId: string) => void;
+  /** The goal's odds right now, for the "80% -> 68%" line after a drop. */
+  odds?: number;
+  /** The same rep later in the plan: taken out with it unless the user says
+   *  otherwise. `label` is the weeks they cover ("weeks 9-16"). */
+  laterVersions?: { ids: string[]; label: string };
+  /** "Not for me": take this rep (and optionally its later versions) out from
+   *  this week on. `price: false` takes it out without asking Qoach for a new
+   *  number. Absent = the affordance is not offered (a paused or ended goal). */
+  onDrop?: (stepIds: string[], price: boolean) => Promise<{ odds: number | null; cost: string | null }>;
 }) {
   const look = kindLook(step.kind);
   const how = step.how_to;
@@ -195,6 +214,29 @@ export function RepSheet({ step, phaseLabel, goalId, onClose, onTweak }: {
   // actually finished. Elsewhere there is no such race and onDismiss never
   // fires, so the action runs at once.
   const [open, setOpen] = useState(true);
+  // "Not for me" (15 Sep): idle -> confirm -> the result, in place. It never
+  // navigates: the decision and its cost belong in the sheet the rep is open
+  // in. `failed` is Qoach unreachable — the rep can still come out, with the
+  // goal's odds cleared, because a number describing a plan you are no longer
+  // doing is worse than no number at all.
+  const [stage, setStage] = useState<'idle' | 'confirm' | 'working' | 'done' | 'failed'>('idle');
+  const [alsoLater, setAlsoLater] = useState(true);
+  const [result, setResult] = useState<{ odds: number | null; cost: string | null } | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const takeOut = (price: boolean) => {
+    if (!onDrop || stage === 'working') return;
+    setStage('working');
+    setFailure(null);
+    onDrop([step.id, ...(alsoLater ? laterVersions?.ids ?? [] : [])], price).then(
+      res => { setResult(res); setStage('done'); },
+      (err: { code?: string }) => {
+        setFailure(DROP_REFUSALS[err?.code ?? ''] ?? (price
+          ? 'Qoach could not re-price the plan.'
+          : 'That did not go through — try again.'));
+        setStage(price ? 'failed' : 'confirm');
+      },
+    );
+  };
   const pending = useRef<(() => void) | null>(null);
   const tweak = () => {
     const go = () => onTweak(step.id);
@@ -285,6 +327,83 @@ export function RepSheet({ step, phaseLabel, goalId, onClose, onTweak }: {
                 <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.muted }}>Tweak</Text>
               </Pressable>
             </View>
+
+            {onDrop && stage === 'idle' ? (
+              <Pressable onPress={() => setStage('confirm')} hitSlop={8} style={{ alignSelf: 'center', paddingVertical: 12 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.muted }}>Not for me</Text>
+              </Pressable>
+            ) : null}
+
+            {onDrop && (stage === 'confirm' || stage === 'working' || stage === 'failed') ? (
+              <View style={{ marginTop: 16, borderRadius: 18, borderWidth: 1, borderColor: colors.outline, padding: 16, gap: 10 }}>
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 14.5, lineHeight: 20, color: colors.ink }}>
+                  Take “{step.title}” out?
+                </Text>
+                <Text style={{ fontFamily: fonts.medium, fontSize: 13, lineHeight: 19, color: colors.muted }}>
+                  From today on. Days you already banked stay banked, and Qoach re-prices the plan.
+                </Text>
+                {laterVersions?.ids.length ? (
+                  <Pressable
+                    onPress={() => setAlsoLater(v => !v)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: alsoLater }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 4 }}
+                  >
+                    <View style={{
+                      width: 20, height: 20, borderRadius: 6, borderWidth: 1.5,
+                      borderColor: alsoLater ? colors.success : colors.outline,
+                      backgroundColor: alsoLater ? colors.successBg : 'transparent',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Text style={{ fontFamily: fonts.extrabold, fontSize: 11, color: alsoLater ? colors.success : 'transparent' }}>{'\u2713'}</Text>
+                    </View>
+                    <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.inkSoft }}>
+                      Also from {laterVersions.label}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {failure ? (
+                  <Text style={{ fontFamily: fonts.medium, fontSize: 12.5, lineHeight: 18, color: colors.muted }}>{failure}</Text>
+                ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 }}>
+                  <Pressable
+                    onPress={() => takeOut(stage !== 'failed')}
+                    disabled={stage === 'working'}
+                    style={{ flex: 1, paddingVertical: 13, borderRadius: 999, backgroundColor: colors.ink, alignItems: 'center', opacity: stage === 'working' ? 0.6 : 1 }}
+                  >
+                    <Text style={{ fontFamily: fonts.extrabold, fontSize: 14, color: colors.bg }}>
+                      {stage === 'working' ? 'Taking it out…' : stage === 'failed' ? 'Take it out without re-pricing' : 'Take it out'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => { setStage('idle'); setFailure(null); }}
+                    disabled={stage === 'working'}
+                    style={{ paddingVertical: 13, paddingHorizontal: 16, borderRadius: 999, borderWidth: 1, borderColor: colors.outline }}
+                  >
+                    <Text style={{ fontFamily: fonts.bold, fontSize: 13.5, color: colors.muted }}>Keep it</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
+            {stage === 'done' && result ? (
+              <View style={{ marginTop: 16, borderRadius: 18, borderWidth: 1, borderColor: colors.successBorder, backgroundColor: colors.successBg, padding: 16, gap: 6 }}>
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 14.5, color: colors.ink }}>
+                  Out of the plan.{typeof result.odds === 'number' && typeof odds === 'number' && result.odds !== odds ? ` ${odds}% → ${result.odds}%` : ''}
+                </Text>
+                {result.cost ? (
+                  <Text style={{ fontFamily: fonts.medium, fontSize: 13, lineHeight: 19, color: colors.inkSoft }}>{result.cost}</Text>
+                ) : null}
+                {result.odds === null ? (
+                  <Text style={{ fontFamily: fonts.medium, fontSize: 12.5, lineHeight: 18, color: colors.muted }}>
+                    The plan carries no odds now — Qoach prices it again the next time you adjust it.
+                  </Text>
+                ) : null}
+                <Text style={{ fontFamily: fonts.medium, fontSize: 12.5, lineHeight: 18, color: colors.muted }}>
+                  The days you already banked stay banked.
+                </Text>
+              </View>
+            ) : null}
           </ScrollView>
         </View>
       </View>

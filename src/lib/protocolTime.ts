@@ -161,6 +161,26 @@ export function weekStart(local: string): string {
   return addDays(local, -weekdayIndex(local));
 }
 
+/**
+ * Is this rep on in `week`? "Not for me" (15 Sep) takes a rep out FROM a week
+ * on rather than deleting it: the weeks already lived still expected it, and
+ * the days banked against it stay receipts. Mirrors stepActiveInWeek in
+ * backend/src/dropPlan.ts — the server writes the marker, this reads it.
+ */
+export function stepActiveInWeek(step: ProtocolStep, week: number): boolean {
+  return !(typeof step.retired_from_week === 'number' && week >= step.retired_from_week);
+}
+
+/** The reps of the phase covering `week` that are still on in it. */
+export function activeSteps(protocol: Protocol, week: number): ProtocolStep[] {
+  return phaseForWeek(protocol, week).steps.filter(s => stepActiveInWeek(s, week));
+}
+
+/** The same, for a date — every caller that asks "was a rep due that day?". */
+function activeOn(protocol: Protocol, startedOn: string, date: string, pauses: PauseSpan[] = []): ProtocolStep[] {
+  return activeSteps(protocol, weekOf(startedOn, date, protocol.duration_weeks, pauses));
+}
+
 export function stepPinnedOn(step: ProtocolStep, local: string): boolean {
   const days = step.frequency.days;
   if (!days || days.length === 0) return false;
@@ -191,12 +211,15 @@ export function repsForDate(
   const week = weekOf(startedOn, local, protocol.duration_weeks);
   const phase = phaseForWeek(protocol, week);
   const reps: DayRep[] = [];
+  // A rep the user took out is not on today's list. It stays in the plan for
+  // the weeks it was lived — the Ledger still shows those days.
+  const live = phase.steps.filter(s => stepActiveInWeek(s, week));
   // 2b: a session-attached step is pinned by construction — the server
   // guarantees its days equal its session's days, so the pinned path renders
   // it only on session days. The lookup below is belt and braces for
   // protocols whose step days got stripped somewhere en route.
   const sessionDays = new Map((protocol.sessions ?? []).map(sess => [sess.id, sess.days]));
-  for (const step of phase.steps) {
+  for (const step of live) {
     const checkedToday = checkIns.some(c => c.step_id === step.id && c.local_date === local);
     if (step.session_id && (step.frequency.days?.length ?? 0) === 0) {
       const days = sessionDays.get(step.session_id);
@@ -246,7 +269,8 @@ export function weekStrip(
       // Past day, no checks: missed only when a pinned step was scheduled.
       const week = weekOf(startedOn, date, protocol.duration_weeks);
       const phase = phaseForWeek(protocol, week);
-      const hadPinned = date >= startedOn && phase.steps.some(s => stepPinnedOn(s, date));
+      const hadPinned = date >= startedOn
+        && phase.steps.some(s => stepActiveInWeek(s, week) && stepPinnedOn(s, date));
       kind = hadPinned ? 'missed' : 'rest';
     }
     days.push({ letter: DAY_LETTERS[i], date, kind, isToday });
@@ -316,8 +340,7 @@ export function missedYesterday(
   // phase pins reported a miss forever after the plan ended.
   if (planIsOver(startedOn, protocol.duration_weeks, y)) return false;
   if (checkIns.some(c => c.local_date === y)) return false;
-  const phase = phaseForWeek(protocol, weekOf(startedOn, y, protocol.duration_weeks));
-  return phase.steps.some(s => stepPinnedOn(s, y));
+  return activeOn(protocol, startedOn, y).some(s => stepPinnedOn(s, y));
 }
 
 /**
@@ -340,8 +363,7 @@ export function missedTwice(
     const date = addDays(today, -back);
     if (date < startedOn) break;
     if (planIsOver(startedOn, protocol.duration_weeks, date)) continue;
-    const phase = phaseForWeek(protocol, weekOf(startedOn, date, protocol.duration_weeks));
-    const scheduled = phase.steps.some(s => stepPinnedOn(s, date));
+    const scheduled = activeOn(protocol, startedOn, date).some(s => stepPinnedOn(s, date));
     if (!scheduled) continue;
     if (checked.has(date)) return false; // most recent scheduled days must BOTH be misses
     found++;
@@ -438,8 +460,7 @@ export function mergedWeekStrip(
       const hadPinned = goals.some(g => {
         if (date < g.startedOn) return false;
         if (planIsOver(g.startedOn, g.protocol.duration_weeks, date)) return false;
-        const phase = phaseForWeek(g.protocol, weekOf(g.startedOn, date, g.protocol.duration_weeks));
-        return phase.steps.some(s => stepPinnedOn(s, date));
+        return activeOn(g.protocol, g.startedOn, date).some(s => stepPinnedOn(s, date));
       });
       kind = hadPinned ? 'missed' : 'rest';
     }
@@ -570,14 +591,21 @@ export function planStats(
     const from = planDayToDate(startedOn, (week - 1) * 7, pauses);
     const to = addDays(planDayToDate(startedOn, week * 7, pauses), -1);
     const phase = phaseForWeek(protocol, week);
-    const stepIds = new Set(phase.steps.map(s => s.id));
-    const expected = phase.steps.reduce((n, s) => n + s.frequency.per_week, 0);
-    const banked = checkIns.filter(
-      c => c.local_date >= from && c.local_date <= to && stepIds.has(c.step_id),
-    ).length;
-    // Banking more than asked (a flexible step logged twice in a day) must not
-    // push a week over 100% and skew the plan total.
-    weeks.push({ week, expected, banked: Math.min(banked, expected) });
+    // Per rep, so that banking more than asked for one (a flexible step
+    // logged twice in a day) cannot cover another's misses, and so that a rep
+    // taken out mid-week is expected only as far as it was lived: a drop can
+    // lower what the week asked for, never what the week scored.
+    let expected = 0;
+    let banked = 0;
+    for (const s of phase.steps) {
+      const hits = checkIns.filter(c => c.local_date >= from && c.local_date <= to && c.step_id === s.id).length;
+      const want = stepActiveInWeek(s, week)
+        ? s.frequency.per_week
+        : s.retired_from_week === week ? Math.min(hits, s.frequency.per_week) : 0;
+      expected += want;
+      banked += Math.min(hits, want);
+    }
+    weeks.push({ week, expected, banked });
   }
 
   const expected = weeks.reduce((n, w) => n + w.expected, 0);

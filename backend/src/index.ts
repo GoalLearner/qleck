@@ -1341,10 +1341,12 @@ export default {
         const unticked = idList(body.unticked_step_ids);
         if (unticked) {
           const out = await repriceTicks(env, { ...meta, sessionId: session.id }, session, unticked);
-          if ('error' in out) {
-            return json({ sessionId: session.id, ...out }, out.error === 'price_failed' ? 502 : 400, cors);
-          }
-          return json({ sessionId: session.id, ...out }, 200, cors);
+          // A plan Qoach could not price is still the plan the user chose:
+          // 200 with the shape and no number, so the app can offer to lock it
+          // unpriced rather than throw the choice away. Only a plan with
+          // nothing left in it (or a shape a tick actually broke) is a 400.
+          const failed = 'error' in out && out.error !== 'price_failed';
+          return json({ sessionId: session.id, ...out }, failed ? 400 : 200, cors);
         }
         const ids = idList(body.dropped_step_ids) ?? [];
         if (!ids.length) return json({ error: 'nothing_dropped' }, 400, cors);

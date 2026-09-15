@@ -1704,7 +1704,9 @@ export async function repriceTicks(
   untickedIds: string[],
 ): Promise<
   | { protocol: Protocol; odds: number; note: string; cost: string | null; unticked: string[] }
-  | { error: string; reason?: string }
+  /** `price_failed` still carries the plan: its shape is valid, so the app
+   *  can lock it without a number rather than losing the choice. */
+  | { error: string; reason?: string; protocol?: Protocol; unticked?: string[] }
 > {
   const verdict = JSON.parse(session.verdict!) as Verdict;
   const full = JSON.parse(session.protocol!) as Protocol;
@@ -1773,7 +1775,7 @@ export async function repriceTicks(
     ? (result.toolInput as { success_probability: number; note: string })
     : null;
   const raw = input ? Math.round(Number(input.success_probability)) : NaN;
-  if (!Number.isFinite(raw)) return { error: 'price_failed' };
+  if (!Number.isFinite(raw)) return { error: 'price_failed', protocol: out.plan, unticked: out.ids };
   const odds = Math.max(1, Math.min(cur, raw));
   await write(odds, out.ids);
   return {

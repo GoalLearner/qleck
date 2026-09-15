@@ -183,17 +183,22 @@ export function priceCustomPace(sessionId: string, weeks: number): Promise<{ pac
   return post(`/coach/sessions/${sessionId}/price`, { weeks });
 }
 
-/** Tier-1B commitment picker: drop commitments from the accepted (unlocked)
- *  protocol. The server refuses structure-breaking drops with reasons and
- *  re-prices the surviving trim (never above the current odds). */
-export function repriceProtocol(sessionId: string, droppedStepIds: string[]): Promise<{
+
+/** Ticks on the plan (build 36): the whole set of reps that are OFF right
+ *  now, so the price always describes the plan on screen. An empty list is
+ *  the plan as designed, at its own price. `protocol` comes back even when
+ *  the pricing itself failed — the shape is valid, so it can still lock,
+ *  without a number. The server also keeps the old `dropped_step_ids`
+ *  picker for builds ≤35; nothing in this app calls it any more. */
+export function repriceTicks(sessionId: string, untickedStepIds: string[]): Promise<{
   protocol?: import('./coachTypes').Protocol;
   odds?: number;
   note?: string;
-  refused?: { step_id: string; reason: string }[];
+  cost?: string | null;
+  unticked?: string[];
   error?: string;
 }> {
-  return post(`/coach/sessions/${sessionId}/protocol/reprice`, { dropped_step_ids: droppedStepIds });
+  return post(`/coach/sessions/${sessionId}/protocol/reprice`, { unticked_step_ids: untickedStepIds });
 }
 
 /** One edit to the accepted (unlocked) protocol — rename, re-time, re-target,

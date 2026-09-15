@@ -51,7 +51,8 @@
     "check:witness-offer": "node src/lib/witnessOffer.check.mjs",
     "check:demo": "node scripts/check-demo-boundary.mjs",
     "check:outbox": "node src/lib/outboxPolicy.check.mjs",
-    "check": "npm run check:time && npm run check:timeline && npm run check:diff && npm run check:forecast && npm run check:milestones && npm run check:witness-offer && npm run check:outbox && npm run check:demo && npx tsc --noEmit"
+    "check:ticks": "node src/lib/ticks.check.mjs",
+    "check": "npm run check:time && npm run check:timeline && npm run check:diff && npm run check:forecast && npm run check:milestones && npm run check:witness-offer && npm run check:outbox && npm run check:ticks && npm run check:demo && npx tsc --noEmit"
   },
   "private": true
 }

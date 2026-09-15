@@ -879,7 +879,24 @@ stuck in the queue on the phone — and two defects put them there.
   come back with a higher number. It is now clamped to the odds of the plan
   Qoach built, and to the last price whenever the new set drops everything the
   last one did and more.
-- `check:drop` (44 bars, including 3,600 random tick sets over the twelve
+- **Ticks on the plan screen** (the app half). Every rep carries a tick, all
+  on. Unticking one takes its later versions with it — the same habit in
+  phase 3 is a different rep, and "protein, but only in weeks 1–5" is almost
+  never what anyone means — with "Also out of phases 2–4 · **keep those**"
+  one tap away. A folded phase header says "6 of 7 reps". The last rep
+  standing cannot come off.
+- **The bottom bar owns the state.** While the plan on screen is not the plan
+  the number describes, **Lock it in is replaced** by "Re-price — N reps out"
+  and the odds chip reads "— RE-PRICE": a plan can never lock under a number
+  that belongs to a different plan, and seeing the cost is the decision.
+  After a re-price the delta (80 → 73) and the cost line sit right above the
+  button. If Qoach cannot price it, the reasons are there with Undo changes
+  and Lock without odds — the choice is never thrown away.
+- **A corrected assumption keeps your ticks, and its plan is priced.** The
+  rebuild renumbers every rep, so the choices are carried over by title. It
+  also used to leave the rebuilt plan marked unpriced, so a plan Qoach had
+  just priced showed no number and locked without one.
+- `check:ticks` (18 bars) and `check:drop` (44 bars, including 3,600 random tick sets over the twelve
   plans of the last harness run: none of them can produce a plan the
   validators reject) and a live `smoke:drop` (13 bars).
 - Regression, full harness against the local worker: 12/12 protocols valid,

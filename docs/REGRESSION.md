@@ -99,6 +99,30 @@ a full typecheck. Backend changes additionally need `cd backend` +
 - [ ] (build 33) A build-32 install against this server still builds: it
       waits for the job's draft, then accepts it.
 
+### Ticks on the plan, before locking (15 Sep)
+
+- [ ] Every rep on the reveal has a **tick, all on**, and the line under the
+      summary reads "Tap a rep to change it · untick what you won't do ·
+      Qoach re-prices before you lock."
+- [ ] Untick a rep that appears in later phases (protein on a muscle plan) →
+      it greys out and strikes through, the later versions go too, and the
+      line under it reads "Also out of phases 2–4 · **keep those**". Tap keep
+      those → only the one you tapped stays off.
+- [ ] While anything is off and unpriced: the odds chip reads **— RE-PRICE**,
+      and **Lock it in is replaced** by "Re-price — N reps out". A folded
+      phase header reads "6 of 7 reps".
+- [ ] Re-price → the number changes, the delta (80 → 73) and one line saying
+      what it cost sit above the button, and Lock it in is back. Ticking the
+      rep back on and re-pricing returns the original number.
+- [ ] Untick a physique pillar (protein, sleep) → it is **allowed**, and the
+      cost line names the pillar. Only the last rep standing refuses ("One
+      rep has to stay in the plan").
+- [ ] Lock after a re-price → Today shows exactly the reps that were left on,
+      and the goal's odds are the re-priced number.
+- [ ] Correct an assumption ("Assumed ~170 lb — fix") with reps unticked →
+      the rebuilt plan keeps them unticked **by title**, and the plan is
+      priced (not "— UNPRICED").
+
 ## 3. Own-plan review (Tier-2)
 
 - [ ] **I already have a plan** opens **Bring the plan you've got.** with a

@@ -21,6 +21,7 @@ import PredictScreen, { bandFor } from './PredictScreen';
 import { ATTEMPT_FLOOR, REWIND_CAP } from '../../api/coachTypes';
 import type { PaceKey, Protocol, ProtocolEditOp, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
 import Confetti, { type ConfettiHandle } from '../../components/Confetti';
+import { canUntick, laterTwins, phaseList, reapplyByTitle, samePricedSet } from '../../lib/ticks';
 import { celebratePlan } from '../../lib/celebrate';
 import {
   GOAL_INPUT_MAX, SPAN_PILLS, addDays, byWhenWeeks, foldTimeline, shortDate, todayYMD, wheelDays, wheelMonths, wheelPreview,
@@ -509,13 +510,15 @@ function StepEditor({ step, sessionType, saving, error, onSave, onCancel }: {
   );
 }
 
-function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onToggleDrop, onEdit }: {
+function StepRow({ step, onFixAssumption, dropped = false, twinNote, onToggleDrop, onEdit }: {
   step: ProtocolStep;
   onFixAssumption?: (key: string) => void;
-  /** Tier-1B commitment picker: this step is marked for removal. */
+  /** Ticked OFF: the user won't do this one. The rep stays on screen, one
+   *  tap from back on, until the plan is priced without it. */
   dropped?: boolean;
-  /** Qoach refused the drop — the structural reason, shown in amber. */
-  refusedReason?: string;
+  /** "Also out of phases 2–4 · keep those" — shown under the rep that was
+   *  just turned off, when turning it off took its later versions too. */
+  twinNote?: { label: string; onKeep: () => void };
   onToggleDrop?: () => void;
   /** Tap the rep to change it. Absent once locked, and on a dropped rep. */
   onEdit?: () => void;
@@ -546,10 +549,17 @@ function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onTogg
         <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, lineHeight: 18, color: night.text, textDecorationLine: dropped ? 'line-through' : 'none' }}>
           {step.title}
         </Text>
-        {refusedReason ? (
-          <Text style={{ marginTop: 3, fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: '#F7B32B' }}>
-            Qoach kept it — {refusedReason}
-          </Text>
+        {twinNote ? (
+          <View style={{ marginTop: 4, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: night.textSoft }}>
+              {twinNote.label}
+            </Text>
+            <Pressable onPress={twinNote.onKeep} hitSlop={8}>
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 11.5, color: night.accentText, textDecorationLine: 'underline' }}>
+                keep those
+              </Text>
+            </Pressable>
+          </View>
         ) : null}
         {/* The canvas' rep detail: the "how", one line under the what. */}
         {step.details ? (
@@ -581,19 +591,24 @@ function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onTogg
       <View style={{ backgroundColor: k.pill, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginTop: 1 }}>
         <Text style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: '700', color: k.fg }}>{stepMetric(step)}</Text>
       </View>
+      {/* A tick, not a delete: every rep starts on, and turning one off is a
+          choice you can see and undo, not an action with a bin icon. */}
       {onToggleDrop ? (
         <Pressable
           onPress={onToggleDrop}
           hitSlop={8}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: !dropped }}
+          accessibilityLabel={`${step.title} — ${dropped ? "you won't do this one" : "in the plan"}`}
           style={{
-            width: 26, height: 26, borderRadius: 13, marginTop: 1,
-            borderWidth: 1.5, borderColor: dropped ? night.accentBorder : night.border,
-            backgroundColor: dropped ? night.accentSoft : 'transparent',
+            width: 26, height: 26, borderRadius: 8, marginTop: 1,
+            borderWidth: 1.5, borderColor: dropped ? night.border : night.accentBorder,
+            backgroundColor: dropped ? 'transparent' : night.accentSoft,
             alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <Text style={{ fontFamily: MONO, fontSize: 12, fontWeight: '700', color: dropped ? night.accentText : night.textGhost }}>
-            {dropped ? '+' : '×'}
+          <Text style={{ fontFamily: MONO, fontSize: 12, fontWeight: '700', color: dropped ? 'transparent' : night.accentText }}>
+            {'✓'}
           </Text>
         </Pressable>
       ) : null}
@@ -603,7 +618,7 @@ function StepRow({ step, onFixAssumption, dropped = false, refusedReason, onTogg
 
 /** One phase: a header that always shows, reps only while open. */
 function PhaseCard({
-  phase, open, isLast, milestones, onToggle, onFixAssumption, dropped, refused, onToggleDrop,
+  phase, open, isLast, milestones, onToggle, onFixAssumption, dropped, twinFor, onToggleDrop,
   editingId, addingHere, renderEditor, onEdit, onAdd,
 }: {
   phase: ProtocolPhase;
@@ -613,7 +628,8 @@ function PhaseCard({
   onToggle: () => void;
   onFixAssumption?: (key: string) => void;
   dropped?: Set<string>;
-  refused?: Record<string, string>;
+  /** The "also out of phases 2–4 · keep those" line, for the rep it belongs to. */
+  twinFor?: (id: string) => { label: string; onKeep: () => void } | undefined;
   onToggleDrop?: (id: string) => void;
   /** The rep whose row is the editor right now, if it is in this phase. */
   editingId?: string | null;
@@ -628,6 +644,7 @@ function PhaseCard({
     ? `WEEK ${phase.start_week}`
     : `WEEKS ${phase.start_week}\u2013${phase.end_week}`;
   const n = phase.steps.length;
+  const on = dropped ? phase.steps.filter(st => !dropped.has(st.id)).length : n;
   return (
     <View
       style={{
@@ -661,8 +678,9 @@ function PhaseCard({
             {phase.focus}
           </Text>
         </View>
-        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 11.5, color: night.textGhost }}>
-          {n} {n === 1 ? 'rep' : 'reps'}
+        {/* A folded phase still says what you did to it: "4 of 5 reps". */}
+        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 11.5, color: on < n ? night.textSoft : night.textGhost }}>
+          {on < n ? `${on} of ${n} reps` : `${n} ${n === 1 ? 'rep' : 'reps'}`}
         </Text>
         <Text style={{ width: 12, textAlign: 'center', fontFamily: nightFonts.bodyMedium, fontSize: 11, color: night.textGhost }}>
           {open ? '\u25be' : '\u25b8'}
@@ -680,7 +698,7 @@ function PhaseCard({
                 step={step}
                 onFixAssumption={onFixAssumption}
                 dropped={dropped?.has(step.id) ?? false}
-                refusedReason={refused?.[step.id]}
+                twinNote={twinFor?.(step.id)}
                 onToggleDrop={onToggleDrop ? () => onToggleDrop(step.id) : undefined}
                 onEdit={onEdit && !dropped?.has(step.id) ? () => onEdit(step.id) : undefined}
               />
@@ -1496,7 +1514,7 @@ function CounterVerdict({
  * strip gives the whole span at a glance, and locking in actually pays off.
  */
 function ProtocolReveal({
-  protocol, statement, odds, onLock, onRestart, quickPicks, onFixAssumption, onReprice, onEdit, oddsStale,
+  protocol, statement, odds, onLock, onRestart, quickPicks, onFixAssumption, onReprice, priced, onEdit, oddsStale,
 }: {
   protocol: Protocol;
   statement: string;
@@ -1505,9 +1523,12 @@ function ProtocolReveal({
   onRestart: () => void;
   quickPicks?: Record<string, string[]>;
   onFixAssumption?: (key: string, value: string) => void;
-  /** Tier-1B: drop commitments → server refuses structural drops with
-   *  reasons and re-prices the rest (the odds prop then updates). */
-  onReprice?: (ids: string[]) => Promise<{ refused: { step_id: string; reason: string }[] } | null>;
+  /** Price the plan without the reps that are ticked off. The whole set is
+   *  sent every time, so the number always describes what is on screen. */
+  onReprice?: (ids: string[]) => Promise<{ odds: number | null; cost: string | null } | { error: string } | null>;
+  /** What the number on screen is the price OF: the reps that were off when
+   *  it was priced. Null = the plan as designed. */
+  priced?: { ids: string[]; odds: number | null; cost: string | null } | null;
   /** The editor: one op, applied server-side to the stored plan. A refusal
    *  comes back with Qoach's reason; null means the call itself failed. */
   onEdit?: (op: ProtocolEditOp) => Promise<{ refused?: { step_id: string; reason: string } } | null>;
@@ -1553,42 +1574,82 @@ function ProtocolReveal({
       onCancel={closeEditor}
     />
   );
-  // Commitment picker state: what the user marked for removal, what Qoach
-  // refused (with reasons), and the before→after odds delta.
+  // Ticks (15 Sep): every rep is ON until it is turned off. `droppedIds` is
+  // what the user chose; `priced` is the set the number on screen describes.
+  // While those two disagree the plan is unpriced, and the bottom bar says so
+  // — locking is replaced by re-pricing, because seeing the cost IS the
+  // decision.
   const [droppedIds, setDroppedIds] = useState<Set<string>>(new Set());
-  const [refused, setRefused] = useState<Record<string, string>>({});
+  const [twinNote, setTwinNote] = useState<{ id: string; ids: string[]; label: string } | null>(null);
+  const [lastRep, setLastRep] = useState(false);
   const [repricing, setRepricing] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [delta, setDelta] = useState<{ from: number; to: number } | null>(null);
+  const pending = !samePricedSet(droppedIds, priced?.ids ?? null);
   const toggleDrop = (id: string) => {
-    setRefused(cur => { const { [id]: _gone, ...rest } = cur; return rest; });
-    setDroppedIds(cur => {
-      const next = new Set(cur);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    setPriceError(null);
+    setLastRep(false);
+    const next = new Set(droppedIds);
+    if (next.has(id)) {                      // back on
+      next.delete(id);
+      setDroppedIds(next);
+      if (twinNote?.id === id || twinNote?.ids.includes(id)) setTwinNote(null);
+      return;
+    }
+    // The same habit in later phases is a different rep. Turning one off
+    // almost never means "and leave the other three on", so they go too —
+    // and the line under it offers to keep them.
+    const twins = laterTwins(protocol, id);
+    const add = [id, ...twins.ids].filter(x => !next.has(x));
+    if (!canUntick(protocol, next, add)) { setLastRep(true); return; }
+    add.forEach(x => next.add(x));
+    setDroppedIds(next);
+    setTwinNote(twins.ids.length
+      ? { id, ids: twins.ids, label: `Also out of ${phaseList(twins.phases)}.` }
+      : null);
   };
-  const repriceNow = () => {
-    if (!onReprice || repricing || droppedIds.size === 0) return;
+  const keepTwins = () => {
+    if (!twinNote) return;
+    const next = new Set(droppedIds);
+    twinNote.ids.forEach(x => next.delete(x));
+    setDroppedIds(next);
+    setTwinNote(null);
+  };
+  const twinFor = (id: string) => (twinNote?.id === id ? { label: twinNote.label, onKeep: keepTwins } : undefined);
+  const repriceNow = (ids: string[] = [...droppedIds]) => {
+    if (!onReprice || repricing) return;
     const from = odds;
     setRepricing(true);
-    onReprice([...droppedIds])
+    setPriceError(null);
+    setLastRep(false);
+    onReprice(ids)
       .then(res => {
-        if (!res) return;
-        const refusedMap: Record<string, string> = {};
-        for (const r of res.refused) refusedMap[r.step_id] = r.reason;
-        setRefused(refusedMap);
-        // Refused ids stay in the plan — un-mark them; accepted drops are now
-        // GONE from the protocol, so the set resets entirely.
-        setDroppedIds(new Set());
-        if (from !== undefined) setDelta(d => ({ from: d?.from ?? from, to: from }));
+        if (!res) { setPriceError('Couldn’t reach Qoach.'); return; }
+        if ('error' in res) {
+          setPriceError(res.error === 'empty_plan'
+            ? 'One rep has to stay in the plan.'
+            : 'Qoach couldn’t put a number on this one.');
+          return;
+        }
+        setTwinNote(null);
+        if (from !== undefined && res.odds !== null && res.odds !== from) setDelta({ from, to: res.odds });
+        else setDelta(null);
       })
       .finally(() => setRepricing(false));
   };
-  // The odds prop updates when the reprice lands — close the delta with it.
+  const undoTicks = () => { setDroppedIds(new Set()); setTwinNote(null); repriceNow([]); };
+  // A rebuilt plan renumbers every rep: carry the choices over by title so a
+  // corrected assumption does not quietly put back what the user turned off.
+  const lastPlan = useRef(protocol);
   useEffect(() => {
-    if (delta && odds !== undefined && odds !== delta.to) setDelta({ from: delta.from, to: odds });
+    if (lastPlan.current === protocol) return;
+    const carried = reapplyByTitle(protocol, lastPlan.current, droppedIds);
+    lastPlan.current = protocol;
+    setDroppedIds(new Set(carried));
+    setTwinNote(null);
+    setDelta(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [odds]);
+  }, [protocol]);
   // "Assumed ~170 lb — fix": which manifest key is being edited, and the
   // typed value. Quick-picks submit immediately; typed values via Rebuild.
   const [fixingKey, setFixingKey] = useState<string | null>(null);
@@ -1644,9 +1705,11 @@ function ProtocolReveal({
             {/* 5d: the verdict number rides along, same conditional, smaller badge.
                 Once the work has been edited no number on file describes the
                 plan, and the chip says so instead of showing one. */}
-            {oddsStale ? (
+            {pending || oddsStale ? (
               <View style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: night.surface, borderWidth: 1, borderColor: night.border }}>
-                <Text style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: '700', letterSpacing: 1.2, color: night.textDim }}>— UNPRICED</Text>
+                <Text style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: '700', letterSpacing: 1.2, color: night.textDim }}>
+                  {pending ? '— RE-PRICE' : '— UNPRICED'}
+                </Text>
               </View>
             ) : odds !== undefined ? <OddsChip value={odds} /> : null}
           </View>
@@ -1664,7 +1727,7 @@ function ProtocolReveal({
               the re-price button hidden until the first mark. One line. */}
           {onEdit && !locked ? (
             <Text style={{ marginTop: 4, fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: night.textGhost }}>
-              Tap a rep to change it · × drops it and re-prices.
+              Tap a rep to change it · untick what you won't do · Qoach re-prices before you lock.
             </Text>
           ) : null}
 
@@ -1690,7 +1753,7 @@ function ProtocolReveal({
                 onToggle={() => setOpen(cur => (cur === i ? -1 : i))}
                 onFixAssumption={onFixAssumption ? (key) => { setFixingKey(key); setFixValue(''); } : undefined}
                 dropped={droppedIds}
-                refused={refused}
+                twinFor={twinFor}
                 onToggleDrop={onReprice && !locked ? toggleDrop : undefined}
                 editingId={editingId}
                 addingHere={addingPhase === phase.id}
@@ -1710,20 +1773,10 @@ function ProtocolReveal({
             </View>
           ) : null}
 
-          {droppedIds.size > 0 && !locked ? (
-            <Pressable
-              onPress={repriceNow}
-              disabled={repricing}
-              style={{
-                marginTop: 12, height: 44, borderRadius: 22,
-                backgroundColor: repricing ? night.hairline : night.accent,
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <Text style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 0.8, fontWeight: '700', color: repricing ? night.textMuted : night.accentInk }}>
-                {repricing ? 'RE-PRICING…' : `RE-PRICE WITHOUT ${droppedIds.size} ${droppedIds.size === 1 ? 'COMMITMENT' : 'COMMITMENTS'}`}
-              </Text>
-            </Pressable>
+          {lastRep && !locked ? (
+            <Text style={{ marginTop: 10, textAlign: 'center', fontFamily: nightFonts.body, fontSize: 12, color: night.warn }}>
+              One rep has to stay in the plan.
+            </Text>
           ) : null}
 
           {fixingKey && onFixAssumption ? (
@@ -1830,15 +1883,62 @@ function ProtocolReveal({
             </Pop>
           ) : (
             <>
+              {/* What the last price cost, where the finger is: the delta and
+                  the one line that says what came out of the plan. */}
+              {!pending && delta ? (
+                <View style={{ marginBottom: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 14, color: night.textFaint, textDecorationLine: 'line-through' }}>{delta.from}</Text>
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 12, color: night.accent }}>→</Text>
+                  <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: night.accent }}>{delta.to}</Text>
+                </View>
+              ) : null}
+              {!pending && priced?.cost ? (
+                <Text style={{ marginBottom: 8, textAlign: 'center', fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: night.textSoft }}>
+                  {priced.cost}
+                </Text>
+              ) : null}
+              {priceError ? (
+                <Text style={{ marginBottom: 8, textAlign: 'center', fontFamily: nightFonts.body, fontSize: 12, lineHeight: 17, color: night.warn }}>
+                  {priceError}
+                </Text>
+              ) : null}
               {/* Until edits are priced (their own, gated step), a changed
                   plan locks with no odds rather than the number of the plan
                   it used to be. Said here, where the finger is. */}
-              {oddsStale ? (
+              {oddsStale && !pending ? (
                 <Text style={{ marginBottom: 8, textAlign: 'center', fontFamily: nightFonts.body, fontSize: 11.5, lineHeight: 16, color: night.textGhost }}>
-                  Changed reps aren’t priced yet — this locks without odds.
+                  {priced ? 'Qoach couldn’t price this one — it locks without odds.' : 'Changed reps aren’t priced yet — this locks without odds.'}
                 </Text>
               ) : null}
-              <PrimaryButton label="Lock it in" onPress={lockIn} />
+              {/* Pending ticks REPLACE the lock: a plan that has changed and
+                  not been priced would lock under a number that describes a
+                  different plan. Seeing the cost is the decision. */}
+              {pending ? (
+                <PrimaryButton
+                  label={repricing
+                    ? 'Re-pricing…'
+                    : droppedIds.size === 0
+                      ? 'Re-price — everything back on'
+                      : `Re-price — ${droppedIds.size} ${droppedIds.size === 1 ? 'rep' : 'reps'} out`}
+                  onPress={() => repriceNow()}
+                />
+              ) : (
+                <PrimaryButton label="Lock it in" onPress={lockIn} />
+              )}
+              {/* A price Qoach could not produce is not a dead end: try it
+                  again, put the plan back, or lock the plan you chose with no
+                  number on it. */}
+              {priceError && droppedIds.size > 0 ? (
+                <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                  <TextButton label="Undo changes" height={40} onPress={undoTicks} />
+                  {priced && !pending ? (
+                    <>
+                      <Text style={{ fontFamily: nightFonts.body, fontSize: 12, color: night.textGhost }}>·</Text>
+                      <TextButton label="Lock without odds" height={40} onPress={lockIn} />
+                    </>
+                  ) : null}
+                </View>
+              ) : null}
               {/* "Adjust something" used to sit here: a stub whose whole
                   behaviour was a toast at the top of the screen saying it was
                   not built. A tester reported it as "nothing happens", which
@@ -2972,7 +3072,8 @@ export default function FirstGoalScreen({
         onFixAssumption={coach.fixAssumption}
         onLock={lockIn}
         onRestart={coach.reset}
-        onReprice={coach.repriceWithDrops}
+        onReprice={coach.repriceTicks}
+        priced={coach.ticks}
         onEdit={coach.applyEdit}
         oddsStale={coach.oddsStale}
       />

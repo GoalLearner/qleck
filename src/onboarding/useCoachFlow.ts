@@ -6,7 +6,7 @@
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { answerCoachQuestion, editProtocol, generateProtocol, getProtocolJob, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, rewindCoachSession, startCoachSession } from '../api/coach';
+import { answerCoachQuestion, editProtocol, generateProtocol, getProtocolJob, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceTicks as apiRepriceTicks, rewindCoachSession, startCoachSession } from '../api/coach';
 import type { BuildingResponse, JobView, PaceKey, ProtocolEditOp, ProtocolJobPoll, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
 import {
   ATTEMPT_FLOOR, CoachApiError, REWIND_CAP, type CoachError, type CoachQuestion, type CoachRefusal,
@@ -320,22 +320,36 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
   // describes the plan any more, and the reveal must not show one until it
   // is re-priced or locked. A details-only edit does not set it.
   const [oddsStale, setOddsStale] = useState(false);
-  const repriceWithDrops = useCallback((ids: string[]): Promise<{ refused: { step_id: string; reason: string }[] } | null> => {
+  /** The reps that are OFF and the price of the plan without them (build 36).
+   *  `plan` is what locks; `odds` is null when Qoach could not price it. */
+  const [ticks, setTicks] = useState<{ ids: string[]; plan: Protocol; odds: number | null; cost: string | null } | null>(null);
+
+  /**
+   * Price the plan as it stands — the whole set of reps that are off, sent
+   * every time, so the number always describes what is on screen. An empty
+   * set is the plan as designed, at its own number.
+   */
+  const repriceTicks = useCallback((ids: string[]): Promise<
+    { odds: number | null; cost: string | null } | { error: string } | null
+  > => {
     const id = sessionId.current;
-    if (!id || !ids.length) return Promise.resolve(null);
-    return repriceProtocol(id, ids)
+    if (!id) return Promise.resolve(null);
+    return apiRepriceTicks(id, ids)
       .then(res => {
-        if (res.protocol && typeof res.odds === 'number') {
-          setProtocol(res.protocol);
-          setPickedOdds(res.odds);
-          // NOT un-staled here: the drop price describes the drops, not the
-          // edits. Once the reprice prices the whole diff (its own gated
-          // step) this is where the plan becomes priced again.
-        }
-        return { refused: res.refused ?? [] };
+        if (res.error && !res.protocol) return { error: res.error };
+        if (!res.protocol) return null;
+        const odds = typeof res.odds === 'number' ? res.odds : null;
+        setTicks(ids.length ? { ids, plan: res.protocol, odds, cost: res.cost ?? null } : null);
+        setPickedOdds(odds);
+        // The price describes the work as it stands now, so nothing on this
+        // plan is unpriced any more — unless Qoach could not price it, and
+        // then the chip says exactly that.
+        setOddsStale(odds === null);
+        return res.error ? { error: res.error } : { odds, cost: res.cost ?? null };
       })
       .catch(() => null);
   }, []);
+
 
   /** One edit to the accepted plan. The server applies it to the stored
    *  protocol; a refusal comes back with the reason and nothing changes. A
@@ -352,6 +366,9 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
         setAssumptions(res.assumptions ?? []);
         setQuickPicks(res.quick_picks ?? {});
         if (res.pricing === 'stale') { setOddsStale(true); setPickedOdds(null); }
+        // The priced set described the plan BEFORE this edit. Whatever is
+        // ticked off stays ticked off, but it has to be priced again.
+        setTicks(null);
         return {};
       })
       .catch(() => null);
@@ -365,6 +382,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setVariant('original');
     setPickedOdds(null);
     setOddsStale(false);
+    setTicks(null);
     setPhase('building');
     setJob(null);
     // `estimate` is in the deps now: the closure used to be created once
@@ -384,6 +402,11 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     if (!id || !value.trim()) return;
     setPhase('rebuilding');
     setPickedOdds(null);
+    // The rebuild is a NEW plan at the chosen pace's odds — priced, not
+    // stale. Leaving this set meant a corrected assumption produced a plan
+    // that showed no number and locked without one.
+    setOddsStale(false);
+    setTicks(null);
     setJob(null);
     // The rebuild keeps the pace and the side that were built. It used to
     // fall back to steady / the offer, so a corrected number came back on a
@@ -553,6 +576,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setProtocol(null);
     setError(null);
     setOwnPlanMode(false);
+    setTicks(null);
     setRewinds(0);
     setRewindNote(null);
     setPhase('intake');
@@ -584,12 +608,15 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
       // An edited, not-yet-re-priced plan locks with NO odds rather than the
       // number of the plan it used to be; parseCreateGoal treats absence as a
       // fine state. "Re-price & lock" (step 1c) makes this the rare path.
-      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: protocol.duration_weeks, odds: oddsStale ? undefined : (pickedOdds ?? chosenOdds), protocol, coachSessionId: sessionId.current ?? undefined }
+      // What locks is the plan the ticks describe, at the price of THAT
+      // plan — never the full plan with a trimmed plan's number on it.
+      ? { goalText, statement: chosenStatement ?? verdict.goal_statement, durationWeeks: (ticks?.plan ?? protocol).duration_weeks, odds: oddsStale ? undefined : (ticks ? ticks.odds ?? undefined : (pickedOdds ?? chosenOdds)), protocol: ticks?.plan ?? protocol, coachSessionId: sessionId.current ?? undefined }
       : null;
 
   return {
     phase, goalText, question, questionCount, qa, verdict, refusal, protocol, error,
-    pace, setPace, chosenOdds, pickedOdds, oddsStale, repriceWithDrops, applyEdit, chosenStatement, buildOriginal,
+    pace, setPace, chosenOdds, pickedOdds, oddsStale, applyEdit, chosenStatement, buildOriginal,
+    ticks, repriceTicks,
     assumptions, quickPicks, missingRequired, fixAssumption,
     sim, prevSim, editedKey, editInput, switchPace, priceCustom, verdictAnswers,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan, ownPlanMode,

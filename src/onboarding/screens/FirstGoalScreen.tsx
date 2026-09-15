@@ -18,7 +18,7 @@ import type { SimulationState } from '../../api/coachTypes';
 import { reportAiResponse } from '../../api/coach';
 import { useCoachFlow, type AcceptedPlan, type CoachFlow } from '../useCoachFlow';
 import PredictScreen, { bandFor } from './PredictScreen';
-import { ATTEMPT_FLOOR } from '../../api/coachTypes';
+import { ATTEMPT_FLOOR, REWIND_CAP } from '../../api/coachTypes';
 import type { PaceKey, Protocol, ProtocolEditOp, ProtocolMilestone, ProtocolPhase, ProtocolStep, Verdict } from '../../api/coachTypes';
 import Confetti, { type ConfettiHandle } from '../../components/Confetti';
 import { celebratePlan } from '../../lib/celebrate';
@@ -2455,12 +2455,47 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
   onDismiss: () => void; dismissLabel: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
+  const inputRef = useRef<TextInput>(null);
   const thinking = coach.phase === 'thinking';
+  // Changing an earlier answer (15 Sep, the testers' note 1). `confirm` is
+  // the answer whose sheet is open; `editing` is the question being answered
+  // again — while it is set the thread shows itself as it WILL be, so the
+  // cost of the change is visible before it is sent. `held` keeps whatever
+  // was half-typed for the question on screen, so backing out gives it back.
+  const [confirm, setConfirm] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
+  const held = useRef('');
+
   const send = (text: string) => {
-    if (text.trim() && !thinking) { coach.answerQuestion(text); setAnswer(''); }
+    if (!text.trim() || thinking) return;
+    if (editing === null) { coach.answerQuestion(text); setAnswer(''); return; }
+    const at = editing;
+    setEditing(null);
+    // The same words again are not a change — that is "keep it", quietly.
+    if (text.trim() === coach.qa[at]?.answer) { setAnswer(held.current); return; }
+    setAnswer('');
+    coach.rewindTo(at, text);
   };
+  const changeAnswer = (i: number) => {
+    setConfirm(null);
+    held.current = answer;
+    setEditing(i);
+    setAnswer(coach.qa[i].answer ?? '');
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+  const keepAnswer = () => { setEditing(null); setAnswer(held.current); };
+
+  // In re-answer mode the thread ends at the question being changed: what
+  // came after it is what the change throws away.
+  const visible = editing === null ? coach.qa : coach.qa.slice(0, editing + 1);
+  const asked = editing === null ? coach.questionCount : editing + 1;
+  const track = Math.max(QUESTION_FLOOR, asked);
+  // An answered question is changeable while Qoach is waiting on you, never
+  // mid-turn, and never once the three changes are spent.
+  const canChange = coach.phase === 'question' && editing === null && coach.rewindsLeft > 0;
 
   return (
+    <View style={{ flex: 1 }}>
     <Screen scroll={false} horizontal={0}>
       <View
         style={{
@@ -2479,17 +2514,17 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
             fourth or fifth question. */}
         <View style={{ alignItems: 'flex-end', gap: 5 }}>
           <MonoLabel
-            text={`QUESTION ${coach.questionCount} OF ${Math.max(QUESTION_FLOOR, coach.questionCount)}`}
+            text={`QUESTION ${asked} OF ${track}`}
             color={night.textFaint}
             style={{ fontSize: 10.5, letterSpacing: 1 }}
           />
           <View style={{ flexDirection: 'row', gap: 5 }}>
-            {Array.from({ length: Math.max(QUESTION_FLOOR, coach.questionCount) }, (_, i) => (
+            {Array.from({ length: track }, (_, i) => (
               <View
                 key={i}
                 style={{
                   width: 18, height: 4, borderRadius: 2,
-                  backgroundColor: i < coach.questionCount ? night.accent : night.hairline,
+                  backgroundColor: i < asked ? night.accent : night.hairline,
                 }}
               />
             ))}
@@ -2512,8 +2547,9 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
           <UserBubble text={coach.goalText} />
         </View>
 
-        {coach.qa.map((entry, i) => {
-          const isActive = i === coach.qa.length - 1 && coach.phase === 'question';
+        {visible.map((entry, i) => {
+          const reAnswering = i === editing;
+          const isActive = reAnswering || (editing === null && i === coach.qa.length - 1 && coach.phase === 'question');
           return (
             <React.Fragment key={i}>
               <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
@@ -2548,9 +2584,21 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
                   )}
                 </View>
               </View>
-              {entry.answer !== undefined && (
+              {entry.answer !== undefined && !reAnswering && (
                 <View style={{ alignItems: 'flex-end' }}>
-                  <UserBubble text={entry.answer} />
+                  {canChange && i < coach.qa.length - 1 ? (
+                    <Pressable
+                      onPress={() => setConfirm(i)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Change your answer: ${entry.answer}`}
+                      style={{ alignItems: 'flex-end', gap: 4 }}
+                    >
+                      <UserBubble text={entry.answer} />
+                      <MonoLabel text="CHANGE" style={{ paddingRight: 6 }} />
+                    </Pressable>
+                  ) : (
+                    <UserBubble text={entry.answer} />
+                  )}
                 </View>
               )}
             </React.Fragment>
@@ -2562,11 +2610,19 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
 
       <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' }}>
         <View style={{ maxWidth: 720, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 14, gap: 8 }}>
+          {/* Qoach kept an answer the user tried to change — said here, where
+              the change was made, rather than on the snag screen. */}
+          {coach.rewindNote && editing === null ? (
+            <Text style={{ fontFamily: nightFonts.body, fontSize: 12.5, lineHeight: 18, color: night.warn }}>
+              {coach.rewindNote}
+            </Text>
+          ) : null}
           <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
             <NightInput
+              ref={inputRef}
               value={answer}
               onChangeText={setAnswer}
-              placeholder="Answer honestly — it shapes the plan"
+              placeholder={editing === null ? 'Answer honestly — it shapes the plan' : 'Your new answer'}
               style={{ flex: 1, height: 54, fontSize: 15 }}
               editable={!thinking}
               onSubmitEditing={() => send(answer)}
@@ -2584,16 +2640,37 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
             </Pressable>
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>
-              Tap a suggestion to send it {'\u2014'} or type your own
-            </Text>
+            {editing === null ? (
+              <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>
+                Tap a suggestion to send it {'\u2014'} or type your own
+              </Text>
+            ) : (
+              <Pressable onPress={keepAnswer} hitSlop={8}>
+                <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textSoft }}>
+                  Keep my answer
+                </Text>
+              </Pressable>
+            )}
             <Text style={{ fontFamily: MONO, fontSize: 10.5, color: night.textGhost }}>
-              your answers shape the plan
+              {editing === null ? 'your answers shape the plan' : `changing question ${editing + 1}`}
             </Text>
           </View>
         </View>
       </View>
     </Screen>
+
+    {confirm !== null ? (
+      <LeaveSheet
+        eyebrow={`${coach.rewindsLeft} OF ${REWIND_CAP} CHANGES LEFT`}
+        title="Change this answer?"
+        body="The questions after it will be asked again. Qoach carries on from there."
+        keepLabel="Keep it"
+        leaveLabel="Change it"
+        onKeep={() => setConfirm(null)}
+        onLeave={() => changeAnswer(confirm)}
+      />
+    ) : null}
+    </View>
   );
 }
 

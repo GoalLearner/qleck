@@ -843,6 +843,17 @@ stuck in the queue on the phone — and two defects put them there.
   a race counts nothing. `check:rewind` (43 bars) and a live `smoke:rewind`
   (21 bars: truncation, replay, two-at-once, the refusals, the cap, and the
   interview still reaching a verdict afterwards).
+- **Tap an answer to change it** (the app half). From the third question on,
+  every earlier answer carries a quiet CHANGE. Tapping one asks "Change this
+  answer? The questions after it will be asked again", and says how many
+  changes are left. Say yes and the thread ends at that question with its
+  original chips back and the old answer already in the box — what the change
+  throws away is visible before it is sent, and "Keep my answer" puts it all
+  back, including whatever was half-typed for the question on screen. Send a
+  different answer and Qoach carries on from there. When Qoach keeps an answer
+  (the three are spent, or the conversation moved), the reason is one amber
+  line above the box rather than an error screen: the conversation is still
+  there, it simply did not change.
 - **A retried answer no longer answers the wrong question.** The app now says
   which question it is answering. Without that, an answer whose response was
   lost on the way back (a dropped connection on a slow phone) was re-sent by

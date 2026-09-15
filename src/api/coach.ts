@@ -112,11 +112,21 @@ async function post<T>(path: string, body: unknown): Promise<T> {
       message: 'The coach hit a snag — try again in a moment.',
     });
   }
+  const code = typeof (json as { error?: unknown }).error === 'string' ? (json as { error: string }).error : undefined;
   throw new CoachApiError({
-    kind: 'bad_request', retryable: false,
-    message: String((json as { error?: string }).error ?? `request failed (${res.status})`),
+    kind: 'bad_request', retryable: false, code,
+    message: MOVED_ON[code ?? ''] ?? String(code ?? `request failed (${res.status})`),
   });
 }
+
+// A conversation that went on without this request can't be picked back up
+// from the phone — there is no GET for a session — so the honest way out is
+// the goal (the snag screen's "Back to my goal"). These used to show the raw
+// code.
+const MOVED_ON: Record<string, string> = {
+  session_moved: 'This conversation moved on without that answer. Go back to your goal to start it again.',
+  session_not_open: 'This conversation has already finished. Go back to your goal to start it again.',
+};
 
 /* ── the three coach calls ──────────────────────────────────────────────── */
 
@@ -124,8 +134,20 @@ export function startCoachSession(goalText: string, ownPlan?: string): Promise<C
   return post<CoachTurnResponse>('/coach/sessions', { goalText, ...(ownPlan?.trim() ? { ownPlan: ownPlan.trim() } : {}) });
 }
 
-export function answerCoachQuestion(sessionId: string, answer: string): Promise<CoachTurnResponse> {
-  return post<CoachTurnResponse>(`/coach/sessions/${sessionId}/messages`, { answer });
+/** `index` is the question being answered (0-based). With it, a retry of an
+ *  answer that already landed gets back the turn it produced instead of
+ *  answering the NEXT question with the same words. */
+export function answerCoachQuestion(sessionId: string, answer: string, index?: number): Promise<CoachTurnResponse> {
+  return post<CoachTurnResponse>(`/coach/sessions/${sessionId}/messages`, { answer, ...(index !== undefined ? { index } : {}) });
+}
+
+/** Change an earlier answer (15 Sep): question `index` (0-based) keeps its
+ *  text and takes `answer`; every question after it is asked again. Answers
+ *  like /messages. Qoach's refusals arrive as a CoachApiError whose `code` is
+ *  rewind_cap, rewind_unavailable, unchanged_answer, invalid_index or
+ *  session_not_open. A retry of a change that already landed replays it. */
+export function rewindCoachSession(sessionId: string, index: number, answer: string): Promise<CoachTurnResponse> {
+  return post<CoachTurnResponse>(`/coach/sessions/${sessionId}/rewind`, { index, answer });
 }
 
 /** Correct a structured answer ("Assumed ~170 lb — fix"). The server clears

@@ -59,6 +59,25 @@ a full typecheck. Backend changes additionally need `cd backend` +
 - [ ] Type a realistic goal → Qoach asks 3–6 questions, each with tappable
       chips (or an exact-figure ask with no chips, never bucket ranges).
 - [ ] No question repeats in different words.
+- [ ] (15 Sep) From question 3, an earlier answer carries a quiet **CHANGE**
+      under it; the answer to the question on screen does not, and none of
+      them do while Qoach is thinking.
+- [ ] (15 Sep) Tap one → "Change this answer? The questions after it will be
+      asked again." with **3 OF 3 CHANGES LEFT**. **Keep it** closes and
+      changes nothing.
+- [ ] (15 Sep) **Change it** → the thread ends at that question with its
+      original chips back and the old answer in the box; the counter reads
+      that question's number. **Keep my answer** puts the thread back,
+      including anything half-typed for the question on screen.
+- [ ] (15 Sep) Send a different answer → the questions after it are gone,
+      Qoach asks the next one from there, and the answer that shows is the new
+      one. Sending the same answer again just closes the change.
+- [ ] (15 Sep) Change three answers → the fourth CHANGE is gone, and if one
+      was tapped first, the amber line reads "That's 3 changes, the most one
+      conversation takes."
+- [ ] (15 Sep) Airplane mode mid-change → the snag screen; **Retry** with the
+      connection back finishes the same change exactly once (the thread is not
+      truncated twice).
 - [ ] Verdict shows the dial immediately, a subtitle, and three read cards
       (going for you / the honest risk / Qoach's move).
 - [ ] Pace pills re-price the plan; **OR NAME IT** prices a custom runway and

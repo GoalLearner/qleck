@@ -6,12 +6,24 @@
 // protocol; refusal / error can land from any AI step. The designed canvas
 // screens will render these states; until then plain screens do.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { answerCoachQuestion, editProtocol, generateProtocol, getProtocolJob, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, startCoachSession } from '../api/coach';
+import { answerCoachQuestion, editProtocol, generateProtocol, getProtocolJob, getSimulation, postAnswer, prepareSimulation, priceCustomPace, repriceProtocol, rewindCoachSession, startCoachSession } from '../api/coach';
 import type { BuildingResponse, JobView, PaceKey, ProtocolEditOp, ProtocolJobPoll, ProtocolResponse, SimulationState, StepAssumption } from '../api/coachTypes';
 import {
-  ATTEMPT_FLOOR, CoachApiError, type CoachError, type CoachQuestion, type CoachRefusal,
+  ATTEMPT_FLOOR, CoachApiError, REWIND_CAP, type CoachError, type CoachQuestion, type CoachRefusal,
   type CoachTurnResponse, type Protocol, type Verdict,
 } from '../api/coachTypes';
+
+/** Why Qoach kept an answer the user tried to change. Each of these leaves
+ *  the conversation exactly where it was, so it is a line in the chat — not
+ *  the snag screen. Anything else (network, quota, a 5xx) is a real failure
+ *  and goes through `fail`, where Retry replays the change safely. */
+const REWIND_REFUSED: Record<string, string> = {
+  rewind_cap: `That's ${REWIND_CAP} changes, the most one conversation takes. Carry on from here.`,
+  rewind_unavailable: "This conversation can't go back. Carry on from here.",
+  unchanged_answer: 'That’s the answer you already gave.',
+  invalid_index: "That answer can't be changed now. Carry on from here.",
+  session_not_open: "That answer can't be changed now. Carry on from here.",
+};
 
 export type CoachPhase =
   | 'intake'      // typing the goal
@@ -134,14 +146,69 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     startCoachSession(goal, plan).then(handleTurn, err => fail(err, () => submitGoal(goal, plan)));
   }, [fail, handleTurn]);
 
+  // Changed answers this conversation (the server caps it at REWIND_CAP),
+  // and the line that says why Qoach kept one.
+  const [rewinds, setRewinds] = useState(0);
+  const [rewindNote, setRewindNote] = useState<string | null>(null);
+  // One conversation call at a time: a double tap on send must not become
+  // two turns (the server converges them, but the thread would flicker).
+  const turnBusy = useRef(false);
+
   const answerQuestion = useCallback((answer: string) => {
     const a = answer.trim();
     const id = sessionId.current;
-    if (!a || !id) return;
-    setQa(prev => prev.map((entry, i) => (i === prev.length - 1 ? { ...entry, answer: a } : entry)));
-    setPhase('thinking');
-    answerCoachQuestion(id, a).then(handleTurn, err => fail(err, () => answerQuestion(a)));
-  }, [fail, handleTurn]);
+    if (!a || !id || turnBusy.current) return;
+    // The question being answered, sent along so a retry of an answer that
+    // already landed replays its turn rather than answering the next one.
+    const index = qa.length - 1;
+    const run = () => {
+      turnBusy.current = true;
+      setRewindNote(null);
+      setQa(prev => prev.map((entry, i) => (i === index ? { ...entry, answer: a } : entry)));
+      setPhase('thinking');
+      answerCoachQuestion(id, a, index)
+        .then(handleTurn, err => fail(err, run))
+        .finally(() => { turnBusy.current = false; });
+    };
+    run();
+  }, [qa, fail, handleTurn]);
+
+  /**
+   * Go back to question `index` and answer it again (15 Sep, the testers'
+   * "fix an answer instead of starting over"). The question keeps its text,
+   * takes the new answer, and everything after it is dropped — Qoach carries
+   * on from there as if that had been the answer all along. When Qoach says
+   * no, the thread is put back exactly as it was.
+   */
+  const rewindTo = useCallback((index: number, answer: string) => {
+    const a = answer.trim();
+    const id = sessionId.current;
+    if (!a || !id || turnBusy.current) return;
+    if (!Number.isInteger(index) || index < 0 || index >= qa.length - 1) return;
+    if (qa[index].answer === a) return; // nothing changed — nothing to send
+    const before = qa;
+    const kept = qa.slice(0, index + 1).map((entry, i) => (i === index ? { ...entry, answer: a } : entry));
+    const run = () => {
+      turnBusy.current = true;
+      setRewindNote(null);
+      setQa(kept);
+      setQuestionCount(kept.length);
+      setPhase('thinking');
+      rewindCoachSession(id, index, a)
+        .then(res => { setRewinds(n => n + 1); handleTurn(res); }, err => {
+          const code = err instanceof CoachApiError ? err.info.code : undefined;
+          const refused = code ? REWIND_REFUSED[code] : undefined;
+          if (!refused) { fail(err, run); return; }
+          setQa(before);
+          setQuestionCount(before.length);
+          if (code === 'rewind_cap' || code === 'rewind_unavailable') setRewinds(REWIND_CAP);
+          setRewindNote(refused);
+          setPhase('question');
+        })
+        .finally(() => { turnBusy.current = false; });
+    };
+    run();
+  }, [qa, fail, handleTurn]);
 
   // Which pace the user picked on the verdict screen. Steady is the coach's
   // recommendation and the default; the choice re-times protocol generation
@@ -486,6 +553,8 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     setProtocol(null);
     setError(null);
     setOwnPlanMode(false);
+    setRewinds(0);
+    setRewindNote(null);
     setPhase('intake');
   }, []);
 
@@ -524,6 +593,7 @@ export function useCoachFlow(opts?: { askEstimate?: boolean }) {
     assumptions, quickPicks, missingRequired, fixAssumption,
     sim, prevSim, editedKey, editInput, switchPace, priceCustom, verdictAnswers,
     submitGoal, answerQuestion, buildPlan, reset, retry, acceptedPlan, ownPlanMode,
+    rewindTo, rewindsLeft: Math.max(0, REWIND_CAP - rewinds), rewindNote,
     estimate, commitEstimate,
     job, draftJob, draftReady,
   };

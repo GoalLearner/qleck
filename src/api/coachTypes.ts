@@ -18,6 +18,11 @@ export type PaceKey = 'sprint' | 'steady' | 'relaxed' | 'custom';
  *  client only states it, and never fires a build it knows will be refused. */
 export const ATTEMPT_FLOOR = 20;
 
+/** Answers one interview can change, mirrored from MAX_REWINDS in
+ *  backend/src/rewind.ts. The server enforces it (409 `rewind_cap`); the
+ *  client only stops offering the change once it is used up. */
+export const REWIND_CAP = 3;
+
 /** One edit to an unlocked plan — mirrors backend/src/protocolEdit.ts. The
  *  server applies it to the STORED protocol; server-owned fields (id,
  *  session_id, derived_from, how_to, source…) are not in the patch on
@@ -208,6 +213,10 @@ export interface CoachError {
   kind: 'quota' | 'unavailable' | 'network' | 'bad_request';
   message: string;
   retryable: boolean;
+  /** The server's error code when it sent one (`rewind_cap`,
+   *  `session_moved`…) — for callers that treat a refusal as a state, not
+   *  a failure. */
+  code?: string;
 }
 
 export class CoachApiError extends Error {

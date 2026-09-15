@@ -16,9 +16,8 @@ import {
   appendProtocolStatements, getGoalById, protocolExists, protocolsWrittenToday,
   stepStatements, type GoalRecord,
 } from './goals';
-import { spliceFrozenPast } from './graduation';
 import { restoreRetired, withoutRetired } from './dropPlan';
-import { reconcileFrequency, validateProtocol, type Protocol } from './protocolSchema';
+import { reconcileFrequency, spliceFrozenPast, validateProtocol, type Protocol } from './protocolSchema';
 import type { Env } from './ai';
 
 const UUID = /^[0-9a-fA-F-]{36}$/;

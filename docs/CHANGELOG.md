@@ -926,6 +926,15 @@ stuck in the queue on the phone — and two defects put them there.
   than missed, the week it came out in expects only what it banked (so a drop
   can never lower adherence or un-earn a milestone), and Goals shows it struck
   through with "Dropped in week N". The days already banked keep counting.
+- **"Keep it going, lighter" works on short plans.** A finished plan could
+  only maintain for twice its own length, but the maintenance prompt asks for
+  4-12 weeks — so a plan of six weeks or less could never graduate at all:
+  every attempt came back as "the coach hit a snag". The cap is now a floor of
+  12 weeks and a ceiling of a year, and a plan longer than that is **trimmed**
+  rather than refused (whole phases past the line go, the phase it falls
+  inside ends there, milestones with them). `check:graduation`, 14 bars — and
+  the three pure plan-shape functions moved to `protocolSchema.ts` so they can
+  be checked without a Worker runtime at all.
 - `check:ticks` (18 bars) and `check:drop` (60 bars, including 3,600 random tick sets over the twelve
   plans of the last harness run: none of them can produce a plan the
   validators reject) and a live `smoke:drop` (13 bars).

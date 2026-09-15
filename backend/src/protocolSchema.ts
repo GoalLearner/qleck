@@ -1080,6 +1080,67 @@ export function validateProtocol(p: unknown): string[] {
   return errs;
 }
 
+/**
+ * How long a maintenance plan may be, given the run it follows.
+ *
+ * The old rule was "never more than twice the original run", which is
+ * unreachable for a short plan: the maintenance prompt asks for 4-12 weeks,
+ * so a 1-week plan could never graduate at all — every attempt was rejected
+ * as "longer than the original run" and the user was told the coach failed.
+ * The floor is 12 (the prompt's own ceiling always fits), the cap is a year.
+ */
+export function maintenanceCap(originalWeeks: number): number {
+  return Math.min(52, Math.max(12, originalWeeks * 2));
+}
+
+/**
+ * A plan cut to `weeks`: whole phases past the line go, the phase the line
+ * falls inside ends there, and milestones beyond it go with them. Trimming
+ * beats refusing — the plan the model wrote is good, it is just longer than
+ * this goal has earned.
+ */
+export function trimToWeeks(p: Protocol, weeks: number): Protocol {
+  if (p.duration_weeks <= weeks) return p;
+  const phases = p.phases
+    .filter(ph => ph.start_week <= weeks)
+    .map(ph => (ph.end_week > weeks ? { ...ph, end_week: weeks } : ph));
+  return {
+    ...p,
+    duration_weeks: weeks,
+    phases,
+    milestones: p.milestones.filter(m => m.week <= weeks),
+  };
+}
+
+/**
+ * Weeks 1..N are history by definition, so don't merely CHECK that the model
+ * preserved them — put the stored ones back. This turns the whole "the model
+ * rewrote the past" failure class into a deterministic pass, and protects
+ * milestones too (nothing in validateProtocol requires an earned milestone to
+ * survive a revision, and because attainment is derived at read time, dropping
+ * one would retroactively un-earn it).
+ */
+export function spliceFrozenPast(stored: Protocol, revised: Protocol, frozenThrough: number): Protocol {
+  // Selected by END week on both sides, which is what makes this safe mid-plan.
+  // Filtering the future by start_week works only when frozenThrough lands on a
+  // phase boundary (always true for graduation, where it is the plan's end).
+  // Mid-plan it lands INSIDE a phase, and that phase would then match neither
+  // filter — it would vanish, leaving a tiling gap validateProtocol rejects.
+  // A phase that extends past the frozen line is reshapeable, so it comes from
+  // the revision; everything ending before it is history and comes from store.
+  const past = stored.phases.filter(p => p.end_week <= frozenThrough);
+  const future = revised.phases
+    .filter(p => p.end_week > frozenThrough)
+    .sort((a, b) => a.start_week - b.start_week);
+  const pastMilestones = stored.milestones.filter(m => m.week <= frozenThrough);
+  const futureMilestones = revised.milestones.filter(m => m.week > frozenThrough);
+  return {
+    ...revised,
+    phases: [...past, ...future],
+    milestones: [...pastMilestones, ...futureMilestones],
+  };
+}
+
 /** How many commitments an own-plan text carries: non-empty lines longer
  *  than two characters. ONE counter, shared by the interview band
  *  (interviewBand.ts) and ownPlanErrors below, so the two never disagree

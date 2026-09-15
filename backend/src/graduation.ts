@@ -15,7 +15,7 @@ import {
   MAX_ACTIVE_GOALS, activeGoalCount, appendProtocolStatements, completeGoal, getGoalById,
   protocolExists, stepStatements, type GoalRecord,
 } from './goals';
-import { reconcileFrequency, validateProtocol, type Protocol } from './protocolSchema';
+import { maintenanceCap, reconcileFrequency, spliceFrozenPast, trimToWeeks, validateProtocol, type Protocol } from './protocolSchema';
 import { restoreRetired, withoutRetired } from './dropPlan';
 import type { Env } from './ai';
 
@@ -39,35 +39,6 @@ export type GraduateResult =
 /** Days between two local dates (server-side twin of the client's helper). */
 function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
-}
-
-/**
- * Weeks 1..N are history by definition, so don't merely CHECK that the model
- * preserved them — put the stored ones back. This turns the whole "the model
- * rewrote the past" failure class into a deterministic pass, and protects
- * milestones too (nothing in validateProtocol requires an earned milestone to
- * survive a revision, and because attainment is derived at read time, dropping
- * one would retroactively un-earn it).
- */
-export function spliceFrozenPast(stored: Protocol, revised: Protocol, frozenThrough: number): Protocol {
-  // Selected by END week on both sides, which is what makes this safe mid-plan.
-  // Filtering the future by start_week works only when frozenThrough lands on a
-  // phase boundary (always true for graduation, where it is the plan's end).
-  // Mid-plan it lands INSIDE a phase, and that phase would then match neither
-  // filter — it would vanish, leaving a tiling gap validateProtocol rejects.
-  // A phase that extends past the frozen line is reshapeable, so it comes from
-  // the revision; everything ending before it is history and comes from store.
-  const past = stored.phases.filter(p => p.end_week <= frozenThrough);
-  const future = revised.phases
-    .filter(p => p.end_week > frozenThrough)
-    .sort((a, b) => a.start_week - b.start_week);
-  const pastMilestones = stored.milestones.filter(m => m.week <= frozenThrough);
-  const futureMilestones = revised.milestones.filter(m => m.week > frozenThrough);
-  return {
-    ...revised,
-    phases: [...past, ...future],
-    milestones: [...pastMilestones, ...futureMilestones],
-  };
 }
 
 export async function graduate(
@@ -167,9 +138,13 @@ export async function graduate(
   if (!result.protocol) {
     return { ok: false, error: 'graduation_failed', status: 502, details: result.errors };
   }
-  const maintenance = result.protocol;
-  if (maintenance.duration_weeks > current.duration_weeks * 2) {
-    return { ok: false, error: 'graduation_failed', status: 502, details: ['maintenance plan is longer than the original run'] };
+  // Trimmed, not refused: the model is asked for 4-12 weeks, which is longer
+  // than twice a short run, and rejecting it left short plans unable to
+  // graduate at all.
+  const maintenance = trimToWeeks(result.protocol, maintenanceCap(current.duration_weeks));
+  const capErrors = validateProtocol(maintenance);
+  if (capErrors.length > 0) {
+    return { ok: false, error: 'graduation_failed', status: 502, details: capErrors };
   }
 
   // One transaction: the old goal ends and the new one begins together, or

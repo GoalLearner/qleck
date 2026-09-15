@@ -799,6 +799,19 @@ stuck in the queue on the phone — and two defects put them there.
   Production job smoke after the deploy: draft 30.1s after the verdict,
   accept 345ms.
 
+### Unreleased · 15 Sep — the choice comes first
+
+- **"Where are you starting?"** The testers' note asked for a real choice
+  between Qoach building the plan and bringing your own for Qoach's opinion.
+  Both paths already worked, but the second hid behind a 14pt link under the
+  button. A new goal now opens on Ask Intake turn 1c: **I have a goal** ("Tell
+  Qoach what and by when. It builds the plan.") and **I already have a plan**
+  ("Paste or type it. Qoach keeps you honest to it."), with "Your goal is sent
+  to our AI coach to build your plan." at the foot. Each card opens the intake
+  it names; a ‹ in the header returns to the cards without losing what was
+  typed. The link is gone. Regenerating an old goal skips straight to the
+  goal intake. The design's "OR STEAL ONE" list stays out (dropped 13 Sep).
+
 ## Not shipped
 
 ### Not started, deliberately

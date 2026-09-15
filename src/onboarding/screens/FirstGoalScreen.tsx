@@ -36,6 +36,29 @@ const QUESTION_FLOOR = 3;
 
 /* ── shared bits ────────────────────────────────────────────────────────── */
 
+/** Ask Intake turn 1c: one of the two doors on "Where are you starting?".
+ *  The goal door is the lit one — it is the path most people take. */
+function StartCard({ title, body, lit, onPress }: { title: string; body: string; lit?: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${body}`}
+      style={({ pressed }) => ({
+        paddingVertical: 22, paddingHorizontal: 20, borderRadius: 20, gap: 6,
+        backgroundColor: lit ? night.surface : 'transparent',
+        borderWidth: 1.5,
+        borderColor: pressed
+          ? (lit ? night.accent : night.borderDashed)
+          : (lit ? night.accentBorder : night.borderMuted),
+      })}
+    >
+      <Text style={{ fontFamily: nightFonts.display, fontSize: 20, lineHeight: 25, color: night.text }}>{title}</Text>
+      <Text style={{ fontFamily: nightFonts.body, fontSize: 14, lineHeight: 20.3, color: night.textMuted }}>{body}</Text>
+    </Pressable>
+  );
+}
+
 function QoachMark({ size = 30, fontSize = 17 }: { size?: number; fontSize?: number }) {
   return (
     <LinearGradient
@@ -2616,10 +2639,13 @@ export default function FirstGoalScreen({
   const [answer, setAnswer] = useState('');
   const [boxFocused, setBoxFocused] = useState(false);
   const [shakeCount, setShakeCount] = useState(0);
-  // Ask Intake, turn 3a (13 Sep): two doors on one screen. 'plan' is turn 2's
-  // plan mode — the user brings their own plan and Qoach reviews it instead
-  // of authoring one. The goal sentence stays: a plan is priced FOR something.
-  const [mode, setMode] = useState<'goal' | 'plan'>('goal');
+  // Where the intake starts (15 Sep, the testers' "choose: make your own
+  // program or get Qoach's opinion"): Ask Intake turn 1c puts the choice
+  // first, as two cards, instead of a small link under the button. 'goal' is
+  // turn 3a; 'plan' is turn 2's plan mode — the user brings their own plan and
+  // Qoach reviews it instead of authoring one (the goal sentence stays: a plan
+  // is priced FOR something). A prefilled goal (Regenerate) skips the cards.
+  const [mode, setMode] = useState<'cards' | 'goal' | 'plan'>(initialGoal ? 'goal' : 'cards');
   const [planDraft, setPlanDraft] = useState('');
   const [planFocused, setPlanFocused] = useState(false);
   // "By when?" — a span pill, an exact day off the wheel, or Qoach decides
@@ -2632,6 +2658,47 @@ export default function FirstGoalScreen({
   const lockIn = () => {
     if (coach.acceptedPlan) onLocked(coach.acceptedPlan);
   };
+
+  /* intake, first: where are you starting? (Ask Intake turn 1c) */
+  if (coach.phase === 'intake' && mode === 'cards') {
+    return (
+      <Screen horizontal={26}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+          <QoachMark size={28} fontSize={16} />
+          <Text style={{ flex: 1, fontFamily: nightFonts.display, fontSize: 18, color: night.text }}>Qoach</Text>
+          <Pressable onPress={onDismiss} hitSlop={10}>
+            <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 14, color: night.textSoft }}>{dismissLabel}</Text>
+          </Pressable>
+        </View>
+
+        <Text style={{ marginTop: 34, marginBottom: 8, fontFamily: nightFonts.display, fontSize: 34, lineHeight: 37, color: night.text }}>
+          Where are you starting?
+        </Text>
+        <Text style={{ marginBottom: 28, fontFamily: nightFonts.body, fontSize: 15, lineHeight: 22.5, color: night.textMuted }}>
+          Either way, Qoach prices it straight.
+        </Text>
+
+        <View style={{ gap: 12 }}>
+          <StartCard
+            lit
+            title="I have a goal"
+            body="Tell Qoach what and by when. It builds the plan."
+            onPress={() => setMode('goal')}
+          />
+          <StartCard
+            title="I already have a plan"
+            body="Paste or type it. Qoach keeps you honest to it."
+            onPress={() => setMode('plan')}
+          />
+        </View>
+
+        <View style={{ flex: 1, minHeight: 24 }} />
+        <Text style={{ fontFamily: nightFonts.body, fontSize: 12, lineHeight: 19, color: night.textGhost, textAlign: 'center' }}>
+          Your goal is sent to our AI coach to build your plan.
+        </Text>
+      </Screen>
+    );
+  }
 
   /* intake — Ask Intake, turn 3a: the date lives on the screen */
   if (coach.phase === 'intake') {
@@ -2652,6 +2719,17 @@ export default function FirstGoalScreen({
       <View style={{ flex: 1 }}>
         <Screen horizontal={26}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            {/* Back to "Where are you starting?" — the choice made one tap
+                ago can be changed without losing what's been typed. */}
+            <Pressable
+              onPress={() => { Keyboard.dismiss(); setMode('cards'); }}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Back to where are you starting"
+              style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: night.border, alignItems: 'center', justifyContent: 'center', marginRight: 2 }}
+            >
+              <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 18, lineHeight: 20, color: night.textSoft }}>‹</Text>
+            </Pressable>
             <QoachMark size={28} fontSize={16} />
             <Text style={{ flex: 1, fontFamily: nightFonts.display, fontSize: 18, color: night.text }}>Qoach</Text>
             {/* Not in the design, still needed: onboarding's "Skip for now"
@@ -2733,11 +2811,6 @@ export default function FirstGoalScreen({
             })}
           >
             <Text style={{ fontFamily: nightFonts.display, fontSize: 16, color: ready ? night.accentInk : night.textGhost }}>Ask Qoach</Text>
-          </Pressable>
-          <Pressable onPress={() => setMode(planMode ? 'goal' : 'plan')} hitSlop={6} style={{ marginTop: 14, alignSelf: 'center', padding: 6 }}>
-            <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 14, color: night.textSoft }}>
-              {planMode ? '← Start from a goal instead' : 'I already have a plan →'}
-            </Text>
           </Pressable>
         </Screen>
 

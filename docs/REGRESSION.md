@@ -39,10 +39,14 @@ a full typecheck. Backend changes additionally need `cd backend` +
 
 ## 2. Goal intake and the verdict
 
-- [ ] (intake, 13 Sep) The intake shows the goal box, **BY WHEN?** pills
+- [ ] (15 Sep) A new goal opens on **Where are you starting?** with two cards,
+      **I have a goal** (lit) and **I already have a plan**, and the line "Your
+      goal is sent to our AI coach to build your plan." Cancel or Skip for now
+      sits top right. Regenerate on an old goal skips the cards.
+- [ ] (intake, 13 Sep) **I have a goal** shows the goal box, **BY WHEN?** pills
       (2 weeks · 1 month · 3 months · 6 months · Pick a date · Qoach
-      decides), a full-width **Ask Qoach** and "I already have a plan →". No
-      suggestion chips. Cancel or Skip for now sits top right.
+      decides) and a full-width **Ask Qoach**. No suggestion chips. The ‹ at
+      top left returns to the cards and keeps what was typed.
 - [ ] Ask Qoach stays dim until the goal has 3+ characters; a tap while dim
       shakes the box and sends nothing.
 - [ ] A span pill prints its date inside itself ("1 month · Oct 13"); Pick a
@@ -78,10 +82,10 @@ a full typecheck. Backend changes additionally need `cd backend` +
 
 ## 3. Own-plan review (Tier-2)
 
-- [ ] "I already have a plan →" swaps the screen to **Bring the plan you've
-      got.** with a short goal box and the plan box; "← Start from a goal
-      instead" swaps back and keeps both drafts. Ask Qoach needs the goal
-      AND the plan; the picked date carries over.
+- [ ] **I already have a plan** opens **Bring the plan you've got.** with a
+      short goal box and the plan box; ‹ returns to the cards and choosing
+      again keeps both drafts. Ask Qoach needs the goal AND the plan; the
+      picked date carries over.
 - [ ] The review asks **1–2 questions** for a plan of four or more lines and
       **2–4** for a thinner one, and the verdict header reads **YOUR PLAN,
       PRICED**.

@@ -17,6 +17,7 @@ import {
   stepStatements, type GoalRecord,
 } from './goals';
 import { spliceFrozenPast } from './graduation';
+import { restoreRetired, withoutRetired } from './dropPlan';
 import { reconcileFrequency, validateProtocol, type Protocol } from './protocolSchema';
 import type { Env } from './ai';
 
@@ -81,10 +82,13 @@ export async function proposeRevision(
     return { ok: false, error: 'already_adjusted_today', status: 429 };
   }
 
+  // Qoach is shown the plan the user is actually living: reps they took out
+  // with "Not for me" are not its business, and asking it to coach one would
+  // put it back by the back door.
   const result = await reviseProtocol(
     env,
     { sessionId: `revise:${goalId}`, deviceId: meta.deviceId, ip: meta.ip, synthetic: meta.synthetic },
-    current,
+    withoutRetired(current),
     feedback,
     currentWeek,
   );
@@ -94,7 +98,9 @@ export async function proposeRevision(
 
   // Weeks before the one being lived are frozen; put the stored versions back
   // rather than trusting the model to have preserved them.
-  const merged = spliceFrozenPast(current, result.protocol, currentWeek - 1);
+  // …and put them back, so the weeks already lived still expect what they
+  // expected and the days banked against them stay receipts.
+  const merged = restoreRetired(spliceFrozenPast(current, result.protocol, currentWeek - 1), current);
   reconcileFrequency(merged);
   const errors = validateProtocol(merged);
   if (errors.length > 0) return { ok: false, error: 'revision_failed', status: 502, details: errors };
@@ -141,7 +147,7 @@ export async function applyRevision(
     return { ok: false, error: 'protocol_required', status: 400 };
   }
 
-  const merged = spliceFrozenPast(current, proposed as Protocol, currentWeek - 1);
+  const merged = restoreRetired(spliceFrozenPast(current, proposed as Protocol, currentWeek - 1), current);
   reconcileFrequency(merged);
   const errors = validateProtocol(merged);
   if (errors.length > 0) return { ok: false, error: 'invalid_protocol', status: 400, details: errors };

@@ -113,6 +113,127 @@ export function untickPlan<P extends DroppableProtocol>(
   return { plan: { ...full, phases: kept } as P, ids: hit, folded };
 }
 
+/* ── after the plan is locked: "Not for me" ───────────────────────────── */
+
+/** Is this rep on in `week`? A retired rep is a receipt for the weeks it was
+ *  lived and nothing after that. */
+export function stepActiveInWeek(step: { retired_from_week?: number }, week: number): boolean {
+  return !(typeof step.retired_from_week === 'number' && week >= step.retired_from_week);
+}
+
+/**
+ * Take reps out of a LIVE plan, from `week` on.
+ *
+ * The rules exist to keep the past true:
+ *  - phases that already ended are returned byte-identical;
+ *  - in the phase being lived the rep STAYS, marked `retired_from_week`, so
+ *    the weeks already banked still expected it and their receipts still
+ *    point at something;
+ *  - in phases that have not started the rep is simply gone, and a phase left
+ *    empty folds into its neighbour (the plan keeps its length).
+ *
+ * The only refusal is a plan with nothing left to do from here to the end —
+ * "nothing is on until week 5" is allowed and says so on screen.
+ */
+export function retireSteps<P extends DroppableProtocol>(
+  current: P,
+  ids: Iterable<string>,
+  week: number,
+): { plan: P; retired: string[]; removed: string[]; folded: FoldedPhase[] } | { error: 'nothing_retired' | 'nothing_left' } {
+  const wanted = new Set(ids);
+  if (!wanted.size) return { error: 'nothing_retired' };
+  const retired: string[] = [];
+  const removed: string[] = [];
+  const phases: DroppablePhase[] = current.phases.map(ph => {
+    if (ph.end_week < week) return ph;                       // the past, untouched
+    if (ph.start_week <= week) {                             // the phase being lived
+      const steps = ph.steps.map(st => {
+        const s = st as DroppableStep & { retired_from_week?: number };
+        if (!wanted.has(s.id) || typeof s.retired_from_week === 'number') return st;
+        retired.push(s.id);
+        return { ...s, retired_from_week: week };
+      });
+      return { ...ph, steps };
+    }
+    const steps = ph.steps.filter(st => {                    // still to come
+      if (!wanted.has(st.id)) return true;
+      removed.push(st.id);
+      return false;
+    });
+    return { ...ph, steps };
+  });
+  if (!retired.length && !removed.length) return { error: 'nothing_retired' };
+
+  // Something has to be left to do between here and the end.
+  const live = phases.some(ph =>
+    ph.end_week >= week && ph.steps.some(st => stepActiveInWeek(st as { retired_from_week?: number }, Math.max(week, ph.start_week))));
+  if (!live) return { error: 'nothing_left' };
+
+  const folded: FoldedPhase[] = [];
+  const kept: DroppablePhase[] = [];
+  for (const ph of phases) {
+    if (ph.steps.length === 0) {
+      folded.push({ title: ph.title, start_week: ph.start_week, end_week: ph.end_week, into: kept.length ? 'before' : 'after' });
+      if (kept.length) {
+        const prev = kept[kept.length - 1];
+        kept[kept.length - 1] = { ...prev, end_week: Math.max(prev.end_week, ph.end_week) };
+      } else if (phases.length > 1) {
+        // A leading phase can only be empty if it is in the future, which
+        // cannot happen (the past and the present keep their reps) — but if
+        // it ever does, its weeks go to the phase after it.
+        const next = phases[phases.indexOf(ph) + 1];
+        if (next) next.start_week = Math.min(next.start_week, ph.start_week);
+      }
+      continue;
+    }
+    kept.push(ph);
+  }
+  return { plan: { ...current, phases: kept } as P, retired, removed, folded };
+}
+
+/**
+ * Put retired reps back into a plan a model just rewrote.
+ *
+ * Qoach never sees them (it would try to coach a rep the user took out), so
+ * a revision, an extension or a maintenance plan comes back without them —
+ * and the weeks already lived would quietly stop expecting what they
+ * expected. Each one goes back into the phase it was retired in when that
+ * phase survived, and otherwise into whichever phase now covers its last
+ * active week.
+ */
+export function restoreRetired<P extends DroppableProtocol>(next: P, current: P): P {
+  const carry: { phaseId: string; step: DroppableStep & { retired_from_week?: number } }[] = [];
+  for (const ph of current.phases) {
+    for (const st of ph.steps as (DroppableStep & { retired_from_week?: number })[]) {
+      if (typeof st.retired_from_week === 'number') carry.push({ phaseId: ph.id, step: st });
+    }
+  }
+  if (!carry.length) return next;
+  const have = new Set(next.phases.flatMap(ph => ph.steps.map(st => st.id)));
+  const phases = next.phases.map(ph => ({ ...ph, steps: [...ph.steps] }));
+  for (const { phaseId, step } of carry) {
+    if (have.has(step.id)) continue;
+    const at = phases.find(ph => ph.id === phaseId)
+      ?? phases.find(ph => ph.start_week <= (step.retired_from_week as number) - 1 && ph.end_week >= (step.retired_from_week as number) - 1);
+    if (!at) continue;
+    at.steps.push(step);
+    have.add(step.id);
+  }
+  return { ...next, phases } as P;
+}
+
+/** The plan as Qoach should see it: retired reps are not its business. A
+ *  phase they leave empty folds, so the weeks the model is shown still tile
+ *  the plan end to end. */
+export function withoutRetired<P extends DroppableProtocol>(p: P): P {
+  const gone = p.phases.flatMap(ph => ph.steps
+    .filter(st => typeof (st as { retired_from_week?: number }).retired_from_week === 'number')
+    .map(st => st.id));
+  if (!gone.length) return p;
+  const out = untickPlan(p, gone);
+  return 'error' in out ? p : out.plan;
+}
+
 const COUNTS = ['no', 'one', 'two', 'three', 'four', 'five'];
 
 /** "protein" out of "physique goal: phase 1 is missing the protein (…) pillar" */

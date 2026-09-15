@@ -896,7 +896,25 @@ stuck in the queue on the phone — and two defects put them there.
   rebuild renumbers every rep, so the choices are carried over by title. It
   also used to leave the rebuilt plan marked unpriced, so a plan Qoach had
   just priced showed no number and locked without one.
-- `check:ticks` (18 bars) and `check:drop` (44 bars, including 3,600 random tick sets over the twelve
+- **"Not for me", after the plan is locked** (server half). The same choice on
+  the other side of the lock, with stricter rules because the plan has a past
+  now. The rep comes out **from this week on**: it stays in the phase being
+  lived, marked, so the weeks already banked still expected it and the days
+  banked against it stay receipts; in phases that have not started it is
+  simply gone, and a phase left empty folds into its neighbour. The only
+  refusal is having nothing left to do between now and the end — "nothing is
+  on until week 5" is allowed. The plan is re-priced against the goal's own
+  odds (so it can only cost), and when Qoach cannot be reached the rep still
+  comes out with the goal's odds **cleared** rather than left describing a
+  plan that no longer exists.
+- **Taking a rep out is not an adjustment.** It appends a plan version like
+  Adjust does, but of kind `drop`, so it no longer spends the one adjustment a
+  goal gets per day.
+- **Qoach never sees a retired rep** — it would coach it back in. Adjust,
+  extend and maintain are shown the plan without them, and the markers are
+  restored afterwards, so a revision cannot quietly resurrect a rep the user
+  took out or rewrite what a lived week expected.
+- `check:ticks` (18 bars) and `check:drop` (60 bars, including 3,600 random tick sets over the twelve
   plans of the last harness run: none of them can produce a plan the
   validators reject) and a live `smoke:drop` (13 bars).
 - Regression, full harness against the local worker: 12/12 protocols valid,

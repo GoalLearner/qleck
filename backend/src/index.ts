@@ -45,6 +45,7 @@ import { shareGoal, unshareGoal, witnessPage, witnessView } from './witness';
 import { exportAccount, purgeAccount } from './account';
 import { betaReadout } from './metrics';
 import { applyRevision, proposeRevision, type ReviseBody } from './revision';
+import { dropSteps, type DropStepBody } from './dropStep';
 import { reconcileFrequency, type Protocol } from './protocolSchema';
 
 const MAX_GOAL_CHARS = 600;
@@ -524,6 +525,37 @@ export default {
         );
         if (!result.ok) return json({ error: result.error, details: result.details }, result.status, cors);
         return json({ protocol: 'protocol' in result ? result.protocol : null, currentWeek: 'currentWeek' in result ? result.currentWeek : null }, 200, cors);
+      }
+
+      /* POST /goals/:id/steps/drop — "Not for me" on a live plan. The rep
+       * comes out from this week on; the weeks already lived keep expecting
+       * it, so their receipts still mean something. Priced against the
+       * goal's own odds (never up), and `price: false` takes it out with the
+       * odds cleared when Qoach can't be reached. Appends a protocol version
+       * of kind 'drop', which does not spend the day's one adjustment. */
+      const dropMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/steps\/drop$/);
+      if (dropMatch && request.method === 'POST') {
+        const dropBody = (await request.json().catch(() => ({}))) as DropStepBody;
+        const dropIp = request.headers.get('CF-Connecting-IP') ?? 'local';
+        const dropHarness = !!env.HARNESS_SECRET && request.headers.get('X-Qleck-Harness') === env.HARNESS_SECRET;
+        // The gate is only for the PRICE. Taking a rep out is the user's
+        // call and must not be blocked by a quota or a kill-switch — the app
+        // asks again without a price, and the goal's odds are cleared.
+        const wantsPrice = dropBody.price !== false;
+        if (wantsPrice) {
+          if (env.AI_ENABLED !== 'true') return json({ error: 'ai_disabled' }, 503, cors);
+          if (!providerReady(env)) return json({ error: 'ai_unconfigured', provider: provider(env) }, 503, cors);
+          if (!dropHarness) {
+            const quotaError = await checkQuota(env, userId, dropIp);
+            if (quotaError) return json({ error: quotaError, message: 'Daily coach limit reached — back tomorrow.' }, 429, cors);
+          }
+        }
+        const result = await dropSteps(env, userId, dropMatch[1], dropBody, { ip: dropIp, synthetic: dropHarness });
+        if (!result.ok) return json({ error: result.error, details: result.details }, result.status, cors);
+        return json({
+          goal: result.goal, odds: result.odds, cost: result.cost,
+          retired: result.retired, removed: result.removed, replayed: result.replayed ?? false,
+        }, 200, cors);
       }
 
       // No AI, so no gate: accepting a revision the user has already seen must

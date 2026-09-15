@@ -16,6 +16,7 @@ import {
   protocolExists, stepStatements, type GoalRecord,
 } from './goals';
 import { reconcileFrequency, validateProtocol, type Protocol } from './protocolSchema';
+import { restoreRetired, withoutRetired } from './dropPlan';
 import type { Env } from './ai';
 
 export interface GraduateBody {
@@ -116,7 +117,7 @@ export async function graduate(
     const result = await reviseProtocol(
       env,
       { sessionId: `graduate:${goalId}`, deviceId: meta.deviceId, ip: meta.ip, synthetic: meta.synthetic },
-      current,
+      withoutRetired(current),
       `The ${current.duration_weeks}-week plan is finished and I want to keep going — extend it by about ${hint} more weeks. `
       + `Weeks 1-${current.duration_weeks} are done and must stay exactly as they are; build new phases on top that carry the progress forward rather than repeating the last one.`,
       frozenThrough + 1,
@@ -125,7 +126,7 @@ export async function graduate(
       return { ok: false, error: 'graduation_failed', status: 502, details: result.errors };
     }
 
-    const merged = spliceFrozenPast(current, result.protocol, frozenThrough);
+    const merged = restoreRetired(spliceFrozenPast(current, result.protocol, frozenThrough), current);
     reconcileFrequency(merged);
     const errors = validateProtocol(merged);
     if (errors.length > 0) return { ok: false, error: 'graduation_failed', status: 502, details: errors };
@@ -155,10 +156,12 @@ export async function graduate(
     return { ok: false, error: 'too_many_goals', status: 409 };
   }
 
+  // A maintenance plan is a NEW goal built on what the last one taught, so
+  // retired reps are simply not part of the story it is written from.
   const result = await maintenanceProtocol(
     env,
     { sessionId: `graduate:${goalId}`, deviceId: meta.deviceId, ip: meta.ip, synthetic: meta.synthetic },
-    current,
+    withoutRetired(current),
     run,
   );
   if (!result.protocol) {

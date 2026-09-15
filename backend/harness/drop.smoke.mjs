@@ -112,5 +112,40 @@ const legacy = await api(`/coach/sessions/${id}/protocol/reprice`, { dropped_ste
 bar('the old commitment picker still answers', legacy.status === 200 && (typeof legacy.body.odds === 'number' || Array.isArray(legacy.body.refused)),
   `${legacy.status} ${JSON.stringify(legacy.body).slice(0, 80)}`);
 
+/* ── "Not for me", on a plan that is already running ──────────────────── */
+{
+  const reg = await api('/device/register', {});
+  const token = reg.body?.token;
+  const auth = async (path, body, method = 'POST') => {
+    const res = await fetch(BASE + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  };
+  const goalId = crypto.randomUUID();
+  const made = await auth('/goals', {
+    id: goalId, goalText: 'muscle', statement: full.goal_statement, durationWeeks: full.duration_weeks,
+    successProbability: 80, startedOn: new Date().toLocaleDateString('en-CA'), timezone: 'Europe/Oslo', protocol: full,
+  });
+  bar('the plan locks as a live goal', made.status >= 200 && made.status < 300 && !!made.body.goal, `${made.status} ${JSON.stringify(made.body).slice(0, 120)}`);
+
+  // Week 2 of a real multi-phase plan: the rep is retired here and gone from
+  // the phases that have not started.
+  const pillarStep = full.phases[0].steps.find(s => /protein|sleep|bed/i.test(`${s.title} ${s.details}`)) ?? full.phases[0].steps[0];
+  const priced = await auth(`/goals/${goalId}/steps/drop`, {
+    stepIds: [pillarStep.id], currentWeek: 2, protocolId: crypto.randomUUID(), baseVersion: 1,
+  });
+  bar('"Not for me" prices the plan without it', priced.status === 200 && typeof priced.body.odds === 'number',
+    `${priced.status} ${JSON.stringify(priced.body).slice(0, 140)}`);
+  bar('…and the number can only go down', (priced.body.odds ?? 0) <= 80, `${priced.body.odds} vs 80`);
+  const lived = priced.body.goal?.protocol?.phases?.[0]?.steps?.find(s => s.id === pillarStep.id);
+  bar('…while the rep stays in the phase being lived, marked from week 2', lived?.retired_from_week === 2, JSON.stringify(lived?.retired_from_week));
+  bar('…and the cost is stated when it costs a pillar', priced.body.cost === null || typeof priced.body.cost === 'string', String(priced.body.cost));
+  console.log(`  · odds 80 → ${priced.body.odds}${priced.body.cost ? ` · ${priced.body.cost}` : ''}`);
+  await auth(`/goals/${goalId}`, undefined, 'DELETE');
+}
+
 console.log(`\n${failures.length ? `DROP SMOKE FAILED · ${failures.length} of ${pass + failures.length}` : `DROP SMOKE CLEAR · ${pass} bars`}\n`);
 process.exit(failures.length ? 1 : 0);

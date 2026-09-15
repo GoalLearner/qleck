@@ -63,6 +63,17 @@ export interface ProtocolStep {
    *  plan states; 'qoach' = added because a non-negotiable demanded it (its
    *  details open with the reason). Absent on coached builds. */
   source?: 'user' | 'qoach';
+  /**
+   * "Not for me" (15 Sep): the user took this rep out from this week on. The
+   * step STAYS in the phase it was retired in — removing it would rewrite
+   * what the weeks already lived expected, and the days already banked would
+   * stop being receipts for anything. It is simply not active from this week
+   * onwards; later phases lose it outright.
+   *
+   * NOT in PROTOCOL_TOOL_SCHEMA and never shown to a model: retired reps are
+   * stripped out of any plan Qoach is asked to revise, and put back after.
+   */
+  retired_from_week?: number;
 }
 
 /** 2b: the weekly skeleton. Steps attach to sessions; a conditional rep

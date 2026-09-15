@@ -422,14 +422,17 @@ async function setStatus(
  * no-op rather than a second version. */
 export function appendProtocolStatements(
   env: Env, userId: string, goalId: string, protocolId: string, protocol: Protocol,
+  /** 'revision' = Adjust (capped once a day); 'drop' = the user took a rep
+   *  out ("Not for me"), which is not an adjustment and is not capped. */
+  kind: 'revision' | 'drop' = 'revision',
 ) {
   return [
     env.DB
       .prepare(
-        `INSERT OR IGNORE INTO protocols (id, goal_id, version, schema_version, json)
-         SELECT ?, ?, COALESCE(MAX(version), 0) + 1, ?, ? FROM protocols WHERE goal_id = ?`,
+        `INSERT OR IGNORE INTO protocols (id, goal_id, version, schema_version, json, kind)
+         SELECT ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ? FROM protocols WHERE goal_id = ?`,
       )
-      .bind(protocolId, goalId, protocol.schema_version, JSON.stringify(protocol), goalId),
+      .bind(protocolId, goalId, protocol.schema_version, JSON.stringify(protocol), kind, goalId),
     env.DB
       .prepare(
         `UPDATE goals SET duration_weeks = ?, statement = ?, updated_at = datetime('now')
@@ -457,8 +460,10 @@ export async function protocolExists(env: Env, protocolId: string): Promise<bool
 export async function protocolsWrittenToday(env: Env, goalId: string): Promise<number> {
   const row = await env.DB
     .prepare(
+      // kind = 'revision' only: taking a rep out ("Not for me") appends a
+      // version too, and it must not spend the day's one adjustment.
       `SELECT COUNT(*) AS n FROM protocols
-       WHERE goal_id = ? AND version > 1 AND created_at >= datetime('now', 'start of day')`,
+       WHERE goal_id = ? AND version > 1 AND kind = 'revision' AND created_at >= datetime('now', 'start of day')`,
     )
     .bind(goalId)
     .first<{ n: number }>();

@@ -11,7 +11,7 @@
 // harness run produced, no random set of unticked reps can produce a plan the
 // validators reject.
 import { readFileSync } from 'node:fs';
-import { untickPlan, costLine, dropOddsBounds } from '../src/dropPlan.ts';
+import { untickPlan, costLine, dropOddsBounds, retireSteps, restoreRetired, stepActiveInWeek, withoutRetired } from '../src/dropPlan.ts';
 import { validateProtocol, sessionErrors } from '../src/protocolSchema.ts';
 
 let pass = 0;
@@ -180,6 +180,60 @@ console.log('\nticking reps off a plan\n');
     ok('…never lose or overlap a week, and never change the duration', !lostWeeks, lostWeeks ?? '');
     ok(`…and refuse only when every rep is off (${emptyRefusals} empty sets)`, !wrongRefusal, wrongRefusal ?? '');
   }
+}
+
+/* ── "Not for me", after the plan is running ──────────────────────────── */
+{
+  const live = () => plan(
+    [step('a'), step('b')],          // weeks 1-4
+    [step('c'), step('d')],          // weeks 5-8  (being lived in week 6)
+    [step('e'), step('f')],          // weeks 9-12
+  );
+  const p = live();
+  const frozen = JSON.stringify(p);
+  const out = retireSteps(p, ['c'], 6);
+  ok('retireSteps never touches the plan it was given', JSON.stringify(p) === frozen);
+  ok('the past is returned byte-identical', JSON.stringify(out.plan.phases[0]) === JSON.stringify(p.phases[0]));
+  ok('in the phase being lived the rep STAYS, marked from this week',
+    out.plan.phases[1].steps.map(s => s.id).join() === 'c,d'
+    && out.plan.phases[1].steps[0].retired_from_week === 6
+    && out.retired.join() === 'c');
+  ok('a retired rep is off from that week and on before it',
+    !stepActiveInWeek(out.plan.phases[1].steps[0], 6) && !stepActiveInWeek(out.plan.phases[1].steps[0], 7)
+    && stepActiveInWeek(out.plan.phases[1].steps[0], 5) && stepActiveInWeek(out.plan.phases[1].steps[1], 9));
+
+  const later = retireSteps(live(), ['c', 'e'], 6);
+  ok('in phases that have not started it is simply gone',
+    later.plan.phases[2].steps.map(s => s.id).join() === 'f' && later.removed.join() === 'e');
+  const folds = retireSteps(live(), ['e', 'f'], 6);
+  ok('a future phase left empty folds into the one before it, and the plan keeps its length',
+    folds.plan.phases.length === 2 && folds.plan.phases[1].end_week === 12
+    && folds.plan.duration_weeks === 12 && folds.folded.length === 1);
+
+  ok('taking out everything that is left is refused', retireSteps(live(), ['c', 'd', 'e', 'f'], 6).error === 'nothing_left');
+  ok('…but emptying the CURRENT phase is allowed while something is on later',
+    retireSteps(live(), ['c', 'd'], 6).retired.join() === 'c,d');
+  ok('a rep that is not in the plan from here on is nothing to retire',
+    retireSteps(live(), ['a'], 6).error === 'nothing_retired' && retireSteps(live(), [], 6).error === 'nothing_retired');
+  ok('retiring the same rep twice changes nothing',
+    retireSteps(retireSteps(live(), ['c'], 6).plan, ['c'], 7).error === 'nothing_retired');
+
+  /* what Qoach is shown, and what comes back */
+  const retiredPlan = retireSteps(live(), ['c'], 6).plan;
+  const shown = withoutRetired(retiredPlan);
+  ok('a retired rep is never shown to the model', !shown.phases.flatMap(ph => ph.steps).some(s => s.id === 'c'));
+  ok('…and the weeks it is shown still tile the plan end to end',
+    shown.phases.every((ph, i) => (i === 0 ? ph.start_week === 1 : ph.start_week === shown.phases[i - 1].end_week + 1))
+    && shown.phases[shown.phases.length - 1].end_week === 12);
+  const revised = { ...shown, phases: shown.phases.map(ph => ({ ...ph, steps: ph.steps.map(s => ({ ...s, title: `${s.title} (revised)` })) })) };
+  const back = restoreRetired(revised, retiredPlan);
+  const restored = back.phases.flatMap(ph => ph.steps).find(s => s.id === 'c');
+  ok('a revision puts the retired rep back where it was', !!restored && restored.retired_from_week === 6
+    && back.phases[1].steps.some(s => s.id === 'c'));
+  ok('…untouched by the revision (its title is the one the user retired)', restored.title === 'c');
+  ok('a revision that kept the rep is not given a second copy',
+    restoreRetired(retiredPlan, retiredPlan).phases.flatMap(ph => ph.steps).filter(s => s.id === 'c').length === 1);
+  ok('nothing retired, nothing to restore', restoreRetired(live(), live()).phases.length === 3);
 }
 
 /* ── the source: what the server does with all this ───────────────────── */

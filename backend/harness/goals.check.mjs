@@ -204,6 +204,78 @@ const victimStatus = sql(`SELECT status FROM goals WHERE id = '${victimId}'`)[0]
 bar("another user's pause cannot touch your goal",
   theftPause.status === 200 && victimStatus === 'active');
 
+/* ── "Not for me": taking a rep out of a plan that is already running ──── */
+{
+  // Three phases of two weeks each; week 3 is being lived.
+  const threePhase = (title) => ({
+    schema_version: 1, goal_statement: title, short_title: title, duration_weeks: 6,
+    phases: [1, 3, 5].map((w, i) => ({
+      id: `ph${i + 1}`, title: `Phase ${i + 1}`, focus: 'x', start_week: w, end_week: w + 1,
+      steps: [
+        { id: `ph${i + 1}-a`, title: 'Session', kind: 'binary', frequency: { per_week: 3, days: ['mon', 'wed', 'fri'] }, details: 'd' },
+        { id: `ph${i + 1}-b`, title: 'Journal', kind: 'binary', frequency: { per_week: 2, days: ['tue', 'thu'] }, details: 'd' },
+      ],
+    })),
+    milestones: [{ id: 'm1', week: 3, title: 'Halfway', criteria: 'three weeks' }],
+    coach_notes: 'n',
+  });
+  const id = crypto.randomUUID();
+  const made = await api('/goals', {
+    token,
+    body: {
+      id, goalText: 'drop goal', statement: 'Drop goal', durationWeeks: 6, successProbability: 80,
+      startedOn: today(), timezone: 'Europe/Oslo', protocol: threePhase('Drop goal'),
+    },
+  });
+  bar('a live goal to take a rep out of', made.status >= 200 && made.status < 300, `${made.status}`);
+
+  // price:false needs no model call, so this whole section is free.
+  const dropped = await api(`/goals/${id}/steps/drop`, {
+    token, body: { stepIds: ['ph2-b'], currentWeek: 3, protocolId: crypto.randomUUID(), baseVersion: 1, price: false },
+  });
+  bar('"Not for me" takes the rep out from this week on',
+    dropped.status === 200 && dropped.body.retired?.join() === 'ph2-b', `${dropped.status} ${JSON.stringify(dropped.body).slice(0, 140)}`);
+  const after = dropped.body.goal?.protocol;
+  const p2 = after?.phases?.find(ph => ph.id === 'ph2');
+  bar('…the rep stays in the phase being lived, marked from this week',
+    p2?.steps?.length === 2 && p2.steps.find(s => s.id === 'ph2-b')?.retired_from_week === 3,
+    JSON.stringify(p2?.steps?.map(s => [s.id, s.retired_from_week])));
+  bar('…the weeks before it are untouched',
+    JSON.stringify(after?.phases?.find(ph => ph.id === 'ph1')) === JSON.stringify(threePhase('Drop goal').phases[0]));
+  bar('…and without a price the goal carries no odds rather than the old plan’s',
+    dropped.body.odds === null && dropped.body.goal?.successProbability == null,
+    JSON.stringify([dropped.body.odds, dropped.body.goal?.successProbability]));
+  const kinds = sql(`SELECT version, kind FROM protocols WHERE goal_id = '${id}' ORDER BY version`);
+  bar('…and it appends a version of kind "drop" (so it never spends the day’s one adjustment)',
+    kinds.length === 2 && kinds[1].kind === 'drop', JSON.stringify(kinds));
+
+  const replay = await api(`/goals/${id}/steps/drop`, {
+    token, body: { stepIds: ['ph2-b'], currentWeek: 3, protocolId: kinds[1] ? sql(`SELECT id FROM protocols WHERE goal_id = '${id}' AND version = 2`)[0].id : crypto.randomUUID(), baseVersion: 2, price: false },
+  });
+  bar('a retried drop replays instead of appending twice',
+    replay.status === 200 && replay.body.replayed === true
+    && sql(`SELECT COUNT(*) AS n FROM protocols WHERE goal_id = '${id}'`)[0].n === 2, `${replay.status}`);
+
+  const stale = await api(`/goals/${id}/steps/drop`, {
+    token, body: { stepIds: ['ph3-a'], currentWeek: 3, protocolId: crypto.randomUUID(), baseVersion: 1, price: false },
+  });
+  bar('a drop against a plan the phone has not seen yet is refused', stale.status === 409 && stale.body.error === 'stale_plan', `${stale.status} ${stale.body.error}`);
+
+  const gone = await api(`/goals/${id}/steps/drop`, {
+    token, body: { stepIds: ['ph2-a', 'ph3-a', 'ph3-b'], currentWeek: 3, protocolId: crypto.randomUUID(), baseVersion: 2, price: false },
+  });
+  bar('taking out everything that is left is refused', gone.status === 409 && gone.body.error === 'nothing_left', `${gone.status} ${gone.body.error}`);
+
+  const future = await api(`/goals/${id}/steps/drop`, {
+    token, body: { stepIds: ['ph3-b'], currentWeek: 3, protocolId: crypto.randomUUID(), baseVersion: 2, price: false },
+  });
+  const p3 = future.body.goal?.protocol?.phases?.find(ph => ph.id === 'ph3');
+  bar('a rep in a phase that has not started is simply gone',
+    future.status === 200 && p3?.steps?.map(s => s.id).join() === 'ph3-a', `${future.status} ${JSON.stringify(p3?.steps?.map(s => s.id))}`);
+
+  await api(`/goals/${id}`, { method: 'DELETE', token });
+}
+
 const failed = results.filter(r => !r.ok).length;
 console.log(`\n${failed === 0 ? 'GOALS CHECK CLEAR' : `GOALS CHECK FAILED (${failed})`} · ${results.length} bars`);
 process.exit(failed === 0 ? 0 : 1);

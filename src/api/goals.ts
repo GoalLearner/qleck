@@ -127,7 +127,12 @@ export async function flushGoalOutbox(): Promise<void> {
 
 /** Queue an accepted plan for persistence, then try to send it right away.
  *  Resolves once the write is DURABLE locally, not once the server has it. */
-export async function saveGoal(plan: AcceptedPlan, goalText: string, id?: string): Promise<void> {
+export async function saveGoal(
+  plan: AcceptedPlan, goalText: string, id?: string,
+  /** Only the 3-day test goal passes this: started_on is immutable once
+   *  written, so standing near the end of a plan means starting back there. */
+  startedOn?: string,
+): Promise<void> {
   const timezone = (() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null; } catch { return null; }
   })();
@@ -136,7 +141,7 @@ export async function saveGoal(plan: AcceptedPlan, goalText: string, id?: string
     goalText: goalText || plan.statement,
     statement: plan.statement,
     durationWeeks: plan.durationWeeks,
-    startedOn: localDate(),
+    startedOn: startedOn ?? localDate(),
     timezone,
     successProbability: plan.odds ?? null,
     protocol: plan.protocol,

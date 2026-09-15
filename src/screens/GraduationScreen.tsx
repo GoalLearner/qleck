@@ -17,6 +17,7 @@ import { goalTitle } from '../components/protocolViews';
 import { mintGoalId } from '../api/goals';
 import { celebratePlan } from '../lib/celebrate';
 import { planEndDate, planStats, type PlanStats } from '../lib/protocolTime';
+import { localDate } from '../api/device';
 import { graduationErrorCopy, plural } from '../lib/copy';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts, radii } from '../theme';
@@ -91,6 +92,11 @@ export default function GraduationScreen() {
   const insets = useSafeAreaInsets();
   const { goals, checkInsByGoal, completeGoalById, graduate } = useRally();
   const goalId: string = route.params?.goalId;
+  // "Finish this plan now" (the tester tool behind seven taps): the same
+  // screen for a plan that has NOT run out. Everything it says has to be true
+  // of a plan stopped on purpose — no confetti, no "plan complete", and a
+  // score counted only over the days the plan actually asked for.
+  const early: boolean = !!route.params?.early;
   const goal: ActiveGoal | undefined = goals.find(g => g.id === goalId);
 
   const confettiRef = useRef<ConfettiHandle>(null);
@@ -108,11 +114,14 @@ export default function GraduationScreen() {
     return minted;
   };
 
-  // The salute belongs to arriving here, not to any particular choice.
+  // The salute belongs to arriving here, not to any particular choice — but
+  // only when the plan actually finished. Confetti for a plan you stopped in
+  // week two is the app congratulating you for quitting.
   useEffect(() => {
+    if (early) return;
     const t = setTimeout(() => { confettiRef.current?.fire(); celebratePlan(); }, 320);
     return () => clearTimeout(t);
-  }, []);
+  }, [early]);
 
   if (!goal) {
     // The goal left the active list (already graduated in another session).
@@ -128,7 +137,11 @@ export default function GraduationScreen() {
     );
   }
 
-  const stats = planStats(goal.protocol, goal.startedOn, checkInsByGoal[goal.id] ?? [], goal.pauses);
+  const stats = planStats(
+    goal.protocol, goal.startedOn, checkInsByGoal[goal.id] ?? [], goal.pauses,
+    early ? { through: localDate() } : {},
+  );
+  const aheadCount = early ? stats.milestones.filter(m => !m.reached).length : 0;
   const pct = Math.round(stats.adherence * 100);
   const reached = stats.milestones.filter(m => m.reached).length;
   const weeks = goal.protocol.duration_weeks;
@@ -163,14 +176,22 @@ export default function GraduationScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={{ fontFamily: fonts.extrabold, fontSize: 10.5, letterSpacing: 1.5, color: colors.sectionLabel }}>
-          PLAN COMPLETE
+          {early ? 'FINISHING EARLY' : 'PLAN COMPLETE'}
         </Text>
         <Text style={{ fontFamily: fonts.serif, fontSize: 32, lineHeight: 38, color: colors.ink, marginTop: 8 }}>
           {goalTitle(goal.statement, goal.protocol)}
         </Text>
         <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 8 }}>
-          {plural(weeks, 'week')} · {goal.startedOn} to {planEndDate(goal.startedOn, weeks, goal.pauses)}
+          {early
+            ? `${goal.startedOn} to ${localDate()} · stopped before the ${plural(weeks, 'week')} were up`
+            : `${plural(weeks, 'week')} · ${goal.startedOn} to ${planEndDate(goal.startedOn, weeks, goal.pauses)}`}
         </Text>
+        {early && aheadCount > 0 ? (
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 18, color: colors.muted, marginTop: 6 }}>
+            {plural(aheadCount, 'milestone')} {aheadCount === 1 ? 'was' : 'were'} still ahead. The numbers
+            below count only the days this plan asked for.
+          </Text>
+        ) : null}
 
         {/* the run in review */}
         <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, padding: 20, marginTop: 22 }}>
@@ -238,6 +259,7 @@ export default function GraduationScreen() {
             disabled={!!busy && busy !== 'maintain'}
             onPress={() => run('maintain')}
           />
+          {early ? null : (
           <ChoiceCard
             tone="plain"
             title={`Give it another ${plural(weeks, 'week')}`}
@@ -246,6 +268,7 @@ export default function GraduationScreen() {
             disabled={!!busy && busy !== 'extend'}
             onPress={() => run('extend')}
           />
+          )}
           <ChoiceCard
             tone="plain"
             title="Close it out"

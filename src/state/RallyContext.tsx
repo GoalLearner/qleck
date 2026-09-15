@@ -11,6 +11,7 @@ import { getStoredIdentity, localDate, onSessionRevoked, resetIdentity } from '.
 import { fetchMe, logoutServer, saveMe } from '../api/account';
 import { resetDeviceId } from '../api/coach';
 import { planIsOver, planStats, type CheckIn, type PauseSpan } from '../lib/protocolTime';
+import { testGoalPlan } from '../lib/testGoal';
 import { UserProfile } from '../data/types';
 import { AVATAR_GRADS } from '../onboarding/theme';
 import type { OnboardingResult } from '../onboarding/useOnboardingFlow';
@@ -132,6 +133,9 @@ interface RallyState {
    *  `attemptId` is kept across retries so a dropped response cannot become a
    *  second plan. */
   graduate: (goalId: string, mode: 'extend' | 'maintain', weeks?: number, attemptId?: string) => Promise<void>;
+  /** Tester tool: a 1-week plan started four days ago, so it ends in three
+   *  days and the finish flow can be walked today. */
+  startTestGoal: () => Promise<{ ok: boolean; reason?: string }>;
   /** Re-read goals from the server. The adjust flow owns its own two API calls
    *  (propose returns data the caller needs), so it re-syncs through this. */
   refreshGoals: () => Promise<void>;
@@ -257,16 +261,16 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
 
   // Optimistic append with the same client-minted id the server write uses,
   // so check-ins land on the right goal even before the save resolves.
-  const addGoal = useCallback((plan: AcceptedPlan) => {
+  const addGoal = useCallback((plan: AcceptedPlan, startedOn?: string) => {
     const id = mintGoalId();
     setGoals(prev => [...prev, {
-      id, startedOn: localDate(), statement: plan.statement,
+      id, startedOn: startedOn ?? localDate(), statement: plan.statement,
       durationWeeks: plan.durationWeeks, protocol: plan.protocol,
       odds: plan.odds,
     }]);
     // Queued durably, then sent in the background — a failed request retries
     // on the next launch instead of quietly losing the plan.
-    saveGoal(plan, plan.goalText, id).catch(err => console.warn('goal queue failed:', err));
+    saveGoal(plan, plan.goalText, id, startedOn).catch(err => console.warn('goal queue failed:', err));
   }, []);
 
   const applyOnboarding = useCallback((result: OnboardingResult) => {
@@ -287,6 +291,23 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const setGoalPlan = useCallback((plan: AcceptedPlan) => {
     addGoal(plan);
   }, [addGoal]);
+
+  /**
+   * The tester's 3-day plan (hidden behind seven taps on the version line).
+   * It goes through the SAME lock path as a real plan — the only difference
+   * is a start date four days back, because started_on is immutable and
+   * standing near the end of a plan is the whole point.
+   */
+  const startTestGoal = useCallback(async (): Promise<{ ok: boolean; reason?: string }> => {
+    const running = goals.filter(g => g.status !== 'paused').length;
+    if (running >= 5) return { ok: false, reason: 'You already have five goals running.' };
+    const plan = testGoalPlan(localDate());
+    addGoal({
+      goalText: plan.goalText, statement: plan.statement,
+      durationWeeks: plan.durationWeeks, protocol: plan.protocol,
+    }, plan.startedOn);
+    return { ok: true };
+  }, [goals, addGoal]);
 
   const checkInStep = useCallback((goalId: string, stepId: string, value: number | null = null) => {
     const today = localDate();
@@ -483,12 +504,12 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<RallyState>(() => ({
     profile, currentUserId, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
-    checkInsByGoal, checkInStep, uncheckStep, dropGoal, dropRep, completeGoalById, graduate,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, dropRep, completeGoalById, graduate, startTestGoal,
     pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById,
     refreshGoals: refresh, signOut, syncAccount,
   }), [profile, currentUserId, applyOnboarding, setGoalPlan,
     goals, liveGoals, endedGoals, pausedGoals, finishedGoals,
-    checkInsByGoal, checkInStep, uncheckStep, dropGoal, dropRep, completeGoalById, graduate,
+    checkInsByGoal, checkInStep, uncheckStep, dropGoal, dropRep, completeGoalById, graduate, startTestGoal,
     pauseGoalById, resumeGoalById, deleteGoalById, shareGoalById, unshareGoalById, refresh, signOut, syncAccount]);
 
   return <RallyContext.Provider value={value}>{children}</RallyContext.Provider>;

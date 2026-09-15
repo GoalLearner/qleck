@@ -53,7 +53,8 @@
     "check:outbox": "node src/lib/outboxPolicy.check.mjs",
     "check:ticks": "node src/lib/ticks.check.mjs",
     "check:copy": "node src/lib/copy.check.mjs",
-    "check": "npm run check:time && npm run check:timeline && npm run check:diff && npm run check:forecast && npm run check:milestones && npm run check:witness-offer && npm run check:outbox && npm run check:ticks && npm run check:copy && npm run check:demo && npx tsc --noEmit"
+    "check:test-goal": "node src/lib/testGoal.check.mjs",
+    "check": "npm run check:time && npm run check:timeline && npm run check:diff && npm run check:forecast && npm run check:milestones && npm run check:witness-offer && npm run check:outbox && npm run check:ticks && npm run check:copy && npm run check:test-goal && npm run check:demo && npx tsc --noEmit"
   },
   "private": true
 }

@@ -22,6 +22,7 @@ import { apiBase, localDate } from '../api/device';
 import { oddsTier, phaseForWeek, planEndDate, planIsOver, reforecastOdds, repsForDate, weekOf, type Reforecast } from '../lib/protocolTime';
 import { laterVersions } from '../lib/ticks';
 import { planShape, plural } from '../lib/copy';
+import { isTestGoal } from '../lib/testGoal';
 import { Pop } from '../onboarding/ui';
 import { useRally, type ActiveGoal } from '../state/RallyContext';
 import { colors, fonts } from '../theme';
@@ -135,8 +136,15 @@ function GoalCard({ m, onOpen, onSeeHow }: { m: GoalModel; onOpen: () => void; o
         opacity: paused ? 0.62 : 1,
       }}
     >
-      {(paused || shared || ended) && (
+      {(paused || shared || ended || isTestGoal(m.goal)) && (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {isTestGoal(m.goal) && (
+            <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: colors.outline }}>
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 9.5, letterSpacing: 1.3, color: colors.muted }}>
+                TEST PLAN
+              </Text>
+            </View>
+          )}
           {ended && (
             <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.successBg }}>
               <Text style={{ fontFamily: fonts.extrabold, fontSize: 9.5, letterSpacing: 1.3, color: colors.success }}>

@@ -944,6 +944,18 @@ stuck in the queue on the phone — and two defects put them there.
   no Pause on a plan there is nothing left to pause, and the header counts
   what is actually running ("Nothing on the clock — see how the last one
   went").
+- **Two tester tools, behind the seven taps that already hide the device
+  reset.** The end of a plan is the part nobody can reach while testing,
+  because it is six weeks away. **Start a 3-day test goal** locks a one-week
+  plan that started four days ago — two flexible reps, no odds, no AI, no
+  coach session — through the ordinary lock path, so everything after it is
+  the real thing. Flexible on purpose: a pinned rep would report the
+  back-dated days as misses. **Finish this plan now** opens the finish screen
+  for a plan that is still running, scored only on the days the plan actually
+  asked for (a pinned rep its scheduled days, a flexible one its share of the
+  week), with no confetti, "N milestones were still ahead", and no offer to
+  extend. Neither tool writes a check-in, and nothing happens until you choose
+  on the finish screen itself. `check:test-goal`, 18 bars.
 - **A retried graduation is the same graduation.** The app minted a fresh id
   on every press, so a "keep it going" whose response was lost and then
   retried wrote a SECOND plan; and the replay check sat behind the AI

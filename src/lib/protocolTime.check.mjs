@@ -234,5 +234,24 @@ eq('...and that is not zero', pausedStats.banked > 0, true);
   eq('...while it was still on, it was', missedYesterday(pinned, START, day(2), []), true);
 }
 
+/* ── finishing a plan early (15 Sep, the tester's "Finish this plan now") ─ */
+//
+// A plan stopped in week 2 of 4 must be scored on the days it actually asked
+// for. Without that it reports the untouched weeks as misses and a deliberate
+// early finish reads as a collapse.
+{
+  const banked = [ci('ph1-s1', day(0)), ci('ph1-s1', day(1)), ci('ph1-s1', day(2)), ci('ph1-s2', day(1))];
+  const through = day(2);                       // stopped on day 3 of week 1
+  const early = planStats(PROTOCOL, START, banked, [], { through });
+  eq('weeks after the day it stopped asked for nothing', early.weeks.slice(1).map(w => w.expected), [0, 0, 0]);
+  eq('the week it stopped in asks for the share it lived',
+    early.weeks[0].expected, 3 + 1);            // 7/wk over 3 of 7 days = 3; 3/wk = 1
+  eq('everything banked still counts', early.banked, 4);
+  eq('a full run is scored exactly as before',
+    JSON.stringify(planStats(PROTOCOL, START, banked, [], {})), JSON.stringify(planStats(PROTOCOL, START, banked)));
+  eq('and stopping on the last day scores the whole plan',
+    planStats(PROTOCOL, START, banked, [], { through: day(27) }).expected, planStats(PROTOCOL, START, banked).expected);
+}
+
 console.log(failed === 0 ? '\nALL FIXTURES PASS\n' : `\n${failed} FAILED\n`);
 process.exit(failed === 0 ? 0 : 1);

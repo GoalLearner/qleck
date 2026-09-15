@@ -333,10 +333,23 @@ function ExportDataRow() {
  * needed.
  */
 function VersionRow({ onLogout }: { onLogout: (opts?: LogoutOpts) => void }) {
-  const { signOut } = useRally();
+  const { signOut, goals, startTestGoal } = useRally();
+  const navigation = useNavigation<any>();
   const [taps, setTaps] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The tester tools (15 Sep). Both exist for one reason: the END of a plan
+  // is the part nobody can reach while testing, because it is six weeks away.
+  // Hidden with the reset, behind the same seven taps, for the same reason —
+  // a visible row would teach people to set goals that cannot work.
+  const [testing, setTesting] = useState<string | null>(null);
+  const [armed, setArmed] = useState<string | null>(null);
+  const startTest = async () => {
+    setTesting('…');
+    const res = await startTestGoal();
+    setTesting(res.ok ? 'Started — it ends in three days. Open Today.' : res.reason ?? 'Could not start it.');
+  };
+  const live = goals.filter(g => g.status !== 'paused');
   // nativeBuildVersion is the CFBundleVersion actually in the installed app —
   // app.json's buildNumber is only what the last commit INTENDED to ship, and
   // those have disagreed before. On web neither exists, hence the fallbacks.
@@ -383,6 +396,56 @@ function VersionRow({ onLogout }: { onLogout: (opts?: LogoutOpts) => void }) {
             opens on the first-run screens like a new install. Your account and your
             goals stay on the server — sign back in and they return.
           </Text>
+          <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16 }} />
+
+          <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: colors.ink }}>
+            Start a 3-day test goal
+          </Text>
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 6 }}>
+            A one-week plan that started four days ago, so it ends in three days: two
+            flexible reps, no odds, no AI. Tick them and watch what the app does when a
+            plan runs out.
+          </Text>
+          <Pressable
+            onPress={startTest}
+            style={{ marginTop: 12, height: 44, borderRadius: radii.pill, borderWidth: 1.5, borderColor: colors.outline, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.ink }}>Start the test goal</Text>
+          </Pressable>
+          {testing ? (
+            <Text style={{ fontFamily: fonts.semibold, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 8 }}>{testing}</Text>
+          ) : null}
+
+          {live.length > 0 ? (
+            <>
+              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16 }} />
+              <Text style={{ fontFamily: fonts.extrabold, fontSize: 13, color: colors.ink }}>
+                Finish this plan now
+              </Text>
+              <Text style={{ fontFamily: fonts.semibold, fontSize: 12, lineHeight: 18, color: colors.muted, marginTop: 6 }}>
+                Opens the finish screen for a plan that is still running, scored on the days
+                it actually asked for. Nothing is written until you choose there.
+              </Text>
+              {live.map(g => (
+                <Pressable
+                  key={g.id}
+                  onPress={() => {
+                    if (armed !== g.id) { setArmed(g.id); return; }
+                    setArmed(null);
+                    navigation.navigate('Graduation', { goalId: g.id, early: true });
+                  }}
+                  style={{ marginTop: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: radii.pill, borderWidth: 1.5, borderColor: armed === g.id ? colors.dangerBorder : colors.outline }}
+                >
+                  <Text numberOfLines={1} style={{ fontFamily: fonts.bold, fontSize: 12.5, color: armed === g.id ? colors.danger : colors.ink }}>
+                    {armed === g.id ? 'Tap again to finish it now' : g.statement}
+                  </Text>
+                </Pressable>
+              ))}
+            </>
+          ) : null}
+
+          <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16 }} />
+
           {confirming ? (
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
               <Pressable

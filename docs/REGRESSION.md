@@ -186,6 +186,26 @@ a full typecheck. Backend changes additionally need `cd backend` +
 - [ ] The last rep standing refuses: "That would leave nothing to do between
       now and the end."
 
+### The tester tools (15 Sep, hidden behind seven taps on the version line)
+
+- [ ] You → tap the version line seven times → the panel now holds **Start a
+      3-day test goal** and **Finish this plan now** above Reset this device.
+- [ ] Start the test goal → Today lists two flexible reps ("Ten minutes of
+      anything", "Write one line about the day"), Goals shows it with a **TEST
+      PLAN** chip and no odds, and there is **no missed-day banner** for the
+      four back-dated days.
+- [ ] Tick both reps for three days → on day four Today shows the plan is
+      done, Goals shows **PLAN COMPLETE**, and the finish screen reports 100%
+      with the milestone earned.
+- [ ] Finish screen → **Keep it going, lighter** works on this one-week plan
+      (it used to fail every time) and lands a new maintenance goal.
+- [ ] Finish this plan now → tap a goal twice → the finish screen opens in
+      **FINISHING EARLY**: no confetti, "stopped before the N weeks were up",
+      "N milestones were still ahead", the percentage counts only the days the
+      plan asked for, and **Give it another N weeks is not offered**.
+- [ ] Backing out of that screen writes nothing: the goal is still running and
+      still has all its reps.
+
 ## 6. Missing days (P4)
 
 - [ ] Miss one scheduled day → the gentle "yesterday slipped" banner.

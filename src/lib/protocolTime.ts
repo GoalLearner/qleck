@@ -582,6 +582,13 @@ const MILESTONE_BAR = 0.8;
  */
 export function planStats(
   protocol: Protocol, startedOn: string, checkIns: CheckIn[], pauses: PauseSpan[] = [],
+  /** `through`: score the plan only as far as this day — what a plan ENDED
+   *  EARLY actually asked for. Weeks after it expected nothing; the week it
+   *  falls in expects the reps its lived days asked for (a pinned rep its
+   *  scheduled days, a flexible one its share of the week). Without it,
+   *  finishing a plan in week 2 of 12 would report 17% and read as failure
+   *  rather than a plan stopped on purpose. */
+  opts: { through?: string } = {},
 ): PlanStats {
   const weeks: WeekTally[] = [];
   for (let week = 1; week <= protocol.duration_weeks; week++) {
@@ -589,7 +596,12 @@ export function planStats(
     // calendar window rather than sliding the week onto days the user was
     // never asked to show up for.
     const from = planDayToDate(startedOn, (week - 1) * 7, pauses);
-    const to = addDays(planDayToDate(startedOn, week * 7, pauses), -1);
+    const full = addDays(planDayToDate(startedOn, week * 7, pauses), -1);
+    // Nothing after the day the plan was stopped was ever asked for.
+    if (opts.through && from > opts.through) { weeks.push({ week, expected: 0, banked: 0 }); continue; }
+    const to = opts.through && opts.through < full ? opts.through : full;
+    const partial = to < full;
+    const lived = Math.max(0, Math.min(7, daysBetween(from, to) + 1));
     const phase = phaseForWeek(protocol, week);
     // Per rep, so that banking more than asked for one (a flexible step
     // logged twice in a day) cannot cover another's misses, and so that a rep
@@ -599,9 +611,16 @@ export function planStats(
     let banked = 0;
     for (const s of phase.steps) {
       const hits = checkIns.filter(c => c.local_date >= from && c.local_date <= to && c.step_id === s.id).length;
+      const asks = partial
+        ? ((s.frequency.days?.length ?? 0) > 0
+            // A pinned rep asked for exactly the days it was scheduled on.
+            ? Array.from({ length: lived }, (_, d) => addDays(from, d)).filter(date => stepPinnedOn(s, date)).length
+            // A flexible rep asked for its share of the week.
+            : Math.round((s.frequency.per_week * lived) / 7))
+        : s.frequency.per_week;
       const want = stepActiveInWeek(s, week)
-        ? s.frequency.per_week
-        : s.retired_from_week === week ? Math.min(hits, s.frequency.per_week) : 0;
+        ? asks
+        : s.retired_from_week === week ? Math.min(hits, asks) : 0;
       expected += want;
       banked += Math.min(hits, want);
     }

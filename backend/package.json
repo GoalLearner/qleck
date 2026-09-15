@@ -22,6 +22,7 @@
     "check:frequency": "node harness/frequency.check.mjs",
     "check:rewind": "node harness/rewind.check.mjs",
     "smoke:job": "node harness/job.smoke.mjs",
+    "smoke:rewind": "node harness/rewind.smoke.mjs",
     "latency": "node harness/latency.mjs",
     "judge": "node harness/judge.mjs",
     "dev:watch": "node dev-supervisor.mjs",

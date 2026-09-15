@@ -74,6 +74,69 @@ export function parseTranscript(raw: string): TranscriptEntry[] | null {
  * interview has reached its verdict. Everything else is false, including a
  * corrupt transcript (never throws).
  */
+/** Answers one interview may change. Three is not a technical limit — it is
+ *  the point past which the conversation is being rewritten rather than
+ *  corrected, and every change spends two model calls. */
+export const MAX_REWINDS = 3;
+
+export type RewindPlan =
+  /** This exact change already landed — answer with what is stored. */
+  | { kind: 'replay' }
+  | { kind: 'refused'; error: string; status: 400 | 409; extra?: Record<string, unknown> }
+  /** The session as it was when that question was asked, with the question
+   *  pending again. The caller runs the normal turn on it. */
+  | {
+      kind: 'rewind';
+      transcript: string;
+      clarify_turns: number;
+      domain: string | null;
+      needs_clarification: number;
+      answers: string;
+    };
+
+/**
+ * What changing the answer to question `index` means for the stored row.
+ *
+ * Pure, so the order of refusals is checkable without a database or a model.
+ * That order matters: the replay check sits above the status check, so a
+ * retried change whose turn produced the verdict replays the verdict instead
+ * of being told the session is closed.
+ */
+export function planRewind(
+  row: { status: string; transcript: string; rewinds?: number | null },
+  index: number,
+  answer: string,
+): RewindPlan {
+  const tx = parseTranscript(row.transcript);
+  if (!tx) return { kind: 'refused', error: 'rewind_unavailable', status: 409 };
+  if (!Number.isInteger(index) || index < 0 || index >= tx.length) {
+    return { kind: 'refused', error: 'invalid_index', status: 400 };
+  }
+  if (answeredAt(row, index, answer)) return { kind: 'replay' };
+  if (row.status !== 'open') return { kind: 'refused', error: 'session_not_open', status: 409 };
+  // The question on screen is answered, not changed — that is /messages.
+  if (index >= tx.length - 1) return { kind: 'refused', error: 'invalid_index', status: 400 };
+  const entry = tx[index];
+  if (entry.answer === undefined) return { kind: 'refused', error: 'invalid_index', status: 400 };
+  if (entry.answer === answer) return { kind: 'refused', error: 'unchanged_answer', status: 400 };
+  // Sessions from before 15 Sep carry no snapshot, so there is no honest
+  // state to go back to. Refused rather than guessed.
+  if (!entry.before) return { kind: 'refused', error: 'rewind_unavailable', status: 409 };
+  if ((row.rewinds ?? 0) >= MAX_REWINDS) {
+    return { kind: 'refused', error: 'rewind_cap', status: 409, extra: { max: MAX_REWINDS } };
+  }
+  const kept = tx.slice(0, index + 1).map((e, i) => (i === index ? { ...e } : e));
+  delete kept[index].answer;
+  return {
+    kind: 'rewind',
+    transcript: JSON.stringify(kept),
+    clarify_turns: kept.length,
+    domain: entry.before.domain ?? null,
+    needs_clarification: entry.before.needs_clarification ?? 0,
+    answers: JSON.stringify(entry.before.answers ?? {}),
+  };
+}
+
 export function answeredAt(row: { status: string; transcript: string }, index: number, answer: string): boolean {
   if (!Number.isInteger(index) || index < 0) return false;
   const tx = parseTranscript(row.transcript);

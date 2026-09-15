@@ -52,6 +52,9 @@ export interface SessionRow {
   plan_odds?: number | null;
   /** The chosen pace's odds at generation — an edited plan's ceiling. */
   odds_ceiling?: number | null;
+  /** Answers changed in this interview (migration 0021). Capped at
+   *  MAX_REWINDS by rewind.ts; absent on rows read before the migration. */
+  rewinds?: number;
   /** Transient (never persisted): keys the latest extraction added. Fuels the
    *  progress gate — a 6th question must be EARNED by a productive 5th. */
   last_extract_added?: number;

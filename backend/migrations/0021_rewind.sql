@@ -1,0 +1,13 @@
+-- Migration 0021 — changing an earlier answer (the second list, note 1).
+--
+-- A tester asked to go back and fix an answer instead of starting the whole
+-- interview over. POST /coach/sessions/:id/rewind does that: question k keeps
+-- its text, takes the new answer, and every question after it is discarded —
+-- the structured state goes back to the snapshot that question was chosen
+-- from (transcript entries carry it since 15 Sep) and the normal turn runs.
+--
+-- One counter is all the server needs to keep it a correction rather than a
+-- rewrite: three changes per interview (MAX_REWINDS in src/rewind.ts), each
+-- costing two model calls. Incremented inside the same guarded commit as the
+-- turn it belongs to, so a change that loses a race counts nothing.
+ALTER TABLE coach_sessions ADD COLUMN rewinds INTEGER NOT NULL DEFAULT 0;

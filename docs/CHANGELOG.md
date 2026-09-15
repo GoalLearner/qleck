@@ -830,6 +830,24 @@ stuck in the queue on the phone — and two defects put them there.
   the model: every reader of the transcript still sees only the question, the
   why and the answer. This is what will make changing an earlier answer
   honest, and it is what lets a duplicated send be replayed today.
+- **Go back and change an answer** (server half). `POST /coach/sessions/:id/
+  rewind {index, answer}`: question *k* keeps its text and takes the new
+  answer, every question after it is discarded, and the structured state goes
+  back to the snapshot that question was chosen from — so the turn that runs
+  next sees exactly what the original one saw. Three changes per interview
+  (each spends two model calls); the question on screen is answered, not
+  changed; a session that has reached its verdict can't be rewound, but a
+  *retried* change that already produced the verdict replays it instead of
+  being told the session is closed. Migration 0021 adds the counter, which is
+  incremented inside the same guarded commit as the turn — a change that loses
+  a race counts nothing. `check:rewind` (43 bars) and a live `smoke:rewind`
+  (21 bars: truncation, replay, two-at-once, the refusals, the cap, and the
+  interview still reaching a verdict afterwards).
+- **A retried answer no longer answers the wrong question.** The app now says
+  which question it is answering. Without that, an answer whose response was
+  lost on the way back (a dropped connection on a slow phone) was re-sent by
+  Retry and applied to the NEXT question. Now the server recognises it and
+  replays the turn it produced. Older builds are unaffected.
 - Regression, full harness against the local worker: 12/12 protocols valid,
   3/3 revisions past-preserving, no leaks, no repeated questions, question
   counts in band, 468s wall (the fastest run recorded — one less write per

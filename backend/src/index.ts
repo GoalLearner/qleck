@@ -26,7 +26,7 @@ import {
 import { verifyAppleToken } from './apple';
 import { editProtocolStep, classifyGoal, coachTurn, enrichStructure, generateProtocol, initSimulation, preclassify, priceCustomPace, repriceTrimmedProtocol, resampleVerdict, retryCarve, reviseProtocol, sessionStructure, simStep, type PaceKey, type PaceOption, type SessionRow, type SimConfig, type Verdict } from './coach';
 import { claimDraft, DRAFT_CLAIM_MS, releaseDraft, renewDraft, waitForDraft } from './draftClaim';
-import { answeredAt, entryFor, parseTranscript, type TranscriptEntry } from './rewind';
+import { answeredAt, entryFor, parseTranscript, planRewind, type TranscriptEntry } from './rewind';
 import { claimOrWait, failedJobCount, healJob, jobView, loadJob, runDraftJob, startDraftJob, JOB_CALL_BUDGET_MS, JOB_DELIVERIES, JOB_LEASE_MS, JOB_RETRY_DELAY_S, USER_RETRY_CAP, type DraftJobMessage, type JobDeps, type JobRow, type JobView } from './draftJob';
 import type { EditOp } from './protocolEdit';
 
@@ -1075,12 +1075,66 @@ export default {
       if (msgMatch) {
         const session = await loadSession(env, msgMatch[1], deviceId);
         if (!session) return json({ error: 'session_not_found' }, 404, cors);
-        if (session.status !== 'open') return json({ error: 'session_not_open', status: session.status }, 409, cors);
         const answer = String(body.answer ?? '').trim();
         if (!answer || answer.length > MAX_ANSWER_CHARS) {
           return json({ error: 'invalid_answer', max: MAX_ANSWER_CHARS }, 400, cors);
         }
-        return await runCoachTurn(env, ctx, cors, meta, session, answer);
+        // The client says WHICH question it is answering (build 36 on). With
+        // it, a retry after a lost response replays the turn that answer
+        // produced; without it, the retry used to answer the NEXT question
+        // with the same words. Older clients send nothing and keep the old
+        // behaviour.
+        const said = body.index === undefined ? null : Number(body.index);
+        if (said !== null) {
+          if (!Number.isInteger(said) || said < 0) return json({ error: 'invalid_index' }, 400, cors);
+          if (answeredAt(session, said, answer)) {
+            const replay = turnFromRow(session, cors);
+            if (replay) return replay;
+          }
+        }
+        if (session.status !== 'open') return json({ error: 'session_not_open', status: session.status }, 409, cors);
+        const pending = (parseTranscript(session.transcript)?.length ?? 0) - 1;
+        if (said !== null && said !== pending) {
+          return json({ error: 'session_moved', message: 'This conversation changed in another request — reload it.' }, 409, cors);
+        }
+        return await runCoachTurn(env, ctx, cors, meta, session, answer, { index: said ?? undefined });
+      }
+
+      /* POST /coach/sessions/:id/rewind — change an earlier answer (15 Sep,
+       * the testers' "let me fix an answer instead of starting over").
+       * Question `index` (0-based) keeps its text and takes the new answer;
+       * every question after it is discarded, the structured state goes back
+       * to what it was when that question was asked, and the normal turn runs
+       * from there — so the progress gate sees the same delta the original
+       * turn did. Capped at MAX_REWINDS per interview; open sessions only. */
+      const rewindMatch = url.pathname.match(/^\/coach\/sessions\/([0-9a-fA-F-]{36})\/rewind$/);
+      if (rewindMatch) {
+        const session = await loadSession(env, rewindMatch[1], deviceId);
+        if (!session) return json({ error: 'session_not_found' }, 404, cors);
+        const answer = String(body.answer ?? '').trim();
+        if (!answer || answer.length > MAX_ANSWER_CHARS) {
+          return json({ error: 'invalid_answer', max: MAX_ANSWER_CHARS }, 400, cors);
+        }
+        const index = body.index === undefined ? NaN : Number(body.index);
+        const plan = planRewind(session, index, answer);
+        if (plan.kind === 'replay') {
+          const replay = turnFromRow(session, cors);
+          return replay ?? json({ error: 'rewind_unavailable' }, 409, cors);
+        }
+        if (plan.kind === 'refused') return json({ error: plan.error, ...(plan.extra ?? {}) }, plan.status, cors);
+        const rewound: SessionRow = {
+          ...session,
+          transcript: plan.transcript,
+          clarify_turns: plan.clarify_turns,
+          domain: plan.domain,
+          needs_clarification: plan.needs_clarification,
+          answers: plan.answers,
+        };
+        // The commit still guards on the transcript that is STORED, so a
+        // change racing a plain answer loses cleanly instead of overwriting.
+        return await runCoachTurn(env, ctx, cors, meta, rewound, answer, {
+          expect: session.transcript, index, rewind: true,
+        });
       }
 
       /* POST /coach/sessions/:id/answers — correct or supply a structured

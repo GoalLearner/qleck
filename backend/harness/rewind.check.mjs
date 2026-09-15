@@ -4,9 +4,9 @@
 //
 // 15 Sep: each question entry now records the chips as delivered and the
 // structured state it was chosen from, every interview turn commits in one
-// guarded write, and (next commit) a user can go back to an earlier question.
+// guarded write, and a user can go back and change an earlier answer.
 import { readFileSync } from 'node:fs';
-import { entryFor, answeredAt, parseTranscript } from '../src/rewind.ts';
+import { entryFor, answeredAt, parseTranscript, planRewind, MAX_REWINDS } from '../src/rewind.ts';
 
 let pass = 0;
 const failures = [];
@@ -49,6 +49,74 @@ console.log('\nthe interview transcript\n');
   ok('bad indexes return false', [-1, 1.5, NaN, 9].every(i => !answeredAt(open, i, 'a')));
 }
 
+/* ── planRewind ───────────────────────────────────────────────────────── */
+{
+  // Three questions asked, the first two answered, the third pending.
+  const entry = (n, answer, before) => ({
+    question: `Q${n}`, why: 'w', suggested: [`${n}a`, `${n}b`],
+    ...(answer === null ? {} : { answer }),
+    ...(before === null ? {} : { before: { domain: 'strength', needs_clarification: 0, answers: before } }),
+  });
+  const open = () => ({
+    status: 'open',
+    rewinds: 0,
+    transcript: JSON.stringify([
+      entry(1, 'three days', {}),
+      entry(2, '173 lbs', { days: '3' }),
+      entry(3, null, { days: '3', bodyweight: '173 lbs' }),
+    ]),
+  });
+
+  const plan = planRewind(open(), 0, 'four days');
+  ok('a change keeps the questions up to it and leaves that one pending', plan.kind === 'rewind'
+    && JSON.parse(plan.transcript).length === 1
+    && JSON.parse(plan.transcript)[0].question === 'Q1'
+    && JSON.parse(plan.transcript)[0].answer === undefined, JSON.stringify(plan).slice(0, 120));
+  ok('the chips and the snapshot survive on the question being re-asked', JSON.parse(plan.transcript)[0].suggested.join('|') === '1a|1b');
+  ok('the structured state goes back to what that question was asked from', plan.clarify_turns === 1 && plan.domain === 'strength' && plan.answers === '{}');
+  const second = planRewind(open(), 1, '180 lbs');
+  ok('changing the second answer keeps the first', second.kind === 'rewind'
+    && JSON.parse(second.transcript).map(e => e.answer ?? '(pending)').join('|') === 'three days|(pending)'
+    && second.clarify_turns === 2 && JSON.parse(second.answers).days === '3');
+  const row = open();
+  const frozen = row.transcript;
+  planRewind(row, 0, 'four days');
+  ok('planRewind never touches the row it was given', row.transcript === frozen);
+
+  const refusal = (r, index, answer, extra = {}) => planRewind({ ...open(), ...r, ...extra }, index, answer);
+  ok('the question on screen is answered, not changed', refusal({}, 2, 'anything').error === 'invalid_index');
+  ok('an index past the end, a negative one or a fraction is refused', [3, 9, -1, 1.5, NaN].every(i => {
+    const p = refusal({}, i, 'four days');
+    return p.kind === 'refused' && p.error === 'invalid_index' && p.status === 400;
+  }));
+  ok('the same answer again is not a change', refusal({}, 0, 'three days').error === 'unchanged_answer');
+  ok('a corrupt transcript refuses rather than throws', planRewind({ status: 'open', transcript: '{oops' }, 0, 'x').error === 'rewind_unavailable');
+  ok('an entry from before the snapshot existed cannot be changed', planRewind({
+    status: 'open', rewinds: 0,
+    transcript: JSON.stringify([{ question: 'Q1', why: 'w', answer: 'old' }, { question: 'Q2', why: 'w' }]),
+  }, 0, 'new').error === 'rewind_unavailable');
+  const capped = refusal({ rewinds: MAX_REWINDS }, 0, 'four days');
+  ok(`${MAX_REWINDS} changes is the cap, and the cap says its own number`, capped.error === 'rewind_cap' && capped.status === 409 && capped.extra.max === MAX_REWINDS);
+  ok('the cap counts changes, not questions', refusal({ rewinds: MAX_REWINDS - 1 }, 0, 'four days').kind === 'rewind');
+
+  // Replay sits ABOVE the status check: a retried change whose turn produced
+  // the verdict must get the verdict back, not "session closed".
+  const landed = {
+    status: 'open', rewinds: 1,
+    transcript: JSON.stringify([entry(1, 'four days', {}), entry(2, null, { days: '4' })]),
+  };
+  ok('a retried change that already landed replays', planRewind(landed, 0, 'four days').kind === 'replay');
+  const verdicted = {
+    status: 'verdict', rewinds: 1,
+    transcript: JSON.stringify([entry(1, 'four days', {})]),
+  };
+  ok('a retried change that ended in the verdict replays the verdict', planRewind(verdicted, 0, 'four days').kind === 'replay');
+  ok('a session that is no longer open cannot be changed', planRewind({
+    status: 'verdict', rewinds: 0,
+    transcript: JSON.stringify([entry(1, 'three days', {}), entry(2, '173 lbs', { days: '3' })]),
+  }, 0, 'four days').error === 'session_not_open');
+}
+
 /* ── one turn, one write: the source ──────────────────────────────────── */
 {
   const coach = readFileSync(new URL('../src/coach.ts', import.meta.url), 'utf8');
@@ -64,6 +132,28 @@ console.log('\nthe interview transcript\n');
   ok('the draft (initSimulation + kickDraftJob) starts only after the verdict commit', commitVerdict > 0 && turn.indexOf('initSimulation(', commitVerdict) > commitVerdict && turn.indexOf('kickDraftJob(', commitVerdict) > commitVerdict && turn.lastIndexOf('initSimulation(', commitVerdict) < 0);
   ok('a lost commit converges (replays what landed, else 409 session_moved)', /if \(!\(await commit\(\{\}\)\)\) return converge\(\);/.test(turn) && /session_moved/.test(turn));
   ok('each question entry is built by entryFor (chips + snapshot)', /transcript\.push\(entryFor\(result\.question/.test(turn));
+
+  /* the two routes */
+  const msg = index.indexOf('const msgMatch');
+  const rewind = index.indexOf('const rewindMatch');
+  const ans = index.indexOf('const ansMatch');
+  ok('the rewind route sits between /messages and /answers', msg > 0 && rewind > msg && ans > rewind);
+  const route = index.slice(rewind, ans);
+  ok('the route runs the normal turn on the rewound session, guarded on what is STORED',
+    /planRewind\(session, index, answer\)/.test(route)
+    && /expect: session\.transcript, index, rewind: true/.test(route));
+  ok('a replayed change answers with the stored turn', /plan\.kind === 'replay'/.test(route) && /turnFromRow\(session, cors\)/.test(route));
+  ok('a refusal carries its own status and extras', /error: plan\.error[\s\S]{0,40}plan\.extra[\s\S]{0,20}plan\.status/.test(route));
+  const messages = index.slice(msg, rewind);
+  ok('/messages replays an answer that already landed before refusing a closed session',
+    messages.indexOf('answeredAt(session, said, answer)') > 0
+    && messages.indexOf('answeredAt(session, said, answer)') < messages.indexOf("session.status !== 'open'"));
+  ok('/messages refuses an index that is not the question on screen', /said !== pending/.test(messages) && /session_moved/.test(messages));
+
+  /* the client mirrors the cap (drift here would offer a change the server refuses) */
+  const types = readFileSync(new URL('../../src/api/coachTypes.ts', import.meta.url), 'utf8');
+  const mirrored = types.match(/REWIND_CAP = (\d+)/);
+  ok('the app mirrors MAX_REWINDS', !!mirrored && Number(mirrored[1]) === MAX_REWINDS, mirrored?.[1]);
 }
 
 console.log(`\n${failures.length ? `REWIND CHECK FAILED · ${failures.length} of ${pass + failures.length}` : `REWIND CHECK CLEAR · ${pass} bars`}\n`);

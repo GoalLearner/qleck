@@ -41,6 +41,30 @@ function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 }
 
+/**
+ * Has this exact graduation already happened? Answered from stored ids alone,
+ * so it can run BEFORE the AI kill-switch and the daily quota: a retry after
+ * a dropped response is not a new request, and refusing it as "the daily
+ * limit" would strand a plan that has in fact already carried on.
+ */
+export async function graduationReplay(
+  env: Env, userId: string, goalId: string, body: GraduateBody,
+): Promise<GraduateResult | null> {
+  const id = (v: unknown) => (typeof v === 'string' && UUID.test(v) ? v : null);
+  if (body.mode === 'extend') {
+    const protocolId = id(body.protocolId);
+    if (protocolId && (await protocolExists(env, protocolId))) {
+      const goal = await getGoalById(env, userId, goalId);
+      return goal ? { ok: true, goal, replayed: true } : null;
+    }
+    return null;
+  }
+  const newGoalId = id(body.newGoalId);
+  if (!newGoalId) return null;
+  const existing = await getGoalById(env, userId, newGoalId);
+  return existing ? { ok: true, goal: existing, replayed: true } : null;
+}
+
 export async function graduate(
   env: Env,
   userId: string,

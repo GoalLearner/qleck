@@ -14,6 +14,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Confetti, { type ConfettiHandle } from '../components/Confetti';
 import { goalTitle } from '../components/protocolViews';
+import { mintGoalId } from '../api/goals';
 import { celebratePlan } from '../lib/celebrate';
 import { planEndDate, planStats, type PlanStats } from '../lib/protocolTime';
 import { graduationErrorCopy, plural } from '../lib/copy';
@@ -95,6 +96,17 @@ export default function GraduationScreen() {
   const confettiRef = useRef<ConfettiHandle>(null);
   const [busy, setBusy] = useState<Choice | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // One id per choice, minted on the first press and kept until it works: a
+  // retry after a dropped response is then the SAME graduation, which the
+  // server replays instead of writing a second plan.
+  const attempts = useRef<Partial<Record<Choice, string>>>({});
+  const attemptFor = (choice: Choice) => {
+    const held = attempts.current[choice];
+    if (held) return held;
+    const minted = mintGoalId();
+    attempts.current[choice] = minted;
+    return minted;
+  };
 
   // The salute belongs to arriving here, not to any particular choice.
   useEffect(() => {
@@ -126,7 +138,7 @@ export default function GraduationScreen() {
     setError(null);
     try {
       if (choice === 'close') await completeGoalById(goal.id);
-      else await graduate(goal.id, choice, choice === 'extend' ? weeks : undefined);
+      else await graduate(goal.id, choice, choice === 'extend' ? weeks : undefined, attemptFor(choice));
       navigation.goBack();
     } catch (e) {
       // Named, because the refusals are not all about Qoach: five goals

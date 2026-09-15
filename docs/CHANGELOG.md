@@ -944,6 +944,15 @@ stuck in the queue on the phone — and two defects put them there.
   no Pause on a plan there is nothing left to pause, and the header counts
   what is actually running ("Nothing on the clock — see how the last one
   went").
+- **A retried graduation is the same graduation.** The app minted a fresh id
+  on every press, so a "keep it going" whose response was lost and then
+  retried wrote a SECOND plan; and the replay check sat behind the AI
+  kill-switch and the daily quota, so the retry could also be refused as the
+  daily limit for work that had already been done. The id is now held by the
+  screen until the choice succeeds, and the server answers a replay from
+  stored ids before any gate. The graduation call also carries the server's
+  error code now, which is what lets the named copy above actually name
+  things.
 - **"Keep it going, lighter" works on short plans.** A finished plan could
   only maintain for twice its own length, but the maintenance prompt asks for
   4-12 weeks — so a plan of six weeks or less could never graduate at all:

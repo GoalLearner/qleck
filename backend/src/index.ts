@@ -39,7 +39,7 @@ const ATTEMPT_FLOOR = 20;
 import type { SimulationState } from './scenarios';
 import { MANIFESTS, missingRequired } from './manifests';
 import { abandonGoal, completeGoal, createGoal, deleteCheckIn, deleteGoal, getCurrentGoal, getGoalProvenance, listCheckIns, listGoals, parseCreateGoal, pauseGoal, recordCheckIn, resumeGoal, type CreateGoalBody } from './goals';
-import { graduate, type GraduateBody } from './graduation';
+import { graduate, graduationReplay, type GraduateBody } from './graduation';
 import { privacyHtml, termsHtml } from './legal';
 import { shareGoal, unshareGoal, witnessPage, witnessView } from './witness';
 import { exportAccount, purgeAccount } from './account';
@@ -482,6 +482,13 @@ export default {
       }
       const graduateMatch = url.pathname.match(/^\/goals\/([0-9a-fA-F-]{36})\/graduate$/);
       if (graduateMatch && request.method === 'POST') {
+        const gradBody = (await request.json().catch(() => ({}))) as GraduateBody;
+        // A retry of a graduation that already landed is not a new request.
+        // Answered from stored ids before any gate, so a dropped response
+        // followed by a retry cannot be refused as "the daily limit" — or,
+        // worse, write the plan a second time.
+        const replayed = await graduationReplay(env, userId, graduateMatch[1], gradBody);
+        if (replayed && replayed.ok) return json({ goal: replayed.goal, replayed: true }, 200, cors);
         // The first AI call made from a Bearer route — it has to pick up the
         // same rails /coach/* has, or the kill-switch and the quota would
         // simply not apply to it. Close-out never comes through here, so a
@@ -497,8 +504,7 @@ export default {
           if (quotaError) return json({ error: quotaError, message: 'Daily coach limit reached — back tomorrow.' }, 429, cors);
         }
         const result = await graduate(
-          env, userId, graduateMatch[1],
-          (await request.json().catch(() => ({}))) as GraduateBody,
+          env, userId, graduateMatch[1], gradBody,
           { deviceId: userId, ip: gradIp, synthetic: gradHarness },
         );
         if (!result.ok) return json({ error: result.error, details: result.details }, result.status, cors);

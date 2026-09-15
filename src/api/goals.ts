@@ -262,13 +262,16 @@ export async function graduateGoal(
   today: string,
   run: RunSummaryPayload,
   weeks?: number,
+  /** Minted by the CALLER and kept across retries: a fresh id on every press
+   *  turns a retry after a dropped response into a SECOND plan. */
+  attemptId = mintId(),
 ): Promise<RemoteGoal> {
   const body = mode === 'extend'
-    ? { mode, today, run, weeks, protocolId: mintId() }
-    : { mode, today, run, newGoalId: mintId() };
+    ? { mode, today, run, weeks, protocolId: attemptId }
+    : { mode, today, run, newGoalId: attemptId };
   const res = await authed(`/goals/${id}/graduate`, { method: 'POST', body: JSON.stringify(body) });
-  const data = (await res.json().catch(() => ({}))) as { goal?: RemoteGoal; error?: string };
-  if (!res.ok || !data.goal) throw new Error(data.error ?? `graduateGoal failed (${res.status})`);
+  const data = await expectJson<{ goal?: RemoteGoal }>(res);
+  if (!data.goal) throw new GoalApiError('graduation_failed', res.status);
   return data.goal;
 }
 

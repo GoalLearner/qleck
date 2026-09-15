@@ -7,6 +7,7 @@
 // twice the original run, so a 1-week plan hit "the coach hit a snag" on
 // every attempt — including the 3-day test goal, whose whole purpose is to
 // reach this screen.
+import { readFileSync } from 'node:fs';
 import { maintenanceCap, trimToWeeks, spliceFrozenPast, validateProtocol } from '../src/protocolSchema.ts';
 
 let pass = 0;
@@ -67,6 +68,25 @@ ok('nothing may maintain for more than a year', maintenanceCap(40) === 52 && mai
     merged.phases.slice(0, 2).every((ph, i) => ph === stored.phases[i])
     && merged.duration_weeks === 16 && validateProtocol(merged).length === 0, validateProtocol(merged)[0]);
   ok('…including the milestones already earned', merged.milestones.some(m => m.id === 'm1'));
+}
+
+/* ── a retry is not a new graduation ──────────────────────────────────── */
+{
+  const index = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+  const at = index.indexOf('const graduateMatch');
+  const route = index.slice(at, index.indexOf('const graduateMatch', at + 1) > 0 ? index.indexOf('const graduateMatch', at + 1) : at + 2500);
+  const replay = route.indexOf('graduationReplay(');
+  ok('the graduate route answers a replay BEFORE the AI switch and the quota',
+    replay > 0 && replay < route.indexOf("env.AI_ENABLED !== 'true'") && replay < route.indexOf('checkQuota('));
+  ok('…and the body is read once, not twice', (route.match(/request\.json\(\)/g) ?? []).length === 1);
+
+  const client = readFileSync(new URL('../../src/api/goals.ts', import.meta.url), 'utf8');
+  const fn = client.slice(client.indexOf('export async function graduateGoal('), client.indexOf('/* ── Adjust my plan'));
+  ok('the app sends an id the CALLER holds, so a retry is the same graduation',
+    /attemptId = mintId\(\)/.test(fn) && /protocolId: attemptId/.test(fn) && /newGoalId: attemptId/.test(fn));
+  const screen = readFileSync(new URL('../../src/screens/GraduationScreen.tsx', import.meta.url), 'utf8');
+  ok('…and the screen keeps it until the choice actually works',
+    /attempts = useRef/.test(screen) && /attemptFor\(choice\)/.test(screen));
 }
 
 console.log(`\n${failures.length ? `GRADUATION CHECK FAILED · ${failures.length} of ${pass + failures.length}` : `GRADUATION CHECK CLEAR · ${pass} bars`}\n`);

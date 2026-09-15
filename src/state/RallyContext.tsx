@@ -128,8 +128,10 @@ interface RallyState {
   unshareGoalById: (goalId: string) => Promise<void>;
   /** Close out a finished plan: it moves to the archive and goes quiet. */
   completeGoalById: (goalId: string) => Promise<void>;
-  /** Carry a finished plan forward — longer, or as a lighter maintenance goal. */
-  graduate: (goalId: string, mode: 'extend' | 'maintain', weeks?: number) => Promise<void>;
+  /** Carry a finished plan forward — longer, or as a lighter maintenance goal.
+   *  `attemptId` is kept across retries so a dropped response cannot become a
+   *  second plan. */
+  graduate: (goalId: string, mode: 'extend' | 'maintain', weeks?: number, attemptId?: string) => Promise<void>;
   /** Re-read goals from the server. The adjust flow owns its own two API calls
    *  (propose returns data the caller needs), so it re-syncs through this. */
   refreshGoals: () => Promise<void>;
@@ -356,7 +358,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const graduate = useCallback(async (
-    goalId: string, mode: 'extend' | 'maintain', weeks?: number,
+    goalId: string, mode: 'extend' | 'maintain', weeks?: number, attemptId?: string,
   ) => {
     const goal = goals.find(g => g.id === goalId);
     if (!goal) return;
@@ -364,7 +366,7 @@ export function RallyProvider({ children }: { children: React.ReactNode }) {
     await graduateGoal(goalId, mode, localDate(), {
       banked: stats.banked, expected: stats.expected, bestStreak: stats.bestStreak,
       weeks: stats.weeks,
-    }, weeks);
+    }, weeks, attemptId);
     // Server owns the outcome (a new goal for maintain, a new version for
     // extend) — re-read rather than guessing at the local shape.
     await refresh();

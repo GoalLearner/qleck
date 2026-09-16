@@ -87,6 +87,13 @@ export async function purgeAccount(env: Env, userId: string, deviceId: string | 
       `DELETE FROM ai_request_payloads WHERE request_id IN (SELECT id FROM ai_requests WHERE user_id = ?)`,
     ).bind(userId),
     env.DB.prepare(`UPDATE ai_requests SET user_id = NULL, ip = NULL WHERE user_id = ?`).bind(userId),
+    // Legacy sweep: Adjust, graduate and "Not for me" logged with the USER id
+    // in the device column (there was no user column being written), so those
+    // rows carried the feedback typed into Adjust and matched neither key.
+    env.DB.prepare(
+      `DELETE FROM ai_request_payloads WHERE request_id IN (SELECT id FROM ai_requests WHERE device_id = ?)`,
+    ).bind(userId),
+    env.DB.prepare(`UPDATE ai_requests SET device_id = NULL, ip = NULL WHERE device_id = ?`).bind(userId),
     env.DB.prepare(`DELETE FROM coach_sessions WHERE user_id = ?`).bind(userId),
   ];
   if (validDevice) {

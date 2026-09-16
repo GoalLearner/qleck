@@ -1002,12 +1002,13 @@ export default {
     // freeze an in-flight verdict's lanes at the daily cap — the poll IS the
     // engine, so blocking it strands the session mid-simulation. The work it
     // kicks is bounded (one draft with a 3-attempt fuse + one lane set).
+    // P3 quota switch: a signed-in caller is metered by ACCOUNT, not by the
+    // spoofable device header — and the ledger row carries the account, so
+    // erasure can find it later.
+    const coachBearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    const coachUser = await verifyToken(env, coachBearer || null);
     if (!isHarness && !isPoll) {
-      // P3 quota switch: a signed-in caller is metered by ACCOUNT, not by the
-      // spoofable device header. Anonymous callers keep the device key.
-      const coachBearer = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-      const quotaKey = (await verifyToken(env, coachBearer || null)) ?? deviceId;
-      const quotaError = await checkQuota(env, quotaKey, ip);
+      const quotaError = await checkQuota(env, { userId: coachUser, deviceId }, ip);
       if (quotaError) return json({ error: quotaError, message: 'Daily coach limit reached — back tomorrow.' }, 429, cors);
     }
 
@@ -1018,7 +1019,9 @@ export default {
       // GETs (the simulation poll) legitimately carry no body.
       if (!isPoll) return json({ error: 'invalid_json' }, 400, cors);
     }
-    const meta = { deviceId, ip, synthetic: isHarness };
+    // The ledger row carries the account, so erasure can find it and the
+    // daily limit can count per account instead of per device.
+    const meta = { deviceId, userId: coachUser, ip, synthetic: isHarness };
 
     try {
       /* POST /coach/sessions — new goal: safety gate, then first coach turn. */

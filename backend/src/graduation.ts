@@ -111,7 +111,7 @@ export async function graduate(
     const frozenThrough = current.duration_weeks;
     const result = await reviseProtocol(
       env,
-      { sessionId: `graduate:${goalId}`, deviceId: meta.deviceId, ip: meta.ip, synthetic: meta.synthetic },
+      { sessionId: `graduate:${goalId}`, deviceId: meta.deviceId, userId, ip: meta.ip, synthetic: meta.synthetic },
       withoutRetired(current),
       `The ${current.duration_weeks}-week plan is finished and I want to keep going — extend it by about ${hint} more weeks. `
       + `Weeks 1-${current.duration_weeks} are done and must stay exactly as they are; build new phases on top that carry the progress forward rather than repeating the last one.`,
@@ -155,7 +155,7 @@ export async function graduate(
   // retired reps are simply not part of the story it is written from.
   const result = await maintenanceProtocol(
     env,
-    { sessionId: `graduate:${goalId}`, deviceId: meta.deviceId, ip: meta.ip, synthetic: meta.synthetic },
+    { sessionId: `graduate:${goalId}`, deviceId: meta.deviceId, userId, ip: meta.ip, synthetic: meta.synthetic },
     withoutRetired(current),
     run,
   );

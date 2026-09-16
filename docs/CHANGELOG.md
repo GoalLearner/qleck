@@ -944,6 +944,19 @@ stuck in the queue on the phone — and two defects put them there.
   no Pause on a plan there is nothing left to pause, and the header counts
   what is actually running ("Nothing on the clock — see how the last one
   went").
+- **The AI ledger says whose call it was.** `ai_requests.user_id` has existed
+  since the schema froze and was never written, which broke two promises at
+  once. Account deletion matched nothing in the ledger, so the feedback typed
+  into Adjust — which logs with the user id in the DEVICE column — survived
+  deleting the account until the 30-day sweep, against the standing rule that
+  erasure keys on links actually written. And the daily per-account limit
+  could never bite, because a signed-in caller was metered by comparing a user
+  id against the device column: only the 450/IP rail was ever real. Rows carry
+  the account now, erasure clears both shapes, and the limit counts the
+  account and the device in front of you. Migration 0023 indexes it.
+  `check:quota` (11 bars — the counting query is lifted out of the source and
+  run against a real database, so the AND/OR precedence is proven, not
+  assumed) and four more in `check:purge`.
 - **Two tester tools, behind the seven taps that already hide the device
   reset.** The end of a plan is the part nobody can reach while testing,
   because it is six weeks away. **Start a 3-day test goal** locks a one-week

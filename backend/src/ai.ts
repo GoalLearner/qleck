@@ -118,6 +118,11 @@ function costUsd(model: string, inputTokens: number, outputTokens: number, cache
 export interface CallMeta {
   sessionId?: string;
   deviceId?: string;
+  /** The signed-in account this call was made for. Written to the ledger, so
+   *  erasure can find it and the daily quota can count per ACCOUNT rather
+   *  than per device — the column existed since 0002 and was never filled,
+   *  which is why the account limit never bit. */
+  userId?: string | null;
   ip?: string;
   kind: 'safety' | 'classify_domain' | 'extract_answers' | 'coach_turn' | 'verdict_turn' | 'protocol' | 'simulate' | 'contingency' | 'audit';
   /** Which retry loop this call belongs to, when any ('validator' = the
@@ -352,6 +357,7 @@ export async function callModel(env: Env, meta: CallMeta, params: CallParams): P
       id: crypto.randomUUID(),
       sessionId: meta.sessionId ?? null,
       deviceId: meta.deviceId ?? null,
+      userId: meta.userId ?? null,
       ip: meta.ip ?? null,
       kind: meta.kind,
       model: `${provider(env)}:failed`,
@@ -374,6 +380,7 @@ export async function callModel(env: Env, meta: CallMeta, params: CallParams): P
     id: requestId,
     sessionId: meta.sessionId ?? null,
     deviceId: meta.deviceId ?? null,
+    userId: meta.userId ?? null,
     ip: meta.ip ?? null,
     kind: meta.kind,
     model: raw.model,
@@ -397,6 +404,7 @@ interface LedgerRow {
   id: string;
   sessionId: string | null;
   deviceId: string | null;
+  userId?: string | null;
   ip: string | null;
   kind: string;
   model: string;
@@ -418,10 +426,10 @@ async function logAiRequest(db: D1Database, row: LedgerRow): Promise<void> {
   await db.batch([
     db
       .prepare(
-        `INSERT INTO ai_requests (id, session_id, device_id, ip, kind, model, input_tokens, output_tokens, cost_usd, verdict_class, synthetic, cache_hit_tokens, attempt, retry_kind, duration_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ai_requests (id, session_id, device_id, user_id, ip, kind, model, input_tokens, output_tokens, cost_usd, verdict_class, synthetic, cache_hit_tokens, attempt, retry_kind, duration_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(row.id, row.sessionId, row.deviceId, row.ip, row.kind, row.model, row.inputTokens, row.outputTokens, row.costUsd, row.verdictClass, row.synthetic, row.cacheHitTokens ?? 0, row.attempt ?? 0, row.retryKind ?? null, row.durationMs ?? null),
+      .bind(row.id, row.sessionId, row.deviceId, row.userId ?? null, row.ip, row.kind, row.model, row.inputTokens, row.outputTokens, row.costUsd, row.verdictClass, row.synthetic, row.cacheHitTokens ?? 0, row.attempt ?? 0, row.retryKind ?? null, row.durationMs ?? null),
     db
       .prepare(`INSERT INTO ai_request_payloads (request_id, prompt, response) VALUES (?, ?, ?)`)
       .bind(row.id, row.prompt, row.response),
@@ -433,16 +441,33 @@ export async function reclassifyRequest(db: D1Database, requestId: string, verdi
   await db.prepare(`UPDATE ai_requests SET verdict_class = ? WHERE id = ?`).bind(verdictClass, requestId).run();
 }
 
-/** Daily quota check (cost rail #2). Returns null when allowed, or an error string. */
-export async function checkQuota(env: Env, deviceId: string, ip: string): Promise<string | null> {
+/**
+ * Daily quota check (cost rail #2). Returns null when allowed, or an error
+ * string.
+ *
+ * `who` is the account when there is one and the device otherwise. It used to
+ * be a single string compared against `device_id` — so a signed-in caller was
+ * metered by a USER id against the DEVICE column, which never matches: the
+ * per-account limit has never bitten, and only the 450/IP rail did. The rows
+ * carry `user_id` now, and this counts either column.
+ */
+export async function checkQuota(
+  env: Env, who: string | { userId?: string | null; deviceId?: string | null }, ip: string,
+): Promise<string | null> {
+  const userId = typeof who === 'string' ? null : who.userId ?? null;
+  const deviceId = typeof who === 'string' ? who : who.deviceId ?? null;
   const deviceLimit = Number(env.DAILY_DEVICE_LIMIT ?? 30);
   const ipLimit = Number(env.DAILY_IP_LIMIT ?? 90);
   // Calendar-day window (UTC) so the client's "resets at midnight" copy is
   // true, rather than a rolling 24h window that quietly thaws.
   const [dev, addr] = await env.DB.batch([
     env.DB
-      .prepare(`SELECT COUNT(*) AS n FROM ai_requests WHERE device_id = ? AND synthetic = 0 AND created_at >= datetime('now', 'start of day')`)
-      .bind(deviceId),
+      .prepare(
+        `SELECT COUNT(*) AS n FROM ai_requests
+         WHERE synthetic = 0 AND created_at >= datetime('now', 'start of day')
+           AND ((?1 IS NOT NULL AND user_id = ?1) OR (?2 IS NOT NULL AND device_id = ?2))`,
+      )
+      .bind(userId, deviceId),
     env.DB
       .prepare(`SELECT COUNT(*) AS n FROM ai_requests WHERE ip = ? AND synthetic = 0 AND created_at >= datetime('now', 'start of day')`)
       .bind(ip),

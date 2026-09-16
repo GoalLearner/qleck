@@ -101,6 +101,15 @@ const staleDevice = crypto.randomUUID();
 sql(`INSERT INTO coach_sessions (id, device_id, user_id, goal_text) VALUES ('${sessionId}', '${staleDevice}', NULL, 'a private goal I typed')`);
 sql(`INSERT INTO ai_requests (id, session_id, device_id, kind, model) VALUES ('${requestId}', '${sessionId}', '${staleDevice}', 'coach_turn', 'probe')`);
 sql(`INSERT INTO ai_request_payloads (request_id, prompt, response) VALUES ('${requestId}', 'the prompt with their words', 'the reply')`);
+// Keyed by the ACCOUNT — what every coach call has written since 15 Sep.
+const userRequestId = crypto.randomUUID();
+sql(`INSERT INTO ai_requests (id, session_id, device_id, user_id, ip, kind, model) VALUES ('${userRequestId}', NULL, NULL, '${userId}', '10.0.0.9', 'coach_turn', 'probe')`);
+sql(`INSERT INTO ai_request_payloads (request_id, prompt, response) VALUES ('${userRequestId}', 'what I typed into Adjust about my week', 'the reply')`);
+// And the legacy shape: Adjust, graduate and "Not for me" log with the USER
+// id in the DEVICE column, which matched neither erasure key until 15 Sep.
+const legacyRequestId = crypto.randomUUID();
+sql(`INSERT INTO ai_requests (id, session_id, device_id, user_id, ip, kind, model) VALUES ('${legacyRequestId}', NULL, '${userId}', NULL, '10.0.0.9', 'verdict_turn', 'probe')`);
+sql(`INSERT INTO ai_request_payloads (request_id, prompt, response) VALUES ('${legacyRequestId}', 'the feedback I typed into Adjust', 'the reply')`);
 // The structured interview snapshot: exact bodyweight, income, injuries, and
 // free-text past attempts. No user_id, no foreign key, nothing cascades it.
 sql(`INSERT INTO goal_outcomes (session_id, goal_id, answers_snapshot) VALUES ('${sessionId}', '${goalId}', '{"bodyweight":"231 lb","past_attempts":"a private thing about my divorce"}')`);
@@ -163,6 +172,13 @@ for (const [table, n] of Object.entries(after)) {
 const ledger = sql(
   `SELECT user_id, device_id, ip, cost_usd FROM ai_requests WHERE id='${requestId}'`,
 )[0];
+for (const [label, id] of [['keyed by the account', userRequestId], ['keyed by the user id in the device column (Adjust, graduate, "Not for me")', legacyRequestId]]) {
+  const row = sql(`SELECT user_id, device_id, ip FROM ai_requests WHERE id='${id}'`)[0];
+  const words = Number(sql(`SELECT COUNT(*) AS n FROM ai_request_payloads WHERE request_id='${id}'`)[0].n);
+  bar(`the words in a ledger row ${label} are deleted`, words === 0, `${words} payload(s) survived`);
+  bar(`...and the row itself is de-identified`,
+    !!row && row.user_id === null && row.device_id === null && row.ip === null, JSON.stringify(row ?? {}));
+}
 bar('the AI cost ledger row survives (it is spend history, not user data)', !!ledger);
 bar('...but is fully de-identified: no user, no device, no ip',
   !!ledger && ledger.user_id === null && ledger.device_id === null && ledger.ip === null,

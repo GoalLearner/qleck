@@ -106,7 +106,7 @@ export async function dropSteps(
   const wantsPrice = body.price !== false && cur !== null;
   let odds: number | null = cur;
   if (wantsPrice) {
-    odds = await priceWithout(env, { sessionId: `drop:${goalId}`, deviceId: userId, ip: meta.ip, synthetic: meta.synthetic },
+    odds = await priceWithout(env, { sessionId: `drop:${goalId}`, deviceId: userId, userId, ip: meta.ip, synthetic: meta.synthetic },
       current, next, gone.map(st => st.title), cur as number);
     // Qoach could not put a number on it. The drop still happens — the user
     // decided — but the goal carries no odds rather than the old plan's.
@@ -142,7 +142,7 @@ function stripRetired(p: Protocol): Protocol {
  */
 async function priceWithout(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string; ip: string; synthetic?: boolean },
   current: Protocol,
   next: Protocol,
   droppedTitles: string[],

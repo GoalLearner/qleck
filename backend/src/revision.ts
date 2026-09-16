@@ -86,7 +86,7 @@ export async function proposeRevision(
   // put it back by the back door.
   const result = await reviseProtocol(
     env,
-    { sessionId: `revise:${goalId}`, deviceId: meta.deviceId, ip: meta.ip, synthetic: meta.synthetic },
+    { sessionId: `revise:${goalId}`, deviceId: meta.deviceId, userId, ip: meta.ip, synthetic: meta.synthetic },
     withoutRetired(current),
     feedback,
     currentWeek,

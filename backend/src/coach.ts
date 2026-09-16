@@ -211,7 +211,7 @@ const CLASSIFY_DOMAIN_TOOL = {
  *  classification failing must never block the interview. */
 export async function classifyDomain(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   goalText: string,
   answersSoFar?: Record<string, string>,
 ): Promise<{ domain: Domain; concrete: boolean }> {
@@ -239,7 +239,7 @@ export async function classifyDomain(
  *  degrades to "no new keys", never blocks the turn. */
 export async function extractAnswers(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   domain: Domain,
   latest?: { question: string; answer: string },
@@ -295,7 +295,7 @@ export async function extractAnswers(
  *  every other goal saves the classifier's ~1s off the first question. */
 export async function preclassify(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
 ): Promise<{ domain: string | null; needs_clarification: number }> {
   const structure = sessionStructure(session);
@@ -308,7 +308,7 @@ export async function preclassify(
 
 export async function enrichStructure(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   latest?: { question: string; answer: string },
   /** A classification already made by preclassify (the first turn). */
@@ -370,7 +370,7 @@ function sessionGoalData(session: SessionRow): string {
 /** Step 1 — the cheap-tier safety gate. */
 export async function classifyGoal(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   goalText: string,
 ): Promise<{ category: string; refusalMessage?: string }> {
   const result = await callModel(env, { ...meta, kind: 'safety' }, {
@@ -413,7 +413,7 @@ function coachMessages(session: SessionRow, pendingAnswer?: string): ChatMessage
  */
 async function auditReadiness(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   pendingAnswer?: string,
 ): Promise<{ sufficient: boolean; missing: string[] }> {
@@ -466,7 +466,7 @@ function manifestQuestion(f: ManifestField): NonNullable<CoachTurnResult['questi
 /** Step 2 — one coach turn: either a clarifying question or the verdict. */
 export async function coachTurn(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   pendingAnswer?: string,
 ): Promise<CoachTurnResult> {
@@ -804,7 +804,7 @@ const PROTOCOL_MAX_TOKENS = 16384;
 
 export async function generateProtocol(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   verdict: Verdict,
   pace?: PaceKey,
@@ -1040,7 +1040,7 @@ export async function generateProtocol(
  *  revision output shapes inform schema v1 before the P2a freeze. */
 export async function reviseProtocol(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   current: Protocol,
   feedback: string,
   currentWeek: number,
@@ -1138,7 +1138,7 @@ function runSummaryText(run: RunSummary): string {
  */
 export async function maintenanceProtocol(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   completed: Protocol,
   run: RunSummary,
 ): Promise<{ protocol?: Protocol; errors?: string[] }> {
@@ -1260,7 +1260,7 @@ const CONTINGENCY_TOOL = {
  *  the clean draft. */
 async function hardenDraft(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   draft: Protocol,
   lanes: ScenarioRun[],
@@ -1315,7 +1315,7 @@ async function hardenDraft(
  */
 export async function simStep(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
 ): Promise<'worked' | 'done' | 'failed' | 'idle'> {
   const simRaw = session.simulation;
@@ -1437,7 +1437,7 @@ export async function simStep(
 /** v29: one corrective full-verdict resample with a named complaint. */
 export async function resampleVerdict(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   broken: Verdict,
   complaint: string,
@@ -1469,7 +1469,7 @@ export async function resampleVerdict(
  */
 export async function retryCarve(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   verdict: Verdict,
 ): Promise<{ subtitle?: string; reads?: Verdict['reads'] }> {
@@ -1495,7 +1495,7 @@ export async function retryCarve(
  */
 export async function priceCustomPace(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   weeks: number,
 ): Promise<{ pace: PaceOption } | { error: string }> {
@@ -1609,7 +1609,7 @@ export async function editProtocolStep(
  */
 export async function repriceTrimmedProtocol(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   droppedIds: string[],
 ): Promise<
@@ -1699,7 +1699,7 @@ export async function repriceTrimmedProtocol(
  */
 export async function repriceTicks(
   env: Env,
-  meta: { sessionId: string; deviceId: string; ip: string; synthetic?: boolean },
+  meta: { sessionId: string; deviceId: string; userId?: string | null; ip: string; synthetic?: boolean },
   session: SessionRow,
   untickedIds: string[],
 ): Promise<

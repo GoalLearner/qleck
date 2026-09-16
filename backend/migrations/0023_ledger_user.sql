@@ -1,0 +1,16 @@
+-- Migration 0023 — the AI ledger's account key.
+--
+-- ai_requests.user_id has existed since 0002 and was never written: every row
+-- carried only the device header. Two consequences, both found on 15 Sep:
+--
+--   * account erasure matched nothing in the ledger, so the feedback typed
+--     into "Adjust my plan" (which logs with the USER id in the device
+--     column) survived deleting the account until the 30-day sweep — against
+--     the standing rule that erasure keys on links actually written;
+--   * the daily per-account limit could never bite, because a signed-in
+--     caller was metered by comparing a user id against the device column.
+--     Only the 450/IP rail was ever real.
+--
+-- The column is written from now on. This index is what keeps the per-account
+-- count a lookup rather than a scan, the same shape as the device index.
+CREATE INDEX IF NOT EXISTS idx_ai_requests_user_day ON ai_requests(user_id, created_at);

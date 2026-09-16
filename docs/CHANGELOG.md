@@ -944,6 +944,15 @@ stuck in the queue on the phone — and two defects put them there.
   no Pause on a plan there is nothing left to pause, and the header counts
   what is actually running ("Nothing on the clock — see how the last one
   went").
+- **A pause reaches the day surfaces at last.** Pauses have been stored as
+  spans since P4, and the week arithmetic honoured them — but Today, the week
+  strips, the missed-day checks, the re-forecast and the nudges all asked
+  their questions without them. So a paused plan ran OUT early (its reps
+  vanished while the plan still had weeks to go), and the days spent paused
+  were reported as misses: the two things a pause exists to prevent. Every one
+  of them now takes the spans. A pause also ENDS the never-miss-twice
+  lookback rather than being skipped over — someone coming back from two weeks
+  off should not be met with a banner about the week before they stopped.
 - **The AI ledger says whose call it was.** `ai_requests.user_id` has existed
   since the schema froze and was never written, which broke two promises at
   once. Account deletion matched nothing in the ledger, so the feedback typed

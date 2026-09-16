@@ -664,8 +664,8 @@ export default function GoalsScreen() {
       goal, week, phase,
       dot: goalDot(i),
       nowIdx: Math.max(0, goal.protocol.phases.findIndex(p => p.id === phase.id)),
-      repsToday: repsForDate(goal.protocol, goal.startedOn, today, checkInsByGoal[goal.id] ?? []).length,
-      rf: reforecastOdds(goal.odds, goal.protocol, goal.startedOn, checkInsByGoal[goal.id] ?? [], today),
+      repsToday: repsForDate(goal.protocol, goal.startedOn, today, checkInsByGoal[goal.id] ?? [], goal.pauses).length,
+      rf: reforecastOdds(goal.odds, goal.protocol, goal.startedOn, checkInsByGoal[goal.id] ?? [], today, goal.pauses),
       ended: goal.status !== 'paused' && planIsOver(goal.startedOn, goal.protocol.duration_weeks, today, goal.pauses),
     };
   });

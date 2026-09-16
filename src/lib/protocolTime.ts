@@ -181,6 +181,13 @@ function activeOn(protocol: Protocol, startedOn: string, date: string, pauses: P
   return activeSteps(protocol, weekOf(startedOn, date, protocol.duration_weeks, pauses));
 }
 
+/** Was this day inside a pause? Nothing was asked for on it, so nothing about
+ *  it is a miss — the spans are what make "week 3 of 6 is still week 3" true
+ *  after a pause, and they have to reach the daily surfaces too. */
+export function isPaused(local: string, spans: PauseSpan[] = []): boolean {
+  return spans.some(s => local >= s.from && (s.to === null || local < s.to));
+}
+
 export function stepPinnedOn(step: ProtocolStep, local: string): boolean {
   const days = step.frequency.days;
   if (!days || days.length === 0) return false;
@@ -205,10 +212,14 @@ export interface DayRep {
 /** The reps that belong to `local` (today's list). */
 export function repsForDate(
   protocol: Protocol, startedOn: string, local: string, checkIns: CheckIn[],
+  /** Pauses stretch the plan: without them a paused goal runs out early and
+   *  Today goes blank while the plan still has weeks to go. started_on never
+   *  moves, so the spans ARE the plan's calendar. */
+  pauses: PauseSpan[] = [],
 ): DayRep[] {
   if (local < startedOn) return [];
-  if (planIsOver(startedOn, protocol.duration_weeks, local)) return [];
-  const week = weekOf(startedOn, local, protocol.duration_weeks);
+  if (planIsOver(startedOn, protocol.duration_weeks, local, pauses)) return [];
+  const week = weekOf(startedOn, local, protocol.duration_weeks, pauses);
   const phase = phaseForWeek(protocol, week);
   const reps: DayRep[] = [];
   // A rep the user took out is not on today's list. It stays in the plan for
@@ -254,6 +265,7 @@ export interface WeekDay {
 /** The Monday-Sunday strip for the week containing `today`. */
 export function weekStrip(
   protocol: Protocol, startedOn: string, today: string, checkIns: CheckIn[],
+  pauses: PauseSpan[] = [],
 ): WeekDay[] {
   const start = weekStart(today);
   const days: WeekDay[] = [];
@@ -267,9 +279,12 @@ export function weekStrip(
     else if (isToday) kind = 'today';
     else {
       // Past day, no checks: missed only when a pinned step was scheduled.
-      const week = weekOf(startedOn, date, protocol.duration_weeks);
+      // A day inside a pause was never asked for, so it cannot be missed.
+      const week = weekOf(startedOn, date, protocol.duration_weeks, pauses);
       const phase = phaseForWeek(protocol, week);
       const hadPinned = date >= startedOn
+        && !isPaused(date, pauses)
+        && !planIsOver(startedOn, protocol.duration_weeks, date, pauses)
         && phase.steps.some(s => stepActiveInWeek(s, week) && stepPinnedOn(s, date));
       kind = hadPinned ? 'missed' : 'rest';
     }
@@ -332,15 +347,17 @@ export function witnessCandidate<T extends WitnessOfferable>(
 /** Yesterday had a pinned rep and no check-in at all → the gentle banner. */
 export function missedYesterday(
   protocol: Protocol, startedOn: string, today: string, checkIns: CheckIn[],
+  pauses: PauseSpan[] = [],
 ): boolean {
   const y = addDays(today, -1);
   if (y < startedOn) return false;
+  if (isPaused(y, pauses)) return false;   // a paused day asked for nothing
   // A finished plan cannot slip. Without this, weekOf clamps to the last week
   // and phaseForWeek keeps returning the final phase, so every weekday that
   // phase pins reported a miss forever after the plan ended.
-  if (planIsOver(startedOn, protocol.duration_weeks, y)) return false;
+  if (planIsOver(startedOn, protocol.duration_weeks, y, pauses)) return false;
   if (checkIns.some(c => c.local_date === y)) return false;
-  return activeOn(protocol, startedOn, y).some(s => stepPinnedOn(s, y));
+  return activeOn(protocol, startedOn, y, pauses).some(s => stepPinnedOn(s, y));
 }
 
 /**
@@ -354,6 +371,7 @@ export function missedYesterday(
  */
 export function missedTwice(
   protocol: Protocol, startedOn: string, today: string, checkIns: CheckIn[],
+  pauses: PauseSpan[] = [],
 ): boolean {
   const checked = new Set(checkIns.map(c => c.local_date));
   let found = 0;
@@ -362,8 +380,14 @@ export function missedTwice(
   for (let back = 1; back <= 14; back++) {
     const date = addDays(today, -back);
     if (date < startedOn) break;
-    if (planIsOver(startedOn, protocol.duration_weeks, date)) continue;
-    const scheduled = activeOn(protocol, startedOn, date).some(s => stepPinnedOn(s, date));
+    // A pause ENDS the recent history rather than being skipped over: the
+    // never-miss-twice moment is about the last two days the plan asked for,
+    // and someone who paused has already made a deliberate decision about the
+    // ones before it. Skipping paused days would greet them on their return
+    // with a banner about the week before they stopped.
+    if (isPaused(date, pauses)) break;
+    if (planIsOver(startedOn, protocol.duration_weeks, date, pauses)) continue;
+    const scheduled = activeOn(protocol, startedOn, date, pauses).some(s => stepPinnedOn(s, date));
     if (!scheduled) continue;
     if (checked.has(date)) return false; // most recent scheduled days must BOTH be misses
     found++;
@@ -381,6 +405,7 @@ export interface GoalLike {
   id: string;
   startedOn: string;
   protocol: Protocol;
+  pauses?: PauseSpan[];
 }
 
 export interface ReachedMilestone {
@@ -401,7 +426,7 @@ export function reachedMilestones(
 ): ReachedMilestone[] {
   const out: ReachedMilestone[] = [];
   for (const goal of goals) {
-    const stats = planStats(goal.protocol, goal.startedOn, byGoal[goal.id] ?? []);
+    const stats = planStats(goal.protocol, goal.startedOn, byGoal[goal.id] ?? [], goal.pauses ?? []);
     for (const outcome of stats.milestones) {
       if (!outcome.reached) continue;
       out.push({
@@ -434,6 +459,7 @@ export interface ActiveGoalLike {
   id: string;
   startedOn: string;
   protocol: Protocol;
+  pauses?: PauseSpan[];
 }
 
 export function allCheckIns(byGoal: Record<string, CheckIn[]>): CheckIn[] {
@@ -459,8 +485,9 @@ export function mergedWeekStrip(
     else {
       const hadPinned = goals.some(g => {
         if (date < g.startedOn) return false;
-        if (planIsOver(g.startedOn, g.protocol.duration_weeks, date)) return false;
-        return activeOn(g.protocol, g.startedOn, date).some(s => stepPinnedOn(s, date));
+        if (isPaused(date, g.pauses)) return false;      // paused: nothing was asked for
+        if (planIsOver(g.startedOn, g.protocol.duration_weeks, date, g.pauses)) return false;
+        return activeOn(g.protocol, g.startedOn, date, g.pauses).some(s => stepPinnedOn(s, date));
       });
       kind = hadPinned ? 'missed' : 'rest';
     }
@@ -530,9 +557,10 @@ export function reforecastOdds(
   startedOn: string,
   checkIns: CheckIn[],
   today: string,
+  pauses: PauseSpan[] = [],
 ): Reforecast | null {
   if (original === undefined) return null;
-  if (today < startedOn || planIsOver(startedOn, protocol.duration_weeks, today)) return null;
+  if (today < startedOn || planIsOver(startedOn, protocol.duration_weeks, today, pauses)) return null;
   const hold: Reforecast = { original, current: original, drifted: false };
   const lastDone = Math.min(weekOfUncapped(startedOn, today) - 1, protocol.duration_weeks);
   if (lastDone < 1) return hold;
@@ -663,7 +691,7 @@ export function planStats(
 export function mergedMissedYesterday(
   goals: ActiveGoalLike[], byGoal: Record<string, CheckIn[]>, today: string,
 ): boolean {
-  return goals.some(g => missedYesterday(g.protocol, g.startedOn, today, byGoal[g.id] ?? []));
+  return goals.some(g => missedYesterday(g.protocol, g.startedOn, today, byGoal[g.id] ?? [], g.pauses ?? []));
 }
 
 /** The goals in the never-miss-twice state — the comeback banner names the
@@ -671,7 +699,7 @@ export function mergedMissedYesterday(
 export function mergedMissedTwice(
   goals: ActiveGoalLike[], byGoal: Record<string, CheckIn[]>, today: string,
 ): ActiveGoalLike[] {
-  return goals.filter(g => missedTwice(g.protocol, g.startedOn, today, byGoal[g.id] ?? []));
+  return goals.filter(g => missedTwice(g.protocol, g.startedOn, today, byGoal[g.id] ?? [], g.pauses ?? []));
 }
 
 /** First upcoming rep across every goal — the banner's one-line preview. */
@@ -681,7 +709,7 @@ export function mergedTomorrowPreview(
   for (let i = 1; i <= 7; i++) {
     const date = addDays(today, i);
     for (const g of goals) {
-      const reps = repsForDate(g.protocol, g.startedOn, date, byGoal[g.id] ?? []);
+      const reps = repsForDate(g.protocol, g.startedOn, date, byGoal[g.id] ?? [], g.pauses ?? []);
       if (reps.length > 0) {
         const first = reps[0].step;
         const metric = first.kind === 'duration' && first.duration_minutes ? ` — ${first.duration_minutes} min` : '';
@@ -696,10 +724,11 @@ export function mergedTomorrowPreview(
 /** One muted line about the next day that has anything scheduled. */
 export function tomorrowPreview(
   protocol: Protocol, startedOn: string, today: string, checkIns: CheckIn[],
+  pauses: PauseSpan[] = [],
 ): string | null {
   for (let i = 1; i <= 7; i++) {
     const date = addDays(today, i);
-    const reps = repsForDate(protocol, startedOn, date, checkIns);
+    const reps = repsForDate(protocol, startedOn, date, checkIns, pauses);
     const label = i === 1 ? 'Tomorrow' : weekdayName(date);
     if (reps.length > 0) {
       const first = reps[0].step;

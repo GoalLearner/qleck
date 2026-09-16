@@ -253,5 +253,31 @@ eq('...and that is not zero', pausedStats.banked > 0, true);
     planStats(PROTOCOL, START, banked, [], { through: day(27) }).expected, planStats(PROTOCOL, START, banked).expected);
 }
 
+/* ── a pause reaches the daily surfaces too (15 Sep) ───────────────────── */
+//
+// planStats and weekOf have honoured pauses since P4; the day surfaces did
+// not. So a paused plan ran OUT early on Today (its reps vanished while the
+// plan still had weeks to go) and the days spent paused were reported as
+// misses — the two things a pause exists to prevent.
+{
+  const spans = [{ from: day(7), to: day(21) }];          // two weeks paused
+  // A pinned rep is what a miss is made of — the fixture's are flexible.
+  const pinned = JSON.parse(JSON.stringify(PROTOCOL));
+  pinned.phases[0].steps[1].frequency = { per_week: 3, days: ['mon', 'wed', 'fri'] };
+  eq('a day inside the pause is not a miss',
+    missedYesterday(pinned, START, day(10), [], spans), false);
+  eq('...and the same day without the pause would have been',
+    missedYesterday(pinned, START, day(10), []), true);
+  eq('two paused days do not become "missed twice"',
+    missedTwice(pinned, START, day(16), [], spans), false);
+  eq('...and without the pause they would have', missedTwice(pinned, START, day(16), []), true);
+
+  // The plan is 4 weeks; paused for two, it still has reps on day 29.
+  eq('a paused plan still has reps after its original end',
+    repsForDate(PROTOCOL, START, day(29), [], spans).length > 0, true);
+  eq('...and without the pause it would be over', repsForDate(PROTOCOL, START, day(29), []).length, 0);
+  eq('the reps on a paused day are nobody’s business', repsForDate(PROTOCOL, START, day(10), [], spans).length >= 0, true);
+}
+
 console.log(failed === 0 ? '\nALL FIXTURES PASS\n' : `\n${failed} FAILED\n`);
 process.exit(failed === 0 ? 0 : 1);

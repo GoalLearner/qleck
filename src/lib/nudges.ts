@@ -171,13 +171,13 @@ export async function rescheduleNudges(
   for (let offset = 0; offset < DAYS_AHEAD; offset++) {
     const date = addDays(today, offset);
     const perGoal = active
-      .map(g => ({ g, reps: repsForDate(g.protocol, g.startedOn, date, byGoal[g.id] ?? []) }))
+      .map(g => ({ g, reps: repsForDate(g.protocol, g.startedOn, date, byGoal[g.id] ?? [], g.pauses) }))
       .filter(x => x.reps.length > 0);
     if (perGoal.length === 0) continue; // a true rest day nudges nobody
     const lead = perGoal[0];
     const count = perGoal.reduce((n, x) => n + x.reps.length, 0);
     const remainingToday = perGoal.reduce((n, x) => n + x.reps.filter(r => !r.checked).length, 0);
-    const slipped = offset === 0 ? perGoal.find(x => missedTwice(x.g.protocol, x.g.startedOn, today, byGoal[x.g.id] ?? [])) : undefined;
+    const slipped = offset === 0 ? perGoal.find(x => missedTwice(x.g.protocol, x.g.startedOn, today, byGoal[x.g.id] ?? [], x.g.pauses)) : undefined;
 
     // Morning: what today holds. On a two-miss morning the copy is the
     // comeback, not the checklist.

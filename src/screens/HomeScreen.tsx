@@ -117,7 +117,7 @@ function DayPeek({ goals, byGoal, date, today, onBack }: {
   const per = goals
     .map((g, i) => ({
       goal: g, dot: goalDot(i),
-      reps: repsForDate(g.protocol, g.startedOn, date, byGoal[g.id] ?? []),
+      reps: repsForDate(g.protocol, g.startedOn, date, byGoal[g.id] ?? [], g.pauses),
     }))
     .filter(p => p.reps.length > 0);
   const total = per.reduce((n, p) => n + p.reps.length, 0);
@@ -849,7 +849,7 @@ function useTodayModel(goals: ActiveGoal[], byGoal: Record<string, CheckIn[]>) {
   const perGoal: GoalToday[] = goals.map((g, i) => {
     const week = weekOf(g.startedOn, today, g.protocol.duration_weeks, g.pauses);
     const phase = phaseForWeek(g.protocol, week);
-    const reps = repsForDate(g.protocol, g.startedOn, today, byGoal[g.id] ?? []);
+    const reps = repsForDate(g.protocol, g.startedOn, today, byGoal[g.id] ?? [], g.pauses);
     return { goal: g, week, phase, reps, done: reps.filter(r => r.checked).length, dot: goalDot(i) };
   });
   const total = perGoal.reduce((n, g) => n + g.reps.length, 0);
@@ -917,7 +917,7 @@ function OddsCard({ perGoal, byGoal, today, multi }: {
   perGoal: GoalToday[]; byGoal: Record<string, CheckIn[]>; today: string; multi: boolean;
 }) {
   const rows = perGoal
-    .map(g => ({ g, rf: reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, byGoal[g.goal.id] ?? [], today) }))
+    .map(g => ({ g, rf: reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, byGoal[g.goal.id] ?? [], today, g.goal.pauses) }))
     .filter((r): r is { g: GoalToday; rf: NonNullable<ReturnType<typeof reforecastOdds>> } => r.rf !== null);
   if (rows.length === 0) return null;
   return (
@@ -962,7 +962,7 @@ function OddsCard({ perGoal, byGoal, today, multi }: {
 /** Single-goal Today has no group header, so the odds join the section label:
  *  "84% · BUILD THE GROOVE" (or "84→71% · ..." while drifted). */
 function singleHeaderLabel(g: GoalToday, byGoal: Record<string, CheckIn[]>, today: string): string {
-  const rf = reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, byGoal[g.goal.id] ?? [], today);
+  const rf = reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, byGoal[g.goal.id] ?? [], today, g.goal.pauses);
   const phase = g.phase.title.toUpperCase();
   if (!rf) return phase;
   if (rf.drifted) return `WAS ${rf.original} · NOW ${rf.current}% · ${phase}`;
@@ -974,7 +974,7 @@ function GroupHeader({ g, checkIns, today, open, onToggle, headerRef }: {
 }) {
   // The odds ride the header, re-forecast live: green while the plan holds,
   // amber with the drop spelled out when recent weeks slipped.
-  const rf = reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, checkIns, today);
+  const rf = reforecastOdds(g.goal.odds, g.goal.protocol, g.goal.startedOn, checkIns, today, g.goal.pauses);
   return (
     <Pressable
       ref={headerRef}
@@ -1045,7 +1045,7 @@ function useQtyControls(checkInStep: (goalId: string, stepId: string, value?: nu
  *  It disappears on its own as banked reps pull the number home. */
 function ReforecastStrip({ goal, checkIns, today }: { goal: ActiveGoal; checkIns: CheckIn[]; today: string }) {
   const navigation = useNavigation<any>();
-  const rf = reforecastOdds(goal.odds, goal.protocol, goal.startedOn, checkIns, today);
+  const rf = reforecastOdds(goal.odds, goal.protocol, goal.startedOn, checkIns, today, goal.pauses);
   if (!rf || !rf.drifted) return null;
   return (
     <View

@@ -2687,14 +2687,28 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
               {entry.answer !== undefined && !reAnswering && (
                 <View style={{ alignItems: 'flex-end' }}>
                   {canChange && i < coach.qa.length - 1 ? (
+                    /* An affordance nobody can see is not an affordance. This
+                       was a 9.5pt ghost-grey word under the bubble — the same
+                       mistake as the old ghost "I ALREADY HAVE A PLAN" link a
+                       tester could not find. It is a real button now: accent
+                       text, a border, and a 34pt tap target. */
                     <Pressable
                       onPress={() => setConfirm(i)}
                       accessibilityRole="button"
                       accessibilityLabel={`Change your answer: ${entry.answer}`}
-                      style={{ alignItems: 'flex-end', gap: 4 }}
+                      hitSlop={8}
+                      style={({ pressed }) => ({ alignItems: 'flex-end', gap: 7, opacity: pressed ? 0.7 : 1 })}
                     >
                       <UserBubble text={entry.answer} />
-                      <MonoLabel text="CHANGE" style={{ paddingRight: 6 }} />
+                      <View
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 6,
+                          height: 34, paddingHorizontal: 14, borderRadius: 17,
+                          borderWidth: 1, borderColor: night.accentBorder, backgroundColor: night.accentSoft,
+                        }}
+                      >
+                        <Text style={{ fontFamily: nightFonts.display, fontSize: 13, color: night.accentText }}>Change this answer</Text>
+                      </View>
                     </Pressable>
                   ) : (
                     <UserBubble text={entry.answer} />

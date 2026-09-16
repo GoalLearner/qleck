@@ -799,6 +799,16 @@ stuck in the queue on the phone — and two defects put them there.
   Production job smoke after the deploy: draft 30.1s after the verdict,
   accept 345ms.
 
+### Build 37 · 16 Sep — the change button you can actually see
+
+- **"Change this answer" is a button now.** It shipped in 36 as a 9.5pt
+  ghost-grey word under your own answer — the same mistake this codebase
+  already made once with the ghost "+ I ALREADY HAVE A PLAN" link a tester
+  could not find, and the owner reported the feature as missing. It is accent
+  text in a bordered pill with a 34pt tap target, under every answer you can
+  still change. The route behind it was verified against production on the
+  16th: 21 bars, three changes and the cap.
+
 ### Build 36 · 15 Sep — the second list: go back, choose, tick, and the ending
 
 - **"Where are you starting?"** The testers' note asked for a real choice

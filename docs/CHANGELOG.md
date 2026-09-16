@@ -799,7 +799,7 @@ stuck in the queue on the phone — and two defects put them there.
   Production job smoke after the deploy: draft 30.1s after the verdict,
   accept 345ms.
 
-### Unreleased · 15 Sep — the choice comes first
+### Build 36 · 15 Sep — the second list: go back, choose, tick, and the ending
 
 - **"Where are you starting?"** The testers' note asked for a real choice
   between Qoach building the plan and bringing your own for Qoach's opinion.

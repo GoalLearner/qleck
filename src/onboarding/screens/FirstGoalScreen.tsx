@@ -2739,21 +2739,28 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
               <Text style={{ fontFamily: nightFonts.display, fontSize: 22, color: night.accentInk }}>{'\u2191'}</Text>
             </Pressable>
           </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          {/* One caption, not two. At 393pt the pair collided into "type your
+              ownyour answers shape the plan" \u2014 visible in the owner's own
+              screenshot on build 35. The right-hand slot now carries only the
+              re-answer state, the one time it says something the left line
+              does not. */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
             {editing === null ? (
-              <Text style={{ fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>
+              <Text style={{ flex: 1, fontFamily: nightFonts.body, fontSize: 11.5, color: night.textGhost }}>
                 Tap a suggestion to send it {'\u2014'} or type your own
               </Text>
             ) : (
-              <Pressable onPress={keepAnswer} hitSlop={8}>
-                <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textSoft }}>
-                  Keep my answer
+              <>
+                <Pressable onPress={keepAnswer} hitSlop={8}>
+                  <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textSoft }}>
+                    Keep my answer
+                  </Text>
+                </Pressable>
+                <Text style={{ fontFamily: MONO, fontSize: 10.5, color: night.textGhost }}>
+                  {`changing question ${editing + 1}`}
                 </Text>
-              </Pressable>
+              </>
             )}
-            <Text style={{ fontFamily: MONO, fontSize: 10.5, color: night.textGhost }}>
-              {editing === null ? 'your answers shape the plan' : `changing question ${editing + 1}`}
-            </Text>
           </View>
         </View>
       </View>

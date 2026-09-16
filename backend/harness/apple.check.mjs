@@ -111,9 +111,13 @@ for (const [name, token] of rejects) {
 }
 
 // 6. /me round-trip on the account.
-await post('/me', { displayName: 'Richi', handle: 'richie' }, p1.body.token);
+// A handle is unique per ACCOUNT, and this check registers a new one every
+// run — a fixed handle passes once on a given database and reports
+// "handle_taken" as a profile failure ever after.
+const handle = `richie${String(Date.now()).slice(-6)}`;
+await post('/me', { displayName: 'Richi', handle }, p1.body.token);
 const me = await get('/me', p1.body.token);
-check('/me stores and returns the profile', me.body.displayName === 'Richi' && me.body.handle === 'richie', JSON.stringify(me.body));
+check('/me stores and returns the profile', me.body.displayName === 'Richi' && me.body.handle === handle, JSON.stringify(me.body));
 const me2 = await get('/me', p2.body.token);
 check('profile visible from the reinstall login too', me2.body.displayName === 'Richi');
 

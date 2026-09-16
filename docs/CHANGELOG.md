@@ -1006,7 +1006,10 @@ stuck in the queue on the phone — and two defects put them there.
   ladder on `lose-weight-moderate`, the "what does the scale say" question on
   `pushups-30`), both seen on unmodified code in earlier runs and on other
   fixtures. Archived under `backend/harness/baselines/2026-09-15-3a-regression/`.
-  Spend today $0.29 of the $5 the owner approved for this list.
+  Spend for the whole list: **$0.38** of the $5 the owner approved — one full
+  harness regression, three live smokes (rewind, drop, the production draft
+  job) and a handful of one-off probes. Every other check in this list is
+  free.
 
 ## Not shipped
 

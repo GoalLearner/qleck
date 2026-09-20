@@ -163,6 +163,9 @@ const DELEGATION_CHIP = /no idea|you decide|whatever you think/i;
 // genuine chips — padding a binary to three would be the delegation-chip sin
 // wearing a costume. Chip-less is still only legal on exact-figure asks.
 const MIN_CHIPS = 2;
+// v35: the prompt's own cap is 15 words; the bar allows a little slack so it
+// fails on paragraphs, not on a well-written 16-word bundled ask.
+const MAX_Q_WORDS = 18;
 // Mirrors backend/src/coach.ts: 5 is the normal ceiling; 6 is legal only while required manifest fields are missing AND answers still yield them (P2a soft cap).
 const MIN_Q = 3;
 const MAX_Q = 6;
@@ -262,6 +265,8 @@ async function runGoalFixture(f) {
   const RANGE_SHAPE = /\b(under|over|about)\b|[0-9][^a-z]{0,3}[-–][^a-z]{0,3}[0-9]/i;
   const STAT_UNIT = /kg\b|lbs?\b|\$|dollar|follower|subscriber|view/i;
   let thinChipQ = null;      // a non-exact question with <3 chips
+  let longQ = null;          // v35: a question nobody reads in three seconds
+  const qWords = [];
   let statBucketChip = null; // an invented arithmetic-range chip, anywhere
   while (res.status === 200 && res.body.type === 'question' && questions < 7) {
     questions++;
@@ -286,6 +291,11 @@ async function runGoalFixture(f) {
       dupPairs.push({ first: askedTexts[hitIdx], again: q.question, stat: EXACT_ASK.test(q.question) });
     }
     askedTexts.push(q.question);
+    // v35: the ask is the headline and the reasoning is behind a tap, so the
+    // question itself has a word budget. Measured, not hoped for.
+    const words = String(q.question).trim().split(/\s+/).length;
+    qWords.push(words);
+    if (words > MAX_Q_WORDS) longQ = `${words}w: ${q.question}`;
     const chips = q.suggested_answers ?? [];
     if (!EXACT_ASK.test(q.question) && chips.length < MIN_CHIPS) thinChipQ = q.question;
     const bucket = chips.find(c => RANGE_SHAPE.test(c) && STAT_UNIT.test(c));
@@ -351,6 +361,7 @@ async function runGoalFixture(f) {
   // `questions > MIN_Q` escape is exactly why the ledger showed Q1/Q2
   // duplicates while runs reported ALL BARS CLEAR.
   if (dupQuestion || badChip) pass = false;
+  if (longQ) pass = false;
   if (thinChipQ || statBucketChip) pass = false;
 
   // v29 custom-pace leg (fixtures flagged priceCheck): a user-named runway
@@ -466,7 +477,9 @@ async function runGoalFixture(f) {
   return {
     id: f.id, category: f.category, outcome, expected: f.expect.join(' | '),
     pillarsOk, ownPlan: !!f.ownPlan, ownPlanOk,
-    pass, leak, protocolOk, howToOk, questions, dupQuestion, badChip, thinChipQ, statBucketChip, probability, probOk, paceOk, readsOk, priceOk, repriceOk, ms: Date.now() - t0,
+    pass, leak, protocolOk, howToOk, questions, dupQuestion, badChip, thinChipQ, longQ, statBucketChip,
+    qWords: qWords.length ? Math.round(qWords.reduce((a, b) => a + b, 0) / qWords.length) : null,
+    probability, probOk, paceOk, readsOk, priceOk, repriceOk, ms: Date.now() - t0,
     // Underscored: kept in last-report.json, hidden from the console table.
     _asked: askedTexts, _dupPairs: dupPairs, _sent: sentAnswers,
     _sessionId: sessionId, _protocol: protocol,
@@ -614,6 +627,8 @@ const bars = {
     completed.every(r => r.pillarsOk === null || r.pillarsOk === true),
   [`questions tappable (${MIN_CHIPS}+ chips) or exact-figure asks`]:
     completed.every(r => !r.thinChipQ),
+  [`questions read in three seconds (<=${MAX_Q_WORDS} words)`]:
+    completed.every(r => !r.longQ),
   'phase one reps carry a well-formed how-to':
     completed.every(r => r.howToOk === null || r.howToOk === true),
   'no invented stat-bucket chips (kg/lbs/$/counts)':

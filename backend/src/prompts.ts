@@ -126,7 +126,7 @@
 // 33 → 34 (11 Sep, step 6i second pass): the milestone line names what the
 // validator counts — any numeral, week counts and clock times included — and
 // where each kind cites; the range line says "no assumption" outright.
-export const PROMPT_VERSION = 34;
+export const PROMPT_VERSION = 35;
 
 /* ── Safety pre-classifier (cheap tier) ─────────────────────────────────── */
 
@@ -199,6 +199,8 @@ export const COACH_SYSTEM = `You are Qoach, the goal-feasibility coach inside Ql
    F. Constraints — injuries or health limits, equipment, hard deadlines, when relevant to this goal.
    You may bundle two tightly-related facts into ONE question ("what's your current weight, and roughly how tall are you?") ONLY when they belong to the same item above — bundling across items burns a question you are required to ask anyway, and leaves a dimension uncovered. If the user answers vaguely or delegates ("whatever you think"), take the default and move on — never re-ask a question they dodged on purpose, except a stat your numbers require (item E), which you may re-ask once, explaining why you need it.
 
+   WRITE THE QUESTION SHORT. The question you emit is ONE sentence a tired person reads in three seconds: at most 15 words, plain words, no preamble clause before the ask ("Where are you right now, running-wise — what's the longest..." is preamble; "What's the longest you can run comfortably today?" is the question). No stacked em-dash clauses, no explaining inside the ask, no naming the field you are collecting. A bundled pair still fits ("How many days a week can you run, and for how long?"). why_it_matters is ONE sentence, at most 20 words — the app keeps it BEHIND A TAP, so it is for the person who wants the reasoning, never the person who just wants to answer. Everything you would have crammed into the question goes there instead.
+
    Every question ships with 3-4 suggested_answers — short, concrete quick-picks (2-6 words each) covering the realistic range, e.g. ["Complete beginner", "Lifting ~1 year, 3 days/wk", "Experienced, 4+ days/wk"]. Order least to most; the user can always type an exact answer instead.
    EXACT-FIGURE QUESTIONS are the one exception: when you ask for a stat the plan does ARITHMETIC on — body weight, a current lift or 1RM, a current time or distance, dollars saved or contributable, follower or view counts — send suggested_answers as an EMPTY array and let the user type the real number. NEVER invent range buckets ("Under 60 kg / 130 lbs", "150-180 lbs", "$500-2,000") for these: protein grams, loading plans, contribution schedules and growth math all inherit the bucket's slop and turn arbitrary. Chips are allowed on an exact-figure question ONLY for genuine non-numeric answers to it ("Never tested a 1RM", "I've never counted") — and the delegation ban below still applies. When you offer candidate READINGS of a vague stat answer, each chip is ONE specific value ("About 75 kg", "About 80 kg") — never a range ("75-80 kg"), which would smuggle the bucket back in.
 
@@ -261,8 +263,14 @@ export const ASK_TOOL = {
     additionalProperties: false,
     required: ['question', 'why_it_matters', 'suggested_answers'],
     properties: {
-      question: { type: 'string' },
-      why_it_matters: { type: 'string', description: 'Shown as a small caption under the question.' },
+      question: {
+        type: 'string',
+        description: 'ONE plain sentence, at most 15 words, read in three seconds. No preamble clause, no stacked em-dashes, no reasoning inside the ask.',
+      },
+      why_it_matters: {
+        type: 'string',
+        description: 'ONE sentence, at most 20 words. Hidden behind a "Why this?" tap, so it carries the reasoning the question no longer does.',
+      },
       suggested_answers: {
         type: 'array',
         items: { type: 'string' },

@@ -2563,6 +2563,9 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
   // cost of the change is visible before it is sent. `held` keeps whatever
   // was half-typed for the question on screen, so backing out gives it back.
   const [confirm, setConfirm] = useState<number | null>(null);
+  /** Which questions have their reasoning open. Closed by default: the ask is
+   *  the thing, the reason is for whoever wants it. */
+  const [why, setWhy] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<number | null>(null);
   const held = useRef('');
 
@@ -2655,19 +2658,47 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
               <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
                 <QoachMark size={34} fontSize={18} />
                 <View style={{ gap: 10, flex: 1, maxWidth: 560, alignItems: 'flex-start' }}>
+                  {/* The question is the whole bubble; the reasoning is one
+                      tap away. Three lines of "why this matters" under every
+                      ask turned a 3-second question into a paragraph, and the
+                      answer chips fell below the fold. */}
                   <Pop style={{ alignSelf: 'stretch' }}>
                     <View style={[qoachBubble(),{ paddingHorizontal: 20, paddingVertical: 16 }]}>
-                      <Text style={{ fontFamily: nightFonts.display, fontSize: 19, lineHeight: 24.7, color: night.text, marginBottom: 7 }}>
+                      <Text style={{ fontFamily: nightFonts.display, fontSize: 19, lineHeight: 24.7, color: night.text }}>
                         {entry.question.question}
                       </Text>
-                      <Text style={{ fontFamily: nightFonts.body, fontSize: 13.5, lineHeight: 20.9, color: night.textSoft }}>
-                        {entry.question.why_it_matters}
-                      </Text>
+                      {entry.question.why_it_matters ? (
+                        <>
+                          {why.has(i) ? (
+                            <Text style={{ marginTop: 9, fontFamily: nightFonts.body, fontSize: 13.5, lineHeight: 20.9, color: night.textSoft }}>
+                              {entry.question.why_it_matters}
+                            </Text>
+                          ) : null}
+                          <Pressable
+                            onPress={() => setWhy(cur => {
+                              const next = new Set(cur);
+                              if (next.has(i)) next.delete(i); else next.add(i);
+                              return next;
+                            })}
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel={why.has(i) ? 'Hide why Qoach is asking' : 'Why is Qoach asking this?'}
+                            style={{ marginTop: 9, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                          >
+                            <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 12.5, color: night.textSoft }}>
+                              {why.has(i) ? 'Hide' : 'Why this?'}
+                            </Text>
+                            <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 10, color: night.textGhost }}>
+                              {why.has(i) ? '▴' : '▾'}
+                            </Text>
+                          </Pressable>
+                        </>
+                      ) : null}
                     </View>
                   </Pop>
-                  {isActive && (entry.question.suggested_answers?.length ?? 0) > 0 && (
+                  {isActive && (
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      {entry.question.suggested_answers!.map(option => (
+                      {(entry.question.suggested_answers ?? []).map(option => (
                         <Pressable
                           key={option}
                           onPress={() => send(option)}
@@ -2680,6 +2711,26 @@ function ChatThread({ coach, answer, setAnswer, onDismiss, dismissLabel }: {
                           <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, color: night.text }}>{option}</Text>
                         </Pressable>
                       ))}
+                      {/* "You can just write it" said where the tapping is.
+                          The composer was always there, but next to four
+                          tappable answers it reads as the only way to reply —
+                          and on an exact-figure question (no chips at all)
+                          there was nothing here to say otherwise. */}
+                      <Pressable
+                        onPress={() => inputRef.current?.focus()}
+                        accessibilityRole="button"
+                        accessibilityLabel="Type my own answer"
+                        style={({ pressed }) => ({
+                          paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999,
+                          borderWidth: 1, borderStyle: 'dashed',
+                          borderColor: pressed ? night.textSoft : night.border,
+                          backgroundColor: pressed ? night.surface : 'transparent',
+                        })}
+                      >
+                        <Text style={{ fontFamily: nightFonts.bodyMedium, fontSize: 13.5, color: night.textSoft }}>
+                          {(entry.question.suggested_answers?.length ?? 0) > 0 ? 'Type my own' : 'Type my answer'}
+                        </Text>
+                      </Pressable>
                     </View>
                   )}
                 </View>

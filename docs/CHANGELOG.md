@@ -799,6 +799,37 @@ stuck in the queue on the phone — and two defects put them there.
   Production job smoke after the deploy: draft 30.1s after the verdict,
   accept 345ms.
 
+### Build 38 · 19 Sep — questions you can answer in three seconds
+
+The owner, looking at one question on his phone: *"the AI just generates these
+questions that are so much... most users want simple and easy to answer
+questions. 3-second attention span type of questions."* Three changes, one
+screen.
+
+- **The question is the whole bubble.** Every ask shipped with two or three
+  lines of "why this matters" underneath it, so a one-line question read as a
+  paragraph and the answer chips fell below the fold. The reasoning now sits
+  behind **Why this?** — one tap, for whoever wants it.
+- **Shorter questions, measured** (prompt v35). The rule is now explicit: one
+  sentence, at most 15 words, no preamble clause before the ask, no reasoning
+  inside it, and `why_it_matters` carries what used to be crammed in. The
+  harness gained a bar that fails the run if any question runs past 18 words.
+  Across the 12 goal fixtures the average question is **10.2 words**, down
+  from 15–20: *"How far can you run right now without stopping?"*,
+  *"How many days a week could you realistically train?"*
+- **"Type my own" is one of the options.** Next to four tappable answers the
+  keyboard read as the hard way; on an exact-figure question (no chips at all)
+  nothing said you could type either. A dashed chip now sits with the answers
+  and puts the cursor in the box.
+- Gate: full harness (all interview bars green, 11/11 realistic, the new
+  length bar passing) plus the calibration stability arm — mean 81.3, sd 1.15
+  against v34's 82 / 1.6, so the verdict number did not move. One red bar,
+  `protocol valid ≥95%` at 11/12, is the known generation flake: its two
+  rejection reasons (an invented injury, an assumption on a collected key)
+  come from the protocol prompt, which v35 does not touch, and the same bar
+  has gone red on unmodified code in three earlier runs. Archived under
+  `backend/harness/baselines/2026-09-19-v35-gate/`.
+
 ### Build 37 · 16 Sep — the change button you can actually see
 
 - **"Change this answer" is a button now.** It shipped in 36 as a 9.5pt

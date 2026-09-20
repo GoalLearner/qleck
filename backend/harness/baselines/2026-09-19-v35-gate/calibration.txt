@@ -1,0 +1,12 @@
+v35 stability arm — marathon-3w, 6 runs (3 completed; 2 fetch-failed and 1 502
+from `wrangler dev` recycling, the known local flake).
+
+  probs 82, 80, 82 · mean 81.3 · sd 1.15 · weeks 20 · original 2%
+  v34 baseline: mean 82, sd 1.6 — the shorter questions did not move the number.
+
+Questions as emitted (this is the point of the change):
+  "How far can you run right now without stopping?"            8 words
+  "How many days a week could you realistically train?"        9
+  "What's the longest you can run comfortably right now?"      9
+  "What time of day would a run actually fit into your life?"  12
+  harness average across 12 fixtures: 10.2 words

@@ -1,21 +1,21 @@
 {
   "_README": "CAPTURED, NOT WRITTEN. Regenerate with: cd backend && npm run capture:coldopen",
-  "promptVersion": 34,
-  "capturedAt": "2026-09-12",
+  "promptVersion": 35,
+  "capturedAt": "2026-09-19",
   "askedQuestions": 4,
   "original": {
-    "request": "I want to run a full marathon in 3 weeks. I have never run before in my life.",
-    "probability": 3,
+    "request": "Run a full marathon in 3 weeks, starting from never having run.",
+    "probability": 2,
     "durationWeeks": 3
   },
   "counter": {
-    "statement": "Run a full marathon 12 months from now — starting with a 5K in 10 weeks, then a half marathon around month 6, building to the 42.2K on a proper base.",
+    "statement": "Run a full marathon 20 weeks from now — starting from zero running, building to a 4-day-a-week plan that peaks around 50-55 km/week and includes one long run that reaches 32 km.",
     "probability": 82,
-    "durationWeeks": 52,
-    "subtitle": "The distance is yours to take — just not in three weeks. Give it a year."
+    "durationWeeks": 20,
+    "subtitle": "The marathon is real — the 3 weeks isn't. Twenty weeks and you're in business."
   },
   "risk": {
-    "line": "Zero running history plus a 3-week deadline is the exact recipe for injury — that's priced in.",
-    "detail": "The 3% on the original ask isn't doubt about you; it's the near-certainty that tendons and bones can't adapt in 21 days. That risk is why the number is what it is, and why the timeline moves."
+    "line": "Zero running base is the whole risk, and it's already priced into the odds.",
+    "detail": "Going from never-run to 42.2 km in three weeks isn't a stretch goal, it's a stress fracture with a bib number. That's why the original ask scores near zero — and why the 20-week version scores 82 instead."
   }
 }

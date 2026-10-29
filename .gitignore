@@ -49,3 +49,14 @@ backend/harness/baselines/*/last-protocols.json
 
 # Replay arms keep their full protocol dumps local (summaries live in the changelog)
 backend/harness/replay-*.json
+
+# env + local secrets at any level (the backend reads .dev.vars)
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Netlify CLI local state
+.netlify/
